@@ -1,11 +1,15 @@
-import type { Theme } from "../types";
+import type { BridgeState, Theme } from "../types";
 
 export function TitleBar(props: {
   theme: Theme;
+  bridge: BridgeState | null;
   wsOpen: boolean;
   onToggleWs: () => void;
   onToggleTheme: () => void;
 }) {
+  const runtime = props.bridge?.connected
+    ? { label: "runtime ok", bad: false }
+    : { label: "model only", bad: true };
   return (
     <div className="bar">
       <span className="dot" />
@@ -19,7 +23,7 @@ export function TitleBar(props: {
           {props.theme === "light" ? "dark" : "light"}
         </button>
         <span className="stat">
-          <b>●</b>&nbsp; runtime ok
+          <b className={runtime.bad ? "bad" : ""}>●</b>&nbsp; {runtime.label}
         </span>
       </span>
       {props.wsOpen && <div className="scrim" onClick={props.onToggleWs} />}

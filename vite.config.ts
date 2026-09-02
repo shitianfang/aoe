@@ -10,6 +10,10 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       allowedHosts: true,
       proxy: {
+        "/bridge": {
+          target: `http://127.0.0.1:${env.PRIME_BRIDGE_PORT ?? "3117"}`,
+          changeOrigin: true,
+        },
         // The NIM key lives server-side only; the renderer never sees it.
         "/api/nim": {
           target: "https://integrate.api.nvidia.com",

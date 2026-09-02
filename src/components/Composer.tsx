@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentState } from "../types";
+import type { AgentState, BridgeState, GoalInfo } from "../types";
 
 export function Composer(props: {
   master: AgentState;
+  goal: GoalInfo | null;
+  bridge: BridgeState | null;
   error?: string;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -23,19 +25,18 @@ export function Composer(props: {
     props.onSend(t);
   };
 
+  const strip = () => {
+    if (props.error) return <span className="err">{props.error}</span>;
+    const parts: string[] = [];
+    parts.push(props.goal?.active ? "objective" : "no objective");
+    parts.push(busy ? "master working" : "master idle");
+    if (props.bridge && !props.bridge.connected) parts.push("runtime offline · model only");
+    return <>{parts.join(" · ")}</>;
+  };
+
   return (
     <>
-      <div className="strip">
-        {props.error ? (
-          <span className="err">{props.error}</span>
-        ) : busy ? (
-          <>
-            master <b>working</b>
-          </>
-        ) : (
-          <>master idle · no objective</>
-        )}
-      </div>
+      <div className="strip">{strip()}</div>
       <div className="composer">
         <div className="inwrap">
           <input

@@ -8,6 +8,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --port 3000 --host",
+    "bridge": "node electron/bridge.mjs",
     "build": "tsc --noEmit && vite build",
     "app": "electron .",
     "dist:win": "vite build && electron-builder --win --publish never"

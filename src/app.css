@@ -99,6 +99,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
     radial-gradient(circle 1.6px at 10px 4px, currentColor 1.6px, transparent 1.7px);
 }
 .chip.ghost { background: transparent; border: 1px solid var(--hair-hi); color: var(--t3); font-weight: 500; }
+.chip.cyan { background: var(--cyan); }
+.chip.amber { background: var(--amber); }
+.chip.violet { background: var(--violet); }
+.arow.indent { margin-left: 14px; }
+.arow .st.need { color: var(--red); }
 .arow { display: flex; align-items: center; gap: 9px; padding: 6px 8px; cursor: pointer; margin-bottom: 3px; border: 1px solid transparent; width: 100%; text-align: left; }
 .arow:hover { background: var(--soft); }
 .arow.sel { background: var(--soft); border-color: var(--hair); }
@@ -126,6 +131,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 @media (prefers-reduced-motion: reduce) { .cursor { animation: none; opacity: .7; } }
 .div { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
 .div::before, .div::after { content: ""; flex: 1; border-top: 1px dashed var(--hair); }
+
+/* event chips (tool executions etc.) */
+.ev { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 9px; margin-left: 34px; padding: 8px 11px; border: 1px solid var(--hair); font-family: var(--mono); font-size: 10.5px; color: var(--t3); background: var(--soft); }
+.ev strong { overflow: hidden; color: var(--t2); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.ev .ic { width: 7px; height: 7px; transform: rotate(45deg); border: 1.5px solid var(--t3); }
+.ev .rt { color: var(--t3); white-space: nowrap; }
+.ev .rt.ok { color: var(--green); }
+.ev.bad .ic { border-color: var(--red); }
+.ev.bad .rt { color: var(--red); }
 
 /* ---- composer ---- */
 .strip { padding: 10px 18px 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }

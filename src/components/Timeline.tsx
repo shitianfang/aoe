@@ -19,6 +19,17 @@ export function Timeline(props: { items: TimelineItem[] }) {
             </div>
           );
         }
+        if (item.kind === "tool") {
+          return (
+            <div className={`ev${item.status === "error" ? " bad" : ""}`} key={item.id}>
+              <span className="ic" />
+              <strong>{item.name}</strong>
+              <span className={item.status === "done" ? "rt ok" : "rt"}>
+                {item.status === "running" ? "running…" : `${item.status} · ${item.at}`}
+              </span>
+            </div>
+          );
+        }
         if (item.kind === "user") {
           return (
             <div className="msg user" key={item.id}>

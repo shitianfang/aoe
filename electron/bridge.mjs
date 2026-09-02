@@ -28,6 +28,24 @@ const WORKSPACE_DIR =
 const sseClients = new Set();
 let daemon = { connected: false, master: null, error: null };
 /** @type {any} */ let masterConn = null;
+/** @type {string|null} */ let sessionDir = null;
+
+/** Continual-harness state: lessons live in harness_state.json (local per
+ *  session, global under ~/.prime/agent/harness). Read-only surface. */
+function readHarness(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function learnedPayload() {
+  const local = sessionDir ? readHarness(path.join(sessionDir, "harness", "harness_state.json")) : null;
+  const global_ = readHarness(
+    path.join(os.homedir(), ".prime", "agent", "harness", "harness_state.json"),
+  );
+  return { local, global: global_ };
+}
 
 function broadcast(payload) {
   const frame = `data: ${JSON.stringify(payload)}\n\n`;
@@ -109,10 +127,13 @@ async function connectDaemon() {
       broadcast({ type: "event", event: event.event });
     } else if (event?.type === "connection_status" || event?.type === "closed") {
       broadcast({ type: "bridge_status", event });
+    } else if (event?.type === "heartbeats_changed") {
+      broadcast({ type: "heartbeats_changed" });
     }
   });
 
   const snapshot = await masterConn.getInitialSnapshot();
+  sessionDir = snapshot.state?.sessionDir ?? null;
   daemon = { connected: true, master: { name: "master", activeSessionId }, error: null };
   broadcast({ type: "hello", daemon });
   broadcast({
@@ -158,6 +179,27 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, cors);
     return res.end();
+  }
+  if (req.url === "/bridge/learned") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    return res.end(JSON.stringify(learnedPayload()));
+  }
+  if (req.url === "/bridge/heartbeats") {
+    if (!masterConn) {
+      res.writeHead(200, { ...cors, "content-type": "application/json" });
+      return res.end(JSON.stringify({ heartbeats: [] }));
+    }
+    masterConn
+      .listHeartbeats()
+      .then((heartbeats) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ heartbeats }));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
   }
   if (req.url === "/bridge/health") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

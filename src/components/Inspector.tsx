@@ -1,12 +1,22 @@
-import type { AgentState, BridgeState, GoalInfo } from "../types";
+import type { AgentState, AutonomousInfo, BridgeState, GoalInfo, HeartbeatInfo } from "../types";
+
+function hbWhen(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 export function Inspector(props: {
   master: AgentState;
   goal: GoalInfo | null;
   bridge: BridgeState | null;
+  heartbeats: HeartbeatInfo[];
+  autonomous: AutonomousInfo | null;
 }) {
   const goal = props.goal;
   const goalActive = Boolean(goal?.active);
+  const auto = props.autonomous;
   return (
     <aside className="insp">
       <div className="flow">
@@ -14,8 +24,9 @@ export function Inspector(props: {
         <i />
         <span className={goalActive ? "active" : ""}>objective</span>
         <i />
-        <span>check-in</span>
+        <span className={auto?.enabled ? "active" : ""}>unattended</span>
       </div>
+
       <div className="panel">
         <div className="phead">
           <span>Driving</span>
@@ -28,7 +39,7 @@ export function Inspector(props: {
               <span className="k">Status</span>
               <span className="v ok">{goal?.status}</span>
             </div>
-            {typeof goal?.tokenBudget === "number" && (
+            {typeof goal?.tokenBudget === "number" && goal.tokenBudget > 0 && (
               <div className="kv">
                 <span className="k">Budget</span>
                 <span className="v faint">
@@ -45,20 +56,63 @@ export function Inspector(props: {
             </div>
             <div className="rule">
               {props.bridge?.connected
-                ? "master acts when you message it. Set an objective to let it keep going on its own."
+                ? "master acts when you message it. “/goal …” gives it an objective to keep going on its own."
                 : "master acts when you message it. Objectives and check-ins need the runtime (bridge offline)."}
             </div>
           </>
         )}
       </div>
+
+      {auto?.enabled && (
+        <div className="panel">
+          <div className="phead">
+            <span>Unattended</span>
+            <code>on</code>
+          </div>
+          <div className="rule">
+            Steps in only after a failed check or a turn without evidence; stops at any limit. The
+            objective continues regardless.
+          </div>
+          <div className="kv">
+            <span className="k">Continued</span>
+            <span className="v">
+              {auto.continuationsUsed ?? 0} of {auto.limits?.maxContinuations ?? "?"}
+            </span>
+          </div>
+          <div className="kv">
+            <span className="k">Turns</span>
+            <span className="v">
+              {auto.turnsUsed ?? 0} of {auto.limits?.maxTurns ?? "?"}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {props.heartbeats.length > 0 && (
+        <div className="panel">
+          <div className="phead">
+            <span>Re-entry</span>
+          </div>
+          {props.heartbeats.map((h) => (
+            <div className="kv" key={h.id} title={h.prompt}>
+              <span className="k">
+                {h.source === "rlm_heartbeat" ? "check-in · agent" : "check-in"}
+              </span>
+              <span className="v faint">
+                {h.status === "paused" ? "paused" : `next ${hbWhen(h.nextRunAt) || "soon"}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="panel">
         <div className="phead">
           <span>Learned</span>
-          <code>0</code>
         </div>
         <div className="kv">
           <span className="k">Lessons</span>
-          <span className="v faint">none yet</span>
+          <span className="v faint">see Learned tab</span>
         </div>
       </div>
     </aside>

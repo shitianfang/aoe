@@ -35,6 +35,27 @@ export interface BridgeState {
   error?: string | null;
 }
 
+/** AgentCronJob subset we render in Re-entry. */
+export interface HeartbeatInfo {
+  id: string;
+  status: string;
+  source?: string;
+  label?: string;
+  prompt: string;
+  deliveryMode?: string;
+  schedule?: { expression?: string };
+  nextRunAt?: string;
+}
+
+/** AgentAutonomousStatus subset (read from autonomous_status custom messages). */
+export interface AutonomousInfo {
+  enabled: boolean;
+  continuationsUsed?: number;
+  turnsUsed?: number;
+  tokensUsed?: number;
+  limits?: { maxContinuations?: number; maxTurns?: number; maxTokens?: number; timeoutMs?: number };
+}
+
 export interface AppState {
   theme: Theme;
   master: AgentState;
@@ -44,6 +65,8 @@ export interface AppState {
   bridge: BridgeState | null;
   goal: GoalInfo | null;
   children: ChildInfo[];
+  heartbeats: HeartbeatInfo[];
+  autonomous: AutonomousInfo | null;
   /** Last error surfaced to the strip, if any. */
   error?: string;
 }

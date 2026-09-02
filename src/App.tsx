@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppState, ChildInfo, ColumnView, GoalInfo, Theme, TimelineItem } from "./types";
+import type {
+  AppState,
+  AutonomousInfo,
+  ChildInfo,
+  ColumnView,
+  GoalInfo,
+  HeartbeatInfo,
+  Theme,
+  TimelineItem,
+} from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Rail } from "./components/Rail";
 import { AgentsColumn } from "./components/AgentsColumn";
@@ -24,6 +33,8 @@ export function App() {
     bridge: null,
     goal: null,
     children: [],
+    heartbeats: [],
+    autonomous: null,
     timeline: [{ kind: "divider", id: id(), text: `session started · ${clock()}` }],
   }));
   const [wsOpen, setWsOpen] = useState(false);
@@ -50,6 +61,24 @@ export function App() {
   useEffect(() => {
     const push = (item: TimelineItem) => setState((s) => ({ ...s, timeline: [...s.timeline, item] }));
 
+    let hbTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshHeartbeats = () => {
+      // heartbeats_changed is a global no-payload signal — throttle the re-pull.
+      if (hbTimer) return;
+      hbTimer = setTimeout(async () => {
+        hbTimer = null;
+        try {
+          const r = await fetch("/bridge/heartbeats").then((x) => x.json());
+          const jobs: HeartbeatInfo[] = (r.heartbeats ?? [])
+            .map((h: { job?: HeartbeatInfo }) => h.job ?? (h as HeartbeatInfo))
+            .filter((j: HeartbeatInfo) => j.status === "active" || j.status === "paused");
+          setState((s) => ({ ...s, heartbeats: jobs }));
+        } catch {
+          /* bridge offline */
+        }
+      }, 400);
+    };
+
     const onEvent = (event: Record<string, unknown>) => {
       const t = event.type as string;
       if (t === "agent_start" || t === "turn_start") {
@@ -71,8 +100,23 @@ export function App() {
           return { ...s, children: [...others, child] };
         });
       } else if (t === "message_start" || t === "message_update" || t === "message_end") {
-        const message = event.message as { role?: string; id?: unknown; customType?: string } | undefined;
-        if (!message || message.role !== "assistant") return;
+        const message = event.message as
+          | { role?: string; id?: unknown; customType?: string; details?: unknown }
+          | undefined;
+        if (!message) return;
+        if (message.role === "custom") {
+          if (t !== "message_end") return;
+          if (message.customType === "autonomous_status") {
+            setState((s) => ({ ...s, autonomous: (message.details as AutonomousInfo) ?? null }));
+          } else if (message.customType === "agent_message") {
+            const d = message.details as { from?: string; message?: string } | undefined;
+            push({ kind: "divider", id: id(), text: `msg ← ${d?.from ?? "agent"} · ${clock()}` });
+          } else if (message.customType === "prime-agent.refinement") {
+            // covered by refine_complete; ignore the transcript echo
+          }
+          return;
+        }
+        if (message.role !== "assistant") return;
         const text = extractText(message);
         const key = message.id ?? "assistant";
         if (!daemonMsgRef.current || daemonMsgRef.current.key !== key) {
@@ -122,6 +166,9 @@ export function App() {
           ...s,
           bridge: { connected: m.daemon.connected, error: m.daemon.error ?? null },
         }));
+        if (m.daemon.connected) refreshHeartbeats();
+      } else if ((m as { type: string }).type === "heartbeats_changed") {
+        refreshHeartbeats();
       } else if (m.type === "snapshot") {
         setState((s) => ({
           ...s,
@@ -273,7 +320,13 @@ export function App() {
             <LearnedView />
           )}
         </div>
-        <Inspector master={state.master} goal={state.goal} bridge={state.bridge} />
+        <Inspector
+          master={state.master}
+          goal={state.goal}
+          bridge={state.bridge}
+          heartbeats={state.heartbeats}
+          autonomous={state.autonomous}
+        />
       </div>
     </div>
   );

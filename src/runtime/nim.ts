@@ -6,6 +6,11 @@
 
 declare const __NIM_MODEL__: string;
 
+// Packaged app: Electron main hosts the bridge on 127.0.0.1 and passes its
+// port via the page query. Dev: same-origin Vite proxy.
+const bridgePort = new URLSearchParams(window.location.search).get("bridge");
+const API_BASE = bridgePort ? `http://127.0.0.1:${bridgePort}` : "";
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -16,7 +21,7 @@ export async function streamChat(
   onDelta: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const res = await fetch("/api/nim/chat/completions", {
+  const res = await fetch(`${API_BASE}/api/nim/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

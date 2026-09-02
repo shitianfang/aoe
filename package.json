@@ -29,6 +29,6 @@
     "productName": "Prime Agent",
     "files": ["dist/**", "electron/**"],
     "directories": { "output": "release" },
-    "win": { "target": ["zip"] }
+    "win": { "target": ["zip"], "signAndEditExecutable": false }
   }
 }

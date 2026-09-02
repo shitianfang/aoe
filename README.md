@@ -24,6 +24,13 @@ The NIM key stays server-side (Vite dev proxy). Never commit `.env`.
 npm run dist:win       # zip target, output in release/
 ```
 
+The packaged app reads the NIM key from the `NIM_API_KEY` environment variable, or from
+`%APPDATA%/prime-desktop/config.json`:
+
+```json
+{ "nimApiKey": "nvapi-..." }
+```
+
 ## Status
 
 - [x] Shell: title bar (light/dark toggle), rail, agents column, master timeline, DRIVERS inspector, composer

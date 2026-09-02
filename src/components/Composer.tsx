@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentState } from "../types";
 
 export function Composer(props: {
@@ -8,7 +8,13 @@ export function Composer(props: {
   onStop: () => void;
 }) {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const busy = props.master === "working";
+
+  // Hand focus back to the input whenever master finishes.
+  useEffect(() => {
+    if (!busy) inputRef.current?.focus();
+  }, [busy]);
 
   const submit = () => {
     const t = text.trim();
@@ -33,6 +39,7 @@ export function Composer(props: {
       <div className="composer">
         <div className="inwrap">
           <input
+            ref={inputRef}
             value={text}
             placeholder="Message master…"
             onChange={(e) => setText(e.target.value)}

@@ -22,6 +22,7 @@ export function TitleBar(props: {
           <b>●</b>&nbsp; runtime ok
         </span>
       </span>
+      {props.wsOpen && <div className="scrim" onClick={props.onToggleWs} />}
       {props.wsOpen && (
         <div className="wspop">
           <div className="h">Workspaces</div>

@@ -1,18 +1,32 @@
-export function Rail() {
+import type { ColumnView } from "../types";
+
+export function Rail(props: {
+  column: ColumnView;
+  onColumn: (v: ColumnView) => void;
+  onLogo: () => void;
+}) {
   return (
     <nav className="rail">
-      <div className="logo" title="switch workspace" />
-      <div className="rbtn on" title="Agents">
+      <button className="logo" title="switch workspace" onClick={props.onLogo} />
+      <button
+        className={props.column === "agents" ? "rbtn on" : "rbtn"}
+        title="Agents"
+        onClick={() => props.onColumn("agents")}
+      >
         <svg viewBox="0 0 24 24">
           <rect x="8" y="4" width="8" height="7" />
           <path d="M5 20v-2c0-2.2 3.1-4 7-4s7 1.8 7 4v2" />
         </svg>
-      </div>
-      <div className="rbtn" title="Files — coming soon">
+      </button>
+      <button
+        className={props.column === "files" ? "rbtn on" : "rbtn"}
+        title="Files"
+        onClick={() => props.onColumn("files")}
+      >
         <svg viewBox="0 0 24 24">
           <path d="M4 6h6l2 2h8v11H4Z" />
         </svg>
-      </div>
+      </button>
       <div className="sp" />
       <div className="uav" title="you">
         Y

@@ -5,6 +5,7 @@ export function Composer(props: {
   master: AgentState;
   error?: string;
   onSend: (text: string) => void;
+  onStop: () => void;
 }) {
   const [text, setText] = useState("");
   const busy = props.master === "working";
@@ -39,9 +40,15 @@ export function Composer(props: {
           />
           <span className="to">to master</span>
         </div>
-        <button className="send" onClick={submit} disabled={busy}>
-          SEND
-        </button>
+        {busy ? (
+          <button className="send" onClick={props.onStop}>
+            STOP
+          </button>
+        ) : (
+          <button className="send" onClick={submit}>
+            SEND
+          </button>
+        )}
       </div>
     </>
   );

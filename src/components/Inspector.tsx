@@ -13,6 +13,7 @@ export function Inspector(props: {
   bridge: BridgeState | null;
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
+  onOpenLearn: () => void;
 }) {
   const goal = props.goal;
   const goalActive = Boolean(goal?.active);
@@ -20,11 +21,13 @@ export function Inspector(props: {
   return (
     <aside className="insp">
       <div className="flow">
-        <span className={goalActive ? "" : "active"}>you</span>
-        <i />
         <span className={goalActive ? "active" : ""}>objective</span>
         <i />
         <span className={auto?.enabled ? "active" : ""}>unattended</span>
+        <i />
+        <span className={props.heartbeats.some((h) => h.status === "active") ? "active" : ""}>
+          check-in
+        </span>
       </div>
 
       <div className="panel">
@@ -110,10 +113,9 @@ export function Inspector(props: {
         <div className="phead">
           <span>Learned</span>
         </div>
-        <div className="kv">
-          <span className="k">Lessons</span>
-          <span className="v faint">see Learned tab</span>
-        </div>
+        <button className="open" onClick={props.onOpenLearn}>
+          open learned →
+        </button>
       </div>
     </aside>
   );

@@ -26,8 +26,10 @@ const WORKSPACE_DIR =
 
 /** @type {Set<import("node:http").ServerResponse>} */
 const sseClients = new Set();
-let daemon = { connected: false, master: null, error: null };
+let daemon = { connected: false, master: null, error: null, workspace: path.basename(WORKSPACE_DIR) };
 /** @type {any} */ let masterConn = null;
+/** @type {any} */ let daemonClient = null;
+/** @type {string|null} */ let masterSessionId = null;
 /** @type {string|null} */ let sessionDir = null;
 
 /** Continual-harness state: lessons live in harness_state.json (local per
@@ -90,6 +92,7 @@ async function connectDaemon() {
 
   const client = new sdk.DaemonClient(socketPath);
   await client.connect();
+  daemonClient = client;
 
   // Idempotent master: attach if a worker is live, resume from disk if not,
   // create fresh only when no master session exists at all.
@@ -134,7 +137,13 @@ async function connectDaemon() {
 
   const snapshot = await masterConn.getInitialSnapshot();
   sessionDir = snapshot.state?.sessionDir ?? null;
-  daemon = { connected: true, master: { name: "master", activeSessionId }, error: null };
+  masterSessionId = activeSessionId;
+  daemon = {
+    connected: true,
+    master: { name: "master", activeSessionId },
+    error: null,
+    workspace: path.basename(WORKSPACE_DIR),
+  };
   broadcast({ type: "hello", daemon });
   broadcast({
     type: "snapshot",
@@ -148,23 +157,58 @@ async function connectDaemon() {
   });
 }
 
+/** An aborted run leaves the session input pump suspended and it never
+ *  self-heals; resume_queue restores it (even when it answers "No queued work
+ *  to resume"), after which the retried command succeeds. */
+async function withResumeRetry(fn) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!/queued session input is suspended/i.test(e?.message || "")) throw e;
+    if (daemonClient && masterSessionId) {
+      await daemonClient
+        .request({ type: "resume_queue", activeSessionId: masterSessionId })
+        .catch(() => undefined);
+    }
+    return await fn();
+  }
+}
+
 async function handleCmd(body) {
   if (!masterConn) throw new Error("daemon not connected");
   switch (body.op) {
     case "prompt":
-      await masterConn.prompt(String(body.text ?? ""));
+      await withResumeRetry(() => masterConn.prompt(String(body.text ?? "")));
       return {};
     case "steer":
-      await masterConn.steer(String(body.text ?? ""));
+      await withResumeRetry(() => masterConn.steer(String(body.text ?? "")));
       return {};
     case "follow_up":
-      await masterConn.followUp(String(body.text ?? ""));
+      await withResumeRetry(() => masterConn.followUp(String(body.text ?? "")));
       return {};
     case "abort":
       await masterConn.abort();
       return {};
     case "refine":
       return { result: await masterConn.refine(body.text ? { instructions: body.text } : {}) };
+    case "agent_message": {
+      // Messages to helpers are always steer-queued by the runtime; the
+      // receipt says delivered vs queued.
+      const receipt = await masterConn.sendAgentMessage(String(body.target ?? ""), String(body.text ?? ""));
+      return { receipt: { deliveryStatus: receipt?.deliveryStatus ?? "queued" } };
+    }
+    case "stop_helper":
+      return { cancelled: await masterConn.cancelRlmChild(String(body.target ?? "")) };
+    case "remove_helper": {
+      if (!daemonClient || !masterSessionId) throw new Error("daemon not connected");
+      const r = await daemonClient.request({
+        type: "delete_rlm_subagent",
+        activeSessionId: masterSessionId,
+        childId: String(body.target ?? ""),
+      });
+      if (!r.success) throw new Error(r.error || "remove failed");
+      return {};
+    }
     default:
       throw new Error(`unknown op ${body.op}`);
   }

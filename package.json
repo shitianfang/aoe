@@ -1,0 +1,34 @@
+{
+  "name": "prime-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prime Agent desktop client — a calm workspace for proactive, self-improving, multi-agent work",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --port 3000 --host",
+    "build": "tsc --noEmit && vite build",
+    "app": "electron .",
+    "dist:win": "vite build && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "ai.primeintellect.desktop",
+    "productName": "Prime Agent",
+    "files": ["dist/**", "electron/**"],
+    "directories": { "output": "release" },
+    "win": { "target": ["zip"] }
+  }
+}

@@ -20,9 +20,26 @@ npm run app            # Electron shell pointing at the dev server
 
 The bridge needs **Node >= 22.8** and **uv** on PATH (the prime-agent daemon and its Python kernel
 require them), plus a built prime-agent checkout at `PRIME_AGENT_DIR` (default `/workspace/prime-agent`).
-`npm run dev:bridge` runs the bridge against the fork checkout at `/workspace/prime-agent`
-(the same as the default; the fork adds `preview.publish` and `autonomous.*` host requests).
+`npm run dev:bridge` defaults `PRIME_AGENT_DIR` to the preview-publish fork at
+`/workspace/prime-agent-fork`, so `PRIME_AGENT_DIR=... npm run dev:bridge` still wins.
 Without the bridge the app falls back to plain NIM chat ("model only" in the title bar).
+
+### Which checkout
+
+The client is not bound to the fork: it speaks daemon protocol v7 over the socket and takes only
+`packages/coding-agent/dist/index.js` and `prime-agent.sh` out of `PRIME_AGENT_DIR`. The fork serves
+daemon schema 27 and the `preview_events` capability; upstream serves schema 25. Against upstream
+every schema-27 path degrades rather than fails:
+
+| Fork surface | What it drives here | Against upstream (schema 25) |
+| --- | --- | --- |
+| `preview_events` / `preview_published` | primary source for the Preview view | falls back to client-side inference (fs scan at `agent_end`) |
+| connection-state `autoRefine` / `autonomous` | unattended status, next-review time | bridge sends `null`; the renderer omits those rows |
+| `RefinementResult.source` | lesson origin label on lesson cards | no label shown |
+| RLM child `completedAt` | real helper finish time | falls back to an estimate |
+
+Once the fork's changes land upstream, drop the `dev:bridge` default and point `PRIME_AGENT_DIR` at
+upstream.
 
 The NIM key stays server-side (Vite dev proxy / bridge). Never commit `.env`.
 

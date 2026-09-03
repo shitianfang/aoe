@@ -7,23 +7,26 @@ const https = require("node:https");
 const DEV_URL = process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
 const NIM_UPSTREAM = "https://integrate.api.nvidia.com/v1";
 
-/** Key comes from the environment or <userData>/config.json — never from the bundle. */
-function loadNimKey() {
+/** Key and model come from the environment or <userData>/config.json — never from the bundle. */
+function loadNimConfig() {
   let key = process.env.NIM_API_KEY || "";
+  let model = process.env.NIM_MODEL || "deepseek-ai/deepseek-v4-flash-0731";
   try {
     const p = path.join(app.getPath("userData"), "config.json");
     if (fs.existsSync(p)) {
-      key = JSON.parse(fs.readFileSync(p, "utf8")).nimApiKey || key;
+      const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
+      key = cfg.nimApiKey || key;
+      model = cfg.nimModel || model;
     }
   } catch {
     /* unreadable config — fall back to env */
   }
-  return key;
+  return { key, model };
 }
 
 /** Packaged builds have no Vite proxy, so main hosts the same /api/nim bridge locally. */
 function startBridge() {
-  const key = loadNimKey();
+  const { key, model } = loadNimConfig();
   const server = http.createServer((req, res) => {
     const cors = {
       "Access-Control-Allow-Origin": "*",
@@ -40,26 +43,48 @@ function startBridge() {
       res.end();
       return;
     }
-    const upstream = https.request(
-      NIM_UPSTREAM + req.url.slice("/api/nim".length),
-      {
-        method: req.method,
-        headers: {
-          "content-type": req.headers["content-type"] || "application/json",
-          accept: req.headers.accept || "*/*",
-          authorization: `Bearer ${key}`,
+    const send = (body) => {
+      const upstream = https.request(
+        NIM_UPSTREAM + req.url.slice("/api/nim".length),
+        {
+          method: req.method,
+          headers: {
+            "content-type": req.headers["content-type"] || "application/json",
+            accept: req.headers.accept || "*/*",
+            authorization: `Bearer ${key}`,
+            ...(body ? { "content-length": Buffer.byteLength(body) } : {}),
+          },
         },
-      },
-      (up) => {
-        res.writeHead(up.statusCode || 502, { ...up.headers, ...cors });
-        up.pipe(res);
-      },
-    );
-    upstream.on("error", () => {
-      res.writeHead(502, cors);
-      res.end(JSON.stringify({ error: "bridge: upstream unreachable" }));
-    });
-    req.pipe(upstream);
+        (up) => {
+          res.writeHead(up.statusCode || 502, { ...up.headers, ...cors });
+          up.pipe(res);
+        },
+      );
+      upstream.on("error", () => {
+        res.writeHead(502, cors);
+        res.end(JSON.stringify({ error: "bridge: upstream unreachable" }));
+      });
+      if (body) upstream.end(body);
+      else req.pipe(upstream);
+    };
+    if (req.method === "POST" && req.url.includes("/chat/completions")) {
+      // The renderer bakes a model name at build time; the config decides at runtime.
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        let body = Buffer.concat(chunks).toString("utf8");
+        try {
+          const parsed = JSON.parse(body);
+          parsed.model = model;
+          body = JSON.stringify(parsed);
+        } catch {
+          /* not JSON — forward as-is */
+        }
+        send(body);
+      });
+    } else {
+      send(null);
+    }
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve(server.address().port));

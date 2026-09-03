@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      __NIM_MODEL__: JSON.stringify(env.NIM_MODEL ?? "meta/llama-3.3-70b-instruct"),
+      __NIM_MODEL__: JSON.stringify(env.NIM_MODEL ?? "deepseek-ai/deepseek-v4-flash-0731"),
     },
   };
 });

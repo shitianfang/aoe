@@ -1302,13 +1302,21 @@ export function App() {
         // push the daemon gives for them.
         setInspectorKey((n) => n + 1);
       } else if (m.type === "preview_update") {
+        // A snapshot landed. An agent just wrote (or published) a work
+        // product, so Preview opens itself in a pane the user is not in and
+        // shows that file — the whole point of a window over a terminal.
+        const changed = m.changed ?? [];
+        if (changed.length > 0) {
+          pendingPreviewRef.current = changed[0];
+          setState((s) => popPane(s, { kind: "preview" }));
+        }
         refreshPreview();
       } else if (m.type === "file_activity") {
         // fs truth from the bridge's per-turn scan (writes happen inside the
         // kernel). A file already declared via preview.publish this turn has
         // its row — don't double-count the inferred sighting.
         if (declaredThisTurn(m.file.path)) return;
-        setState((s) => ({ ...s, files: upsertFile(s.files, m.file.path, "master") }));
+        setState((s) => ({ ...s, files: upsertFile(s.files, m.file.path, m.file.who ?? "master") }));
       } else if (m.type === "working_message") {
         setState((s) => ({ ...s, working: m.text || undefined }));
       } else if (m.type === "helper_event") {
@@ -1918,22 +1926,6 @@ export function App() {
     if (!key) return;
     saveJson(key, JSON.parse(splitSave));
   }, [splitSave]);
-
-  // An agent writing files this turn auto-opens Preview in a pane the user is
-  // not in (beside the focused one), without stealing focus. Each live snapshot
-  // signature triggers once — closing the pane doesn't reopen it for the same
-  // write, the next write brings it back.
-  const liveSig = state.previewFiles
-    .filter((f) => f.live)
-    .map((f) => `${f.path}:${f.versions.length}`)
-    .sort()
-    .join("|");
-  const autoPreviewRef = useRef("");
-  useEffect(() => {
-    if (!liveSig || liveSig === autoPreviewRef.current) return;
-    autoPreviewRef.current = liveSig;
-    setState((s) => popPane(s, { kind: "preview" }));
-  }, [liveSig]);
 
   // A root's run state: its own event stream once attached, else the roster word.
   const rootStateOf = (name: string): AgentState =>

@@ -36,7 +36,8 @@
     "productName": "AOE",
     "files": [
       "dist/**",
-      "electron/**"
+      "electron/**",
+      "skills/**"
     ],
     "directories": {
       "output": "release"

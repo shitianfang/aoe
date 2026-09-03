@@ -26,8 +26,11 @@ export type BridgeMessage =
     }
   | { type: "event"; event: Record<string, unknown> }
   | { type: "heartbeats_changed" }
-  | { type: "preview_update" }
-  | { type: "file_activity"; file: { path: string; name: string; at: string } }
+  // A snapshot was added: `changed` is the workspace-relative key set, and
+  // non-empty means an agent just wrote or published something — what Preview
+  // auto-opens on.
+  | { type: "preview_update"; changed?: string[] }
+  | { type: "file_activity"; file: { path: string; name: string; at: string; who?: string } }
   | { type: "working_message"; text: string }
   // Watched helper sessions: sessionId is the helper's activeSessionId.
   | { type: "helper_event"; sessionId: string; event: HelperFeedEvent }

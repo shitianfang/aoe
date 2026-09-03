@@ -97,7 +97,38 @@ function rememberWorkspace(name) {
 
 let currentWorkspace = initialWorkspace();
 let WORKSPACE_DIR = path.join(WORKSPACE_ROOT, currentWorkspace);
+/** AOE_DEBUG_TURNS=1 logs every turn end the roster reports. */
+const DEBUG_TURNS = process.env.AOE_DEBUG_TURNS === "1";
 const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
+
+/** What this client does that a bare terminal doesn't — appended to the system
+ *  prompt of every session the app creates. Without it an agent that just
+ *  wrote an html page starts a web server and points the user at localhost,
+ *  which is the wrong answer in a window that previews the file itself. */
+const CLIENT_PROMPT = `You are attached to AOE, a desktop client for this agent.
+
+The client watches this workspace. Every .html, .md, .png and .pdf file you write here is snapshotted and rendered in its Preview pane, which opens itself in a split beside the conversation the moment your turn ends, with the last two versions of a file side by side. The user watches the work move; they do not read a description of it.
+
+How work goes here:
+
+1. Align before building. For anything with a shape — a page, a layout, a document, a plan — write three genuinely different variants as files in the first turn and let the user pick from the rendered result. Do not ask which style they prefer when you can show three answers.
+2. Show progress as it happens: write files as you go, so every turn end updates Preview. Never start a web server, and never ask the user to open a browser or a file manager to see your work — writing the file is what shows it.
+3. Publish a finished deliverable: \`await preview.publish("path/to/file.html", label="Short title")\`.
+4. Before producing any deliverable, read the \`aoe-way\` skill and work by it: the variant rules, the blind subagent review protocol, and what to report so the user can check you instead of trusting you.
+5. End each turn with what changed, what you would do next, and anything you added that was not asked for but is needed.`;
+
+/** Skills the app itself ships (repo `skills/`, next to `electron/`). They are
+ *  handed to each session on top of the runtime's own, so the method lives with
+ *  the client and stays out of the user's agent home. */
+const APP_SKILLS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills");
+
+/** Session config for everything the app creates: the workspace as cwd, the
+ *  client prompt, and the client's own skills. */
+const sessionConfig = (cwd) => ({
+  cwd,
+  appendSystemPrompt: [CLIENT_PROMPT],
+  ...(fs.existsSync(APP_SKILLS_DIR) ? { skills: [APP_SKILLS_DIR] } : {}),
+});
 
 /** @type {Set<import("node:http").ServerResponse>} */
 const sseClients = new Set();
@@ -384,7 +415,7 @@ function broadcast(payload) {
 // workspace switch — the store is bound to one workspace directory.
 let preview = createPreviewStore({
   workspaceDir: WORKSPACE_DIR,
-  onUpdate: () => broadcast({ type: "preview_update" }),
+  onUpdate: (changed) => broadcast({ type: "preview_update", changed }),
 });
 
 // ---- workspace file activity ----------------------------------------------
@@ -429,6 +460,22 @@ function diffWorkspace() {
   for (const [rel, sig] of next) if (manifest.get(rel) !== sig) changed.push(rel);
   manifest = next;
   return changed;
+}
+
+/** Turn end for `who`: scan the workspace, hand what changed to the preview
+ *  store and name the writer in Files. The scan is the only sighting of a file
+ *  the kernel wrote, so every attached agent's agent_end runs it — a root's
+ *  build has to reach Preview the way master's does, not wait for master's
+ *  next turn to notice it. */
+function scanTurnEnd(who) {
+  for (const rel of diffWorkspace()) {
+    preview.touch(rel);
+    broadcast({
+      type: "file_activity",
+      file: { path: rel, name: rel.split("/").pop(), at: new Date().toISOString(), who },
+    });
+  }
+  preview.flush();
 }
 // ---------------------------------------------------------------------------
 
@@ -553,9 +600,30 @@ function broadcastRoster() {
 }
 
 function applyRosterUpdate(m) {
+  // Status before this frame, kept across a resync (which clears the map, so
+  // reading the old status off rosterEntries after the fact finds nothing).
+  const was = new Map();
+  for (const [id, e] of rosterEntries) was.set(id, e?.status);
+  const ended = [];
   if (m.resync) rosterEntries.clear();
-  for (const e of m.changed ?? []) rosterEntries.set(e.agentId, e);
-  for (const id of m.removed ?? []) rosterEntries.delete(id);
+  for (const e of m.changed ?? []) {
+    rosterEntries.set(e.agentId, e);
+    if (was.get(e.agentId) === "running" && e.status !== "running") ended.push(e.summary ?? {});
+  }
+  for (const id of m.removed ?? []) {
+    if (was.get(id) === "running") ended.push(rosterEntries.get(id)?.summary ?? {});
+    rosterEntries.delete(id);
+  }
+  // The roster's running → not-running edge is the only turn end the bridge
+  // sees for an agent nothing is attached to — and a background build is
+  // exactly the one whose result the user did not watch happen. An attached
+  // agent gets here too; its agent_end scan already ran, so this finds
+  // nothing and stays silent.
+  for (const s of ended) {
+    const name = displayName(s);
+    if (DEBUG_TURNS) console.log("[bridge] roster turn end:", name);
+    scanTurnEnd(name.startsWith("master") ? "master" : name);
+  }
 }
 
 async function subscribeRoster() {
@@ -684,7 +752,7 @@ async function attachMaster() {
       type: "create",
       ...(master?.sessionFile ? { sessionPath: master.sessionFile } : { name }),
       lifecycle: "resident",
-      config: { cwd: WORKSPACE_DIR },
+      config: sessionConfig(WORKSPACE_DIR),
       launchEnv: { ...process.env },
     });
     if (created.success) {
@@ -714,13 +782,7 @@ async function attachMaster() {
       const inner = event.event;
       if (inner?.type === "agent_end") {
         // fs truth first, so the preview snapshot pass sees every change
-        for (const rel of diffWorkspace()) {
-          preview.touch(rel);
-          broadcast({
-            type: "file_activity",
-            file: { path: rel, name: rel.split("/").pop(), at: new Date().toISOString() },
-          });
-        }
+        scanTurnEnd("master");
         preview.observe(inner);
         // agent_end carries the full message history — the renderer never needs it
         broadcast({ type: "event", event: { type: "agent_end" } });
@@ -798,7 +860,7 @@ async function switchWorkspace(name) {
   daemon = { connected: false, master: null, error: null, workspace: name, capabilities: serverCaps };
   preview = createPreviewStore({
     workspaceDir: WORKSPACE_DIR,
-    onUpdate: () => broadcast({ type: "preview_update" }),
+    onUpdate: (changed) => broadcast({ type: "preview_update", changed }),
   });
   await attachMaster();
 }
@@ -1005,7 +1067,7 @@ async function resolveRoot(name) {
     type: "create",
     ...(s.sessionFile ? { sessionPath: s.sessionFile } : { name }),
     lifecycle: "resident",
-    config: { cwd: s.cwd || WORKSPACE_DIR },
+    config: sessionConfig(s.cwd || WORKSPACE_DIR),
     launchEnv: { ...process.env },
   });
   if (created.success) return created.data.activeSessionId ?? created.data.id;
@@ -1059,10 +1121,16 @@ async function ensureRootConn(name) {
     if (event?.type === "session_event") {
       const inner = event.event;
       if (inner?.type === "agent_end") {
+        // Same fs truth as master's turn end: a root writing an html file is a
+        // work product, and Preview is where the user sees it.
+        scanTurnEnd(name);
+        preview.observe(inner);
         // agent_end carries the full message history — the renderer only needs the mark
         broadcast({ type: "root_event", root: name, event: { type: "agent_end" } });
         return;
       }
+      if (inner?.type === "preview_published") preview.declare(inner.preview);
+      preview.observe(inner);
       broadcast({ type: "root_event", root: name, event: inner });
     } else if (event?.type === "session_resynced") {
       // Canonical transcript after a mid-run attach; replace wholesale.
@@ -1195,7 +1263,7 @@ async function handleCmd(body) {
         type: "create",
         name,
         lifecycle: "resident",
-        config: { cwd: WORKSPACE_DIR },
+        config: sessionConfig(WORKSPACE_DIR),
         launchEnv: { ...process.env },
       });
       if (!r.success) throw new Error(r.error || "create failed");
@@ -1217,9 +1285,15 @@ async function handleCmd(body) {
       );
       if (!s) throw new Error("no such agent");
       await unwatchRoot(name); // our own attach would keep the worker alive
-      const live = s.activeSessionId ?? s.id;
-      if (live) {
-        const killed = await daemonClient.request({ type: "kill", activeSessionId: live });
+      // Only a LIVE session can be killed, and only activeSessionId names one.
+      // `id` is the saved session's uuid — passing it asks the daemon to kill
+      // something it has never heard of, which is how an inactive agent ended
+      // up undeletable instead of simply skipping the kill.
+      if (s.activeSessionId) {
+        const killed = await daemonClient.request({
+          type: "kill",
+          activeSessionId: s.activeSessionId,
+        });
         if (!killed.success) throw new Error(killed.error || "could not stop the agent");
       }
       // No saved file means it only ever lived in memory — the kill was the

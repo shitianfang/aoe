@@ -18,8 +18,13 @@
  * Version snapshots are copied to ~/.prime/desktop/.previews/<workspace>/ and
  * recorded in an index.json next to the snapshots.
  *
+ * `onUpdate(changedKeys)` fires whenever a snapshot was added — the keys are
+ * what the client auto-opens Preview on, so it must be the real change set and
+ * never fire on a turn that wrote nothing.
+ *
  * The bridge owns transport; this module owns state:
  *   observe(sessionEvent)  feed tool_execution_* and agent_end events
+ *   flush()                snapshot what is pending, outside an agent_end
  *   declare(preview)       feed a preview_published event's `preview` payload
  *   list()                 -> [{ path, name, live, declared?, label?, versions }]
  *   read(path, v)          -> { buffer, contentType } for one version ("" = live)
@@ -89,10 +94,18 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       const rel = toRel(args?.path ?? args?.file_path);
       if (rel) touched.add(rel);
     } else if (event.type === "agent_end") {
-      const changed = snapshotTouched();
-      touched.clear();
-      if (changed && typeof onUpdate === "function") onUpdate();
+      flush();
     }
+  }
+
+  /** Take the pending snapshots now. A turn end is the usual trigger, but the
+   *  bridge also calls this for an agent nothing is attached to, where the
+   *  roster's running → idle edge is the only turn end it ever sees. */
+  function flush() {
+    const changed = snapshotTouched();
+    touched.clear();
+    if (changed.length > 0 && typeof onUpdate === "function") onUpdate(changed);
+    return changed;
   }
 
   /** Add one version snapshot for `key` unless the content already matches the
@@ -131,9 +144,10 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     return true;
   }
 
-  /** Snapshot every touched file whose content differs from its last version. */
+  /** Snapshot every touched file whose content differs from its last version;
+   *  returns the keys that actually gained one. */
   function snapshotTouched() {
-    let changed = false;
+    const changed = [];
     for (const rel of touched) {
       let buf;
       try {
@@ -141,7 +155,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       } catch {
         continue; // deleted or unreadable — nothing to snapshot
       }
-      if (snapshotKey(rel, buf)) changed = true;
+      if (snapshotKey(rel, buf)) changed.push(rel);
     }
     return changed;
   }
@@ -168,7 +182,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       return false; // declared but unreadable — nothing to snapshot
     }
     const changed = snapshotKey(key, buf, { declared: true, label: p.label, at: p.timestamp });
-    if (changed && typeof onUpdate === "function") onUpdate();
+    if (changed && typeof onUpdate === "function") onUpdate([key]);
     return changed;
   }
 
@@ -213,5 +227,5 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     return { buffer: fs.readFileSync(path.join(root, snap.file)), contentType };
   }
 
-  return { observe, touch, declare, list, read };
+  return { observe, touch, flush, declare, list, read };
 }

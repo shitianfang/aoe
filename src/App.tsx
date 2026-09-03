@@ -75,6 +75,18 @@ function filePathFromArgs(args: unknown): string | null {
   return p && p.length > 0 ? p : null;
 }
 
+/** Tool-row label: the file name when the args carry a path, else the first
+ *  line of code (ipython) — enough to see what actually ran. */
+function toolLabel(toolName: string, args: unknown): string {
+  const path = filePathFromArgs(args);
+  if (path) return `${toolName} · ${path.split(/[\\/]/).pop()}`;
+  const code = (args as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && code.trim()) {
+    return `${toolName} · ${code.trim().split("\n")[0].slice(0, 60)}`;
+  }
+  return toolName;
+}
+
 function upsertFile(files: FileActivity[], path: string, who: string): FileActivity[] {
   const name = path.split(/[\\/]/).pop() ?? path;
   const row: FileActivity = { path, name, who, at: clock() };
@@ -711,8 +723,9 @@ export function App() {
         }
         if (message.role !== "assistant") return;
         const text = extractText(message);
-        // Reasoning-only updates carry no text; never render an empty bubble.
-        if (text === "" && !daemonMsgRef.current) return;
+        // Reasoning-only updates carry no text — and some models pad a
+        // tool-only turn with bare whitespace; never render an empty bubble.
+        if (text.trim() === "" && !daemonMsgRef.current) return;
         const key = message.id ?? "assistant";
         const applyText = (itemId: string, value: string, streaming: boolean) =>
           setState((s) => ({
@@ -732,7 +745,7 @@ export function App() {
               clearTimeout(pendingRef.current.timer);
               pendingRef.current = null;
             }
-            if (text === "") {
+            if (text.trim() === "") {
               // The message ended with no words (tool-only) — drop its row.
               setState((s) => ({ ...s, timeline: s.timeline.filter((x) => x.id !== itemId) }));
             } else {
@@ -758,7 +771,7 @@ export function App() {
         const raw = String(event.toolName ?? "tool");
         const toolName = raw === "ipython" ? "python" : raw;
         const path = filePathFromArgs(event.args);
-        const label = path ? `${toolName} · ${path.split(/[\\/]/).pop()}` : toolName;
+        const label = toolLabel(toolName, event.args);
         const writes = toolName === "edit" || toolName === "write";
         if (path && writes) refreshPreview(); // live marker moves mid-turn
         setState((s) => ({
@@ -875,7 +888,7 @@ export function App() {
             ...s.rootTimelines,
             [root]: (s.rootTimelines[root] ?? [])
               .map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x))
-              .filter((x) => !(x.kind === "master" && !x.streaming && x.text === "")),
+              .filter((x) => !(x.kind === "master" && !x.streaming && x.text.trim() === "")),
           },
         }));
       } else if (t === "message_start" || t === "message_update" || t === "message_end") {
@@ -900,7 +913,7 @@ export function App() {
         if (message.role !== "assistant") return;
         const text = extractText(message);
         const cur = rootMsgRef.current[root];
-        if (text === "" && !cur) return;
+        if (text.trim() === "" && !cur) return;
         const key = message.id ?? "assistant";
         const applyText = (itemId: string, value: string, streaming: boolean) =>
           patchRootItems(root, (items) =>
@@ -919,7 +932,7 @@ export function App() {
             clearTimeout(p.timer);
             delete rootPendingRef.current[root];
           }
-          if (text === "") {
+          if (text.trim() === "") {
             // Tool-only message: drop the empty streaming row.
             patchRootItems(root, (items) => items.filter((x) => x.id !== cur.itemId));
           } else {
@@ -946,8 +959,7 @@ export function App() {
       } else if (t === "tool_execution_start") {
         const raw = String(event.toolName ?? "tool");
         const toolName = raw === "ipython" ? "python" : raw;
-        const path = filePathFromArgs(event.args);
-        const label = path ? `${toolName} · ${path.split(/[\\/]/).pop()}` : toolName;
+        const label = toolLabel(toolName, event.args);
         patchRootItems(root, (items) => [
           ...items,
           {
@@ -1097,11 +1109,29 @@ export function App() {
         // snapshot carries only messages, and wiping a running "python" row
         // mid-turn reads as a glitch.
         const items = foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
+        // A user message sent just before the attach snapshot was taken is in
+        // the local timeline but not yet in the snapshot — replacing wholesale
+        // would swallow it. Keep trailing user rows the snapshot doesn't have.
+        const snapUserTexts = new Set(
+          items
+            .flatMap((it) => (it.kind === "collapsed" ? it.items : [it]))
+            .filter((it): it is Extract<TimelineItem, { kind: "user" }> => it.kind === "user")
+            .map((it) => it.text),
+        );
         const liveTail = (prev: TimelineItem[] | undefined): TimelineItem[] => {
           if (!prev) return [];
           let i = prev.length;
-          while (i > 0 && (prev[i - 1].kind === "tool" || prev[i - 1].kind === "note")) i--;
-          return prev.slice(i).filter((x) => x.kind === "tool");
+          while (
+            i > 0 &&
+            (prev[i - 1].kind === "tool" || prev[i - 1].kind === "note" || prev[i - 1].kind === "user")
+          )
+            i--;
+          return prev
+            .slice(i)
+            .filter(
+              (x) =>
+                x.kind === "tool" || (x.kind === "user" && !snapUserTexts.has(x.text)),
+            );
         };
         clearRootStream(m.root);
         // The snapshot carries the root's own status blocks (schema 27) — the

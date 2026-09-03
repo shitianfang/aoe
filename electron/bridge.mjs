@@ -392,7 +392,8 @@ function slimHistory(messages) {
     if (!m || typeof m !== "object") continue;
     const at = typeof m.timestamp === "number" ? m.timestamp : undefined;
     if (m.role === "user" || m.role === "assistant") {
-      const text = contentText(m.content);
+      // Some models pad tool-only turns with bare whitespace — not a message.
+      const text = String(contentText(m.content) ?? "").trim();
       if (text) out.push({ role: m.role, text, ...(at !== undefined ? { at } : {}) });
     } else if (m.role === "custom" && m.customType === "agent_message") {
       const text = typeof m.details?.message === "string" ? m.details.message : "";
@@ -711,13 +712,17 @@ async function watchHelper(target) {
         const msg = thinChildMessage(inner.message);
         if (msg) broadcast({ type: "helper_event", sessionId: target, event: { kind: "msg", ...msg } });
       } else if (t === "tool_execution_start" || t === "tool_execution_end") {
+        // First line of code as detail (ipython) — "python" alone says nothing.
+        const raw = String(inner.toolName ?? "tool");
+        const base = raw === "ipython" ? "python" : raw;
+        const code = typeof inner.args?.code === "string" ? inner.args.code.trim().split("\n")[0].slice(0, 60) : "";
         broadcast({
           type: "helper_event",
           sessionId: target,
           event: {
             kind: "tool",
             id: String(inner.toolCallId ?? ""),
-            name: String(inner.toolName ?? "tool"),
+            name: code ? `${base} · ${code}` : base,
             status: t === "tool_execution_start" ? "running" : inner.isError ? "error" : "done",
           },
         });

@@ -68,14 +68,15 @@ function startBridge() {
       else req.pipe(upstream);
     };
     if (req.method === "POST" && req.url.includes("/chat/completions")) {
-      // The renderer bakes a model name at build time; the config decides at runtime.
+      // The renderer sends the user-picked model at runtime; env/config is the
+      // fallback default when it sends none.
       const chunks = [];
       req.on("data", (c) => chunks.push(c));
       req.on("end", () => {
         let body = Buffer.concat(chunks).toString("utf8");
         try {
           const parsed = JSON.parse(body);
-          parsed.model = model;
+          if (!parsed.model) parsed.model = model;
           body = JSON.stringify(parsed);
         } catch {
           /* not JSON — forward as-is */

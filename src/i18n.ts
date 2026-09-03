@@ -118,7 +118,6 @@ const ZH: Record<string, string> = {
   failed: "失败",
   stopped: "已停止",
   inactive: "未活动",
-  off: "未运行",
   queued: "排队中",
   done: "完成",
   error: "错误",
@@ -154,6 +153,15 @@ const ZH: Record<string, string> = {
   /* catalogs */
   "no skills installed.": "尚未安装技能。",
   "nothing here yet.": "这里还没有内容。",
+
+  /* extensions (on/off are also the Inspector's unattended chip words) */
+  Model: "模型",
+  on: "启用",
+  off: "关闭",
+  "claude -p · your local login": "claude -p · 本机登录环境",
+  "cloud models · api key": "云端模型 · API key",
+  "NIM model": "NIM 模型",
+  "no model extension is enabled": "未启用任何模型扩展",
 
   /* files column */
   "no file activity yet.": "还没有文件活动。",
@@ -321,7 +329,6 @@ const ZH: Record<string, string> = {
   Unattended: "无人值守",
   "Turns on with these limits. It steps in only after a failed check or a turn without evidence.":
     "按下面这些上限开启。仅在检查失败、或某轮没有交付证据时才介入。",
-  on: "开",
   "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.":
     "仅在检查失败、或某轮没有证据时介入;触及任一上限即停止。目标不受影响,继续推进。",
   Continued: "介入次数",

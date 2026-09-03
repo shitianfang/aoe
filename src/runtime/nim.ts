@@ -4,7 +4,7 @@
  * reaches this bundle.
  */
 
-declare const __NIM_MODEL__: string;
+import { getNimModel } from "./providers";
 
 // Packaged app: Electron main hosts the bridge on 127.0.0.1 and passes its
 // port via the page query. Dev: same-origin Vite proxy.
@@ -25,7 +25,7 @@ export async function streamChat(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: __NIM_MODEL__,
+      model: getNimModel(),
       messages,
       temperature: 0.5,
       max_tokens: 2048,

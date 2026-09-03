@@ -1968,7 +1968,6 @@ export function App() {
     <Composer
       master={state.master}
       targetState={targetState}
-      goal={state.goal}
       autonomous={state.autonomous}
       heartbeats={state.heartbeats}
       bridge={state.bridge}
@@ -1992,7 +1991,6 @@ export function App() {
     <Composer
       master={state.master}
       targetState={rootStateOf(name)}
-      goal={state.goal}
       autonomous={state.autonomous}
       heartbeats={state.heartbeats}
       bridge={state.bridge}

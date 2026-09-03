@@ -5,7 +5,6 @@ import type {
   BridgeState,
   ChildInfo,
   ComposerTarget,
-  GoalInfo,
   HeartbeatInfo,
   RootAgent,
 } from "../types";
@@ -39,7 +38,6 @@ export function Composer(props: {
   master: AgentState;
   /** Run state of the current composer target (a root target has its own). */
   targetState: AgentState;
-  goal: GoalInfo | null;
   autonomous: AutonomousInfo | null;
   heartbeats: HeartbeatInfo[];
   bridge: BridgeState | null;
@@ -266,7 +264,10 @@ export function Composer(props: {
     }
     const masterBusy = props.master === "working";
     const segs: Array<string | JSX.Element> = [];
-    if (props.goal?.active) segs.push(t("objective"));
+    // No "objective" chip here. It was the bare word with no value attached —
+    // it said a goal exists without saying what it is, while the Inspector's
+    // goal panel says both. Every other segment on this strip reports
+    // something happening right now; that one only reported a setting.
     const auto = props.autonomous;
     if (auto?.enabled) {
       const max = auto.limits?.maxContinuations;

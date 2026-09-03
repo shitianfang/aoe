@@ -294,7 +294,6 @@ const ZH: Record<string, string> = {
   SEND: "发送",
   STOP: "停止",
   "other agents": "其他智能体",
-  objective: "目标",
   "unattended {used} of {max}": "自动运行 {used}/{max}",
   "unattended on": "自动运行已开",
   "check failed": "检查失败",

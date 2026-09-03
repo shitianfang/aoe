@@ -164,16 +164,21 @@ export function Composer(props: {
         </select>
       );
     }
-    if (!daemonModels || daemonModels.models.length === 0) return null;
-    const cur = daemonModels.current;
+    // The picker stays mounted while the catalog is in flight. Unmounting it
+    // made the control disappear and the strip reflow every time the subject
+    // changed — the pick is unknown for that moment, which is what the empty
+    // value says; the dropdown itself is not.
+    const loading = !daemonModels || daemonModels.models.length === 0;
+    const cur = daemonModels?.current ?? null;
     return (
       <select
         className="mpick"
         value={cur ? `${cur.provider}::${cur.id}` : ""}
         aria-label={t("model")}
+        disabled={loading}
         title={cur?.name ?? ""}
         onChange={(e) => {
-          const m = daemonModels.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
+          const m = daemonModels?.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
           if (!m) return;
           setDaemonModels((st) => (st ? { ...st, current: m } : st));
           setDaemonModel(m, modelRoot).catch(() =>
@@ -186,10 +191,10 @@ export function Composer(props: {
             implying the subject sits on whatever happens to sort first. */}
         {!cur && <option value="">—</option>}
         {cur &&
-          !daemonModels.models.some((x) => x.provider === cur.provider && x.id === cur.id) && (
+          !(daemonModels?.models ?? []).some((x) => x.provider === cur.provider && x.id === cur.id) && (
             <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>
           )}
-        {daemonModels.models.map((m) => (
+        {(daemonModels?.models ?? []).map((m) => (
           <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
             {m.name}
           </option>

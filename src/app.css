@@ -446,7 +446,11 @@ body.resizing iframe { pointer-events: none; }
 .transcript.hevents .ev { margin-left: 0; }
 
 /* ---- composer (centered, self-contained box; input on top, controls below) ---- */
-.strip { align-self: center; width: 100%; max-width: 620px; min-height: 23px; padding: 10px 18px 0; display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
+/* Same box model as .composer below it — 620 of content inside 16 of padding —
+   so the picker's left edge lands exactly on the input box's, at every
+   width. The old 620/18 split put it 18px inboard of the box at wide
+   widths and 2px at narrow ones, which read as a wobble. */
+.strip { align-self: center; width: 100%; max-width: 652px; min-height: 23px; padding: 10px 16px 0; display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .strip .segs { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .strip b { color: var(--green); font-weight: 500; }
 .strip .err { color: var(--red); text-transform: none; letter-spacing: 0; }
@@ -469,6 +473,7 @@ body.resizing iframe { pointer-events: none; }
    answers; connected: the runtime's own model) */
 .mpick { flex-shrink: 0; border: 0; background: none; padding: 0; max-width: 200px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
 .mpick:hover, .mpick:focus { color: var(--t2); }
+.mpick:disabled { color: var(--t3); opacity: .6; cursor: default; }
 .dmode { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .dmode span.static { cursor: default; color: var(--t3); }
 /* Long-running switch: same quiet mono register as the delivery note it sits

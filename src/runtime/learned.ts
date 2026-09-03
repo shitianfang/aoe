@@ -9,6 +9,8 @@ export interface LessonRecord {
   owner: string | null;
   /** The lesson's own one-line summary (harness `trigger`). */
   trigger?: string;
+  /** Refiner-emitted short display title; absent on lessons kept before it existed. */
+  title?: string;
   /** Machine origin (schema 27): "auto" | "manual" | "agent"; absent on older rows. */
   source?: string;
   changes?: string[];

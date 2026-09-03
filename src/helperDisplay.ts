@@ -106,6 +106,23 @@ export function injectionReasonText(reason: "gate_failed" | "missing_terminal_ev
   return reason === "gate_failed" ? t("after a failed check") : t("no evidence in the turn");
 }
 
+/** Row titles must survive a narrow column; older lessons have no short title,
+ *  so their summary's first clause stands in, hard-capped. */
+const LESSON_TITLE_MAX = 28;
+
+/** Short row title for a lesson: the refiner's own title when present, else
+ *  the summary cut at its first clause/sentence break. Null when neither
+ *  exists — caller shows its generic "lesson" word then. */
+export function lessonRowTitle(lesson: { title?: string; trigger?: string }): string | null {
+  if (lesson.title !== undefined && lesson.title !== "") return lesson.title;
+  const s = (lesson.trigger ?? "").replace(/\s+/g, " ").trim();
+  if (s === "") return null;
+  const brk = s.match(/[。,,;;、—!?!?]|\.(?=\s|$)/u);
+  const clause = (brk?.index !== undefined && brk.index > 0 ? s.slice(0, brk.index) : s).trim();
+  if (clause === "") return null;
+  return clause.length > LESSON_TITLE_MAX ? `${clause.slice(0, LESSON_TITLE_MAX - 1).trimEnd()}…` : clause;
+}
+
 /** Lesson source → product words ("who asked for this lesson"). */
 export function lessonSourceText(source: string | undefined): string | null {
   if (source === "auto") return t("auto");

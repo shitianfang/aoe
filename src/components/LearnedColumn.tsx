@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import type { LearnedSel } from "../types";
-import { lessonSourceText } from "../helperDisplay";
+import { lessonRowTitle, lessonSourceText } from "../helperDisplay";
 import { getLang, useT } from "../i18n";
-import { BotAvatar } from "./BotAvatar";
 import { fetchLessons, type LessonRecord } from "../runtime/learned";
 
 /** Today's lessons keep just the clock; older ones a short date. */
@@ -22,8 +21,9 @@ function shortWhen(iso?: string): string {
 }
 
 /** The Learned home (rail ⚡): every kept lesson, grouped by who it belongs
- *  to. A row is time + the lesson's own one-line summary — the full record
- *  opens as a center pane when clicked (App owns that). */
+ *  to. A row is the lesson's short title with the time trailing, plus a muted
+ *  owner/source suffix — the full record (summary and all) opens as a center
+ *  pane when clicked (App owns that). */
 export function LearnedColumn(props: {
   selected: LearnedSel | null;
   /** Bumped when a new lesson lands — re-pulls the list. */
@@ -51,6 +51,8 @@ export function LearnedColumn(props: {
   const row = (r: LessonRecord) => {
     const on = props.selected !== null && props.selected.id === r.id && props.selected.owner === r.owner;
     const src = lessonSourceText(r.source);
+    // No avatars here — attribution is the muted "owner · source" suffix.
+    const meta = [r.owner, src].filter((part): part is string => part !== null);
     return (
       <button
         key={`${r.owner ?? "*"}-${r.id}`}
@@ -58,16 +60,11 @@ export function LearnedColumn(props: {
         title={r.trigger ?? ""}
         onClick={() => props.onSelect(on ? null : { owner: r.owner, id: r.id })}
       >
-        <span className="meta">
-          {r.owner !== null &&
-            (r.owner === "master" ? <span className="chip master sm" /> : <BotAvatar seed={r.owner} sm />)}
-          {r.owner !== null && <span className="who">{r.owner}</span>}
+        <span className="ttl">
+          <span className="tx">{lessonRowTitle(r) ?? t("lesson")}</span>
           <span className="tm">{shortWhen(r.created_at)}</span>
         </span>
-        <span className="sum">
-          {r.trigger ?? t("lesson")}
-          {src !== null && <span className="src"> · {src}</span>}
-        </span>
+        {meta.length > 0 && <span className="meta">{meta.join(" · ")}</span>}
       </button>
     );
   };

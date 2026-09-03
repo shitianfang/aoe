@@ -27,10 +27,20 @@ function stateLine(c: ChildInfo): JSX.Element {
   }
   if (c.status === "done") {
     if (c.repliedSinceTask) return <>{t("finished{done}", { done })} · {t("replied")}</>;
+    if (!reachable(c)) {
+      // Ran inline and is gone — its answer went to master, nothing waits on
+      // the user, so no red flag here.
+      return (
+        <>
+          {t("finished{done}", { done })} ·{" "}
+          {t(c.answerPreview ? "answered master · ran inline" : "ran inline, not reachable")}
+        </>
+      );
+    }
     return (
       <>
         {t("finished{done}", { done })} · <span className="need">{t("no reply yet")}</span> ·{" "}
-        {t(reachable(c) ? "still reachable" : "ran inline, not reachable")}
+        {t("still reachable")}
       </>
     );
   }
@@ -99,13 +109,40 @@ export function HelperView(props: {
             )}
           </span>
         </div>
-        {c.label && <div className="r3">{t("Task — “{label}”", { label: c.label })}</div>}
+        {/* Unreachable helpers show the task as a message row in the record
+            below — no duplicate header line. */}
+        {c.label && reachable(c) && (
+          <div className="r3">{t("Task — “{label}”", { label: c.label })}</div>
+        )}
       </div>
       <div className="transcript hevents">
         {/* Live transcript from the helper's own session (second attach on the
             daemon socket). Only helpers with an activeSessionId are watchable. */}
         {!reachable(c) ? (
-          <div className="div">{t("not reachable — ran inline or removed")}</div>
+          // The live session is gone, but the exchange itself is known: the
+          // task master sent in, and (when the daemon kept it) the answer.
+          <>
+            {c.label ? (
+              <div className="msg user">
+                <span className="chip ghost">M</span>
+                <span className="body">
+                  <span className="afrom">master</span>
+                  {c.label}
+                </span>
+              </div>
+            ) : (
+              <div className="div">{t("not reachable — ran inline or removed")}</div>
+            )}
+            {c.answerPreview ? (
+              <div className="msg">
+                <BotAvatar seed={name} />
+                <span className="body">
+                  <span className="afrom">{name}</span>
+                  {c.answerPreview}
+                </span>
+              </div>
+            ) : null}
+          </>
         ) : props.transcript.length === 0 ? (
           <div className="div">{t("transcript · nothing yet")}</div>
         ) : (
@@ -138,17 +175,18 @@ export function HelperView(props: {
           )
         )}
         {props.working ? <div className="div">{props.working.toLowerCase()}</div> : null}
-        <div className="div">{t("observed")}</div>
-        {props.events.length === 0 ? (
-          <div className="div">{t("nothing observed yet")}</div>
-        ) : (
-          props.events.map((e) => (
-            <div className={e.tone ? `ev ${e.tone}` : "ev"} key={e.id}>
-              <span className="ic" />
-              <strong>{e.text}</strong>
-              <span className="rt">{e.rt}</span>
-            </div>
-          ))
+        {/* The observed feed earns its header only when something was observed. */}
+        {props.events.length > 0 && (
+          <>
+            <div className="div">{t("observed")}</div>
+            {props.events.map((e) => (
+              <div className={e.tone ? `ev ${e.tone}` : "ev"} key={e.id}>
+                <span className="ic" />
+                <strong>{e.text}</strong>
+                <span className="rt">{e.rt}</span>
+              </div>
+            ))}
+          </>
         )}
       </div>
       <div className="strip">{stripLine(c)}</div>

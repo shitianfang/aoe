@@ -180,7 +180,7 @@ const ZH: Record<string, string> = {
   "published · {label}": "已发布 · {label}",
   "delivered · {at}": "已送达 · {at}",
   "queued, lands at its next step": "已排队,将在下一步送达",
-  "msg ← {from}": "消息 ← {from}",
+  "msg ← {from}": "{from} 发来消息",
 
   /* panes */
   "nothing open — pick an agent on the left, or drag one here":
@@ -237,6 +237,9 @@ const ZH: Record<string, string> = {
   "{name} ran inline — not reachable": "{name} 当场跑完 —— 联系不上",
   "started by master": "由 master 启动",
   "finished without replying": "完成但未回复",
+  "answered master · ran inline": "已答复 master · 当场跑完",
+  "reply to master": "给 master 的答复",
+  "wrapped up": "收工了",
   "failed · {error}": "失败 · {error}",
 
   /* lessons */
@@ -308,6 +311,11 @@ const ZH: Record<string, string> = {
   "master acts when you message it. Objectives and check-ins need the runtime (bridge offline).":
     "你发消息时 master 才行动。目标与签到需要运行时(bridge 离线)。",
   "set an objective…": "设定一个目标…",
+  "set an objective for {name}…": "给 {name} 设定一个目标…",
+  "{name} acts when you message it. An objective keeps it going on its own.":
+    "你发消息时 {name} 才行动。设定目标可让它自行推进。",
+  "{name} acts when you message it. Objectives and check-ins need the runtime (bridge offline).":
+    "你发消息时 {name} 才行动。目标与定时跟进需要运行时(bridge 离线)。",
   Unattended: "无人值守",
   on: "开",
   "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.":
@@ -334,8 +342,16 @@ const ZH: Record<string, string> = {
   soon: "稍后",
   sched: "排期",
   cancel: "取消",
-  "new check-in… (every 30m: instruction)": "新建定时跟进…(every 30m: 指令)",
-  "format: every 30m: instruction": "格式:every 30m: 指令",
+  "new check-in": "新建定时跟进",
+  "every 5m": "每 5 分钟",
+  "every 15m": "每 15 分钟",
+  "every 30m": "每 30 分钟",
+  "every 1h": "每小时",
+  "every 3h": "每 3 小时",
+  daily: "每天",
+  "wake it with this prompt…": "到点用这条提示唤醒它…",
+  add: "添加",
+  apply: "设定",
   Today: "今天",
   "Last lesson": "最近一条经验",
   "Next review": "下次评估",
@@ -346,4 +362,11 @@ const ZH: Record<string, string> = {
   active: "进行中",
   budget_limited: "预算用尽",
   complete: "已完成",
+
+  /* inspector · subject binding */
+  Task: "任务",
+  "billed to master": "计入 master",
+  "runs for master — its objective and check-ins live on master":
+    "为 master 工作 —— 目标与定时跟进都在 master 身上",
+  "loading state…": "状态载入中…",
 };

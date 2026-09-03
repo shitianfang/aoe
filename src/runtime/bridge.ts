@@ -4,7 +4,7 @@
  * hosted by Electron main.
  */
 
-import type { AutoRefineInfo, AutonomousInfo, HelperFeedEvent } from "../types";
+import type { AutoRefineInfo, AutonomousInfo, GoalInfo, HelperFeedEvent } from "../types";
 
 export interface BridgeHello {
   connected: boolean;
@@ -34,7 +34,16 @@ export type BridgeMessage =
   | { type: "helper_working"; sessionId: string; text: string }
   // Watched other-root sessions, keyed by session name. root_snapshot replaces
   // the transcript (partial = attached mid-run, still catching up).
-  | { type: "root_snapshot"; root: string; messages: unknown[]; partial?: boolean; running?: boolean }
+  | {
+      type: "root_snapshot";
+      root: string;
+      messages: unknown[];
+      partial?: boolean;
+      running?: boolean;
+      /** The root's own connection-state blocks (schema 27) — what the
+       *  Inspector binds to when this root is selected. */
+      state?: { goal?: unknown; autonomous?: unknown; autoRefine?: unknown };
+    }
   | { type: "root_event"; root: string; event: Record<string, unknown> }
   | { type: "root_working"; root: string; text: string };
 
@@ -135,6 +144,30 @@ export async function fetchAutonomous(): Promise<{
   if (!r.ok) throw new Error(`autonomous status failed (${r.status})`);
   const data = (await r.json()) as { autonomous?: AutonomousInfo | null; autoRefine?: AutoRefineInfo | null };
   return { autonomous: data.autonomous ?? null, autoRefine: data.autoRefine ?? null };
+}
+
+/** A watched root session's own status blocks (GET /bridge/root-status).
+ *  attached:false — not watched yet — means keep showing "loading". */
+export async function fetchRootStatus(name: string): Promise<{
+  attached: boolean;
+  goal: GoalInfo | null;
+  autonomous: AutonomousInfo | null;
+  autoRefine: AutoRefineInfo | null;
+}> {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/root-status?name=${encodeURIComponent(name)}`);
+  if (!r.ok) throw new Error(`root status failed (${r.status})`);
+  const data = (await r.json()) as {
+    attached?: boolean;
+    goal?: GoalInfo | null;
+    autonomous?: AutonomousInfo | null;
+    autoRefine?: AutoRefineInfo | null;
+  };
+  return {
+    attached: Boolean(data.attached),
+    goal: data.goal ?? null,
+    autonomous: data.autonomous ?? null,
+    autoRefine: data.autoRefine ?? null,
+  };
 }
 
 /** Pull readable text out of an AgentMessage-shaped object. */

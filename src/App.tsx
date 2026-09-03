@@ -43,6 +43,7 @@ import {
   extractText,
   bridgeUrl,
   fetchAutonomous,
+  fetchRootStatus,
   type BridgeMessage,
 } from "./runtime/bridge";
 import { fetchPreviewFiles } from "./runtime/preview";
@@ -283,13 +284,22 @@ function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
       last = m.at;
     }
     if (m.role === "user") out.push({ kind: "user", id: id(), text: m.text, at: hhmm(m.at) });
-    else if (m.role === "assistant") out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at) });
-    else out.push({
-      kind: "note",
-      id: id(),
-      text: tr("msg ← {from}", { from: m.from ?? "agent" }),
-      rt: hhmm(m.at),
-    });
+    else if (m.role === "assistant") {
+      // Tool-only turns replay as empty assistant messages — skip them, an
+      // avatar with no words is just a hole in the rhythm.
+      if (m.text.trim() !== "") out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at) });
+    }
+    else if (m.text.trim() !== "") {
+      // Another agent's message into this conversation — a real message row.
+      out.push({ kind: "agent", id: id(), from: m.from ?? "agent", text: m.text, at: hhmm(m.at) });
+    } else {
+      out.push({
+        kind: "note",
+        id: id(),
+        text: tr("msg ← {from}", { from: m.from ?? "agent" }),
+        rt: hhmm(m.at),
+      });
+    }
   }
   return out;
 }
@@ -351,6 +361,8 @@ export function App() {
     rootLoad: {},
     rootStates: {},
     rootWorking: {},
+    rootGoals: {},
+    rootAutonomous: {},
     bridge: null,
     goal: null,
     children: [],
@@ -456,6 +468,24 @@ export function App() {
     const t = setInterval(refreshOthers, 30_000);
     return () => clearInterval(t);
   }, [refreshOthers]);
+
+  /** Re-pull one root's status blocks (goal/unattended) from its connection
+   *  state — read-only, no transcript write. Used when the Inspector binds to
+   *  a root: on select, on bridge signals, and after its own writes. */
+  const refreshRootStatus = useCallback((name: string) => {
+    fetchRootStatus(name)
+      .then((d) => {
+        if (!d.attached) return; // not watched yet — the snapshot will land
+        setState((s) => ({
+          ...s,
+          rootGoals: { ...s.rootGoals, [name]: d.goal },
+          rootAutonomous: { ...s.rootAutonomous, [name]: d.autonomous },
+        }));
+      })
+      .catch(() => {
+        /* bridge offline */
+      });
+  }, []);
 
   /* ---- daemon bridge ingestion ---- */
   useEffect(() => {
@@ -604,15 +634,12 @@ export function App() {
                   (from?.activeSessionId !== undefined && c.activeSessionId === from.activeSessionId) ||
                   c.sessionName === fromName,
               );
-              // Roster can lag the first reply — keep the text in the timeline
-              // row itself so nothing is lost when there is no helper row yet.
-              const brief = (d?.message ?? "").slice(0, 60);
-              const note: TimelineItem = {
-                kind: "note",
-                id: id(),
-                text: child || !brief ? `msg ← ${fromName}` : `msg ← ${fromName} · “${brief}”`,
-                rt: clock(),
-              };
+              // A full message row with the sender's avatar; empty payloads
+              // fall back to a quiet note chip.
+              const body = (d?.message ?? "").trim();
+              const note: TimelineItem = body
+                ? { kind: "agent", id: id(), from: fromName, text: body, at: clock() }
+                : { kind: "note", id: id(), text: `msg ← ${fromName}`, rt: clock() };
               if (!child) return { ...s, timeline: [...s.timeline, note] };
               s = { ...s, timeline: [...s.timeline, note] };
               const excerpt = (d?.message ?? "").slice(0, 80);
@@ -684,7 +711,12 @@ export function App() {
               clearTimeout(pendingRef.current.timer);
               pendingRef.current = null;
             }
-            applyText(itemId, text, false);
+            if (text === "") {
+              // The message ended with no words (tool-only) — drop its row.
+              setState((s) => ({ ...s, timeline: s.timeline.filter((x) => x.id !== itemId) }));
+            } else {
+              applyText(itemId, text, false);
+            }
             daemonMsgRef.current = null;
           } else if (pendingRef.current?.itemId === itemId) {
             pendingRef.current.text = text;
@@ -800,11 +832,18 @@ export function App() {
     };
 
     /** Mirror of onEvent for another root's session, scoped to that root's own
-     *  timeline and run state (no goal/lesson/preview side effects — those
-     *  panels stay master's). */
+     *  timeline, run state, and status blocks (goal/unattended feed the
+     *  Inspector when this root is selected; lesson/preview stay master's). */
     const onRootEvent = (root: string, event: Record<string, unknown>) => {
       const t = event.type as string;
-      if (t === "agent_start" || t === "turn_start") {
+      if (t === "goal_update") {
+        // The root's own objective moved (a "/goal …" write or its runtime) —
+        // the Inspector bound to this root re-renders from here.
+        setState((s) => ({
+          ...s,
+          rootGoals: { ...s.rootGoals, [root]: (event.goal as GoalInfo) ?? null },
+        }));
+      } else if (t === "agent_start" || t === "turn_start") {
         setState((s) => ({ ...s, rootStates: { ...s.rootStates, [root]: "working" } }));
       } else if (t === "agent_end") {
         clearRootStream(root);
@@ -820,8 +859,25 @@ export function App() {
           },
         }));
       } else if (t === "message_start" || t === "message_update" || t === "message_end") {
-        const message = event.message as { role?: string; id?: unknown } | undefined;
-        if (!message || message.role !== "assistant") return;
+        const message = event.message as
+          | { role?: string; id?: unknown; customType?: string; details?: unknown }
+          | undefined;
+        if (!message) return;
+        // The root's unattended counters ride autonomous_status customs on its
+        // own stream, exactly like master's.
+        if (message.role === "custom") {
+          if (t === "message_end" && message.customType === "autonomous_status") {
+            setState((s) => ({
+              ...s,
+              rootAutonomous: {
+                ...s.rootAutonomous,
+                [root]: (message.details as AutonomousInfo) ?? null,
+              },
+            }));
+          }
+          return;
+        }
+        if (message.role !== "assistant") return;
         const text = extractText(message);
         const cur = rootMsgRef.current[root];
         if (text === "" && !cur) return;
@@ -843,7 +899,12 @@ export function App() {
             clearTimeout(p.timer);
             delete rootPendingRef.current[root];
           }
-          applyText(cur.itemId, text, false);
+          if (text === "") {
+            // Tool-only message: drop the empty streaming row.
+            patchRootItems(root, (items) => items.filter((x) => x.id !== cur.itemId));
+          } else {
+            applyText(cur.itemId, text, false);
+          }
           delete rootMsgRef.current[root];
         } else {
           const p = rootPendingRef.current[root];
@@ -935,6 +996,8 @@ export function App() {
             rootLoad: {},
             rootStates: {},
             rootWorking: {},
+            rootGoals: {},
+            rootAutonomous: {},
             goal: null,
             children: [],
             helperEvents: {},
@@ -1005,6 +1068,9 @@ export function App() {
         // as master's attach history. Replaces wholesale (resync semantics).
         const items = foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
         clearRootStream(m.root);
+        // The snapshot carries the root's own status blocks (schema 27) — the
+        // Inspector binds to them; a key present (even null) means "loaded".
+        const rstate = m.state;
         setState((s) => ({
           ...s,
           rootTimelines: { ...s.rootTimelines, [m.root]: items },
@@ -1013,6 +1079,12 @@ export function App() {
             m.running === undefined
               ? s.rootStates
               : { ...s.rootStates, [m.root]: m.running ? "working" : "idle" },
+          rootGoals: rstate
+            ? { ...s.rootGoals, [m.root]: (rstate.goal as GoalInfo | null) ?? null }
+            : s.rootGoals,
+          rootAutonomous: rstate
+            ? { ...s.rootAutonomous, [m.root]: (rstate.autonomous as AutonomousInfo | null) ?? null }
+            : s.rootAutonomous,
         }));
       } else if (m.type === "root_event") {
         onRootEvent(m.root, m.event);
@@ -1395,6 +1467,16 @@ export function App() {
       for (const name of names) bridgeCmd("unwatch_root", undefined, { target: name }).catch(() => undefined);
     };
   }, [rootWatchKey, refreshOthers]);
+
+  // The Inspector binds to the selected root: keep its status blocks fresh on
+  // select and whenever the bridge signals state may have moved (inspectorKey).
+  // The watch_root snapshot delivers the first state; this covers re-pulls.
+  const selRootForStatus = state.selectedRoot;
+  const bridgeConnected = Boolean(state.bridge?.connected);
+  useEffect(() => {
+    if (!selRootForStatus || !bridgeConnected) return;
+    refreshRootStatus(selRootForStatus);
+  }, [selRootForStatus, bridgeConnected, inspectorKey, refreshRootStatus]);
 
   // Persist the tab layout per workspace. Guarded by splitKeyRef so nothing
   // writes before the restore.
@@ -1824,7 +1906,19 @@ export function App() {
           bridge={state.bridge}
           heartbeats={state.heartbeats}
           autonomous={state.autonomous}
+          selectedChild={selectedChild}
+          selectedRoot={state.selectedRoot}
+          rootGoal={state.selectedRoot ? state.rootGoals[state.selectedRoot] ?? null : null}
+          rootAutonomous={
+            state.selectedRoot ? state.rootAutonomous[state.selectedRoot] ?? null : null
+          }
+          rootLoaded={
+            state.selectedRoot !== null &&
+            Object.prototype.hasOwnProperty.call(state.rootGoals, state.selectedRoot)
+          }
+          rootState={state.selectedRoot ? rootStateOf(state.selectedRoot) : "idle"}
           refreshKey={inspectorKey}
+          onRootRefresh={refreshRootStatus}
           onOpenLearn={() => {
             // Fresh look at the history (newest record opens expanded), not a
             // stale entry selection from an earlier click.

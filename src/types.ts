@@ -59,6 +59,9 @@ export type TimelineItem =
   | { kind: "lesson"; id: string; result: LessonResult; at: string; ts?: number }
   /** Quiet chip row for secondary events (agent messages, queue notes) — no rule line. */
   | { kind: "note"; id: string; text: string; rt?: string; tone?: "" | "bad"; ts?: number }
+  /** A message another agent sent into this conversation (e.g. a helper's
+   *  reply to master) — rendered as a normal message row with its avatar. */
+  | { kind: "agent"; id: string; from: string; text: string; at: string; ts?: number }
   /** Folded run of older history rows; renders as one "N earlier turns · show" divider. */
   | { kind: "collapsed"; id: string; count: number; items: TimelineItem[] };
 
@@ -107,6 +110,8 @@ export interface ChildInfo {
   /** Epoch ms when the helper reached its terminal status (schema 27);
    *  absent on older daemons and on helpers rehydrated after a restart. */
   completedAt?: number;
+  /** Tokens this helper used, billed to master (context tree). */
+  tokenCount?: number;
 }
 
 /** One line in a helper's observed-events list (from master's timeline + child updates). */
@@ -186,6 +191,10 @@ export interface HeartbeatInfo {
   deliveryMode?: string;
   schedule?: { expression?: string };
   nextRunAt?: string;
+  /** Which session this check-in belongs to: "master" for this workspace's
+   *  master, else the root session's name (bridge-stamped). Absent when the
+   *  bridge cannot tell — such rows are shown nowhere rather than guessed. */
+  subject?: string;
 }
 
 /** AgentAutonomousStatus subset (autonomous_status custom messages, the attach
@@ -286,6 +295,12 @@ export interface AppState {
   rootStates: Record<string, AgentState>;
   /** Root runtime's setWorkingMessage copy per root ("" = cleared). */
   rootWorking: Record<string, string>;
+  /** Per-root goal state (root_snapshot state.goal + root goal_update events).
+   *  A key present (even null) means the root's connection state has arrived —
+   *  the Inspector shows "loading" until then, never empty panels. */
+  rootGoals: Record<string, GoalInfo | null>;
+  /** Per-root unattended status (root_snapshot state + status re-pulls). */
+  rootAutonomous: Record<string, AutonomousInfo | null>;
   bridge: BridgeState | null;
   goal: GoalInfo | null;
   children: ChildInfo[];

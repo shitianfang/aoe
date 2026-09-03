@@ -4,12 +4,14 @@ import type {
   AutoRefineInfo,
   AutonomousInfo,
   BridgeState,
+  ChildInfo,
   CronInfo,
   GoalInfo,
   HeartbeatInfo,
 } from "../types";
-import { hhmmEpoch, injectionReasonText } from "../helperDisplay";
-import { bridgeCmd, bridgeUrl, fetchAutonomous } from "../runtime/bridge";
+import { helperName, hhmmEpoch, injectionReasonText, reachable, statusWord } from "../helperDisplay";
+import { bridgeCmd, bridgeUrl, fetchAutonomous, fetchRootStatus } from "../runtime/bridge";
+import { BotAvatar } from "./BotAvatar";
 import { getLang, t as tr, useT } from "../i18n";
 
 function hhmm(d: Date): string {
@@ -48,6 +50,18 @@ const suffixedOr = (v: string, suffixes: string, fallback: string) => {
     ? s
     : fallback;
 };
+
+/** Check-in intervals the runtime accepts verbatim: "every Nm/Nh" parses as an
+ *  interval schedule, "@daily" is a built-in cron alias (0 0 * * *). No other
+ *  forms are offered — nothing for the user to type or learn. */
+const CHECKIN_INTERVALS = [
+  { id: "5m", schedule: "every 5m", label: "every 5m" },
+  { id: "15m", schedule: "every 15m", label: "every 15m" },
+  { id: "30m", schedule: "every 30m", label: "every 30m" },
+  { id: "1h", schedule: "every 1h", label: "every 1h" },
+  { id: "3h", schedule: "every 3h", label: "every 3h" },
+  { id: "daily", schedule: "@daily", label: "daily" },
+] as const;
 
 /** Refinement rows in the harness state files (GET /bridge/learned). */
 interface LearnedSummary {
@@ -92,22 +106,97 @@ function summarizeLearned(data: unknown): LearnedSummary | null {
   return { today, last: stamp(last) };
 }
 
+/** Honest helper panel: helpers have no objective / unattended / check-ins of
+ *  their own — only their task, status, cost (billed to master), and reach. */
+function HelperInspector(props: { child: ChildInfo }) {
+  const t = useT();
+  const c = props.child;
+  const name = helperName(c);
+  const word = statusWord(c);
+  const terminal = c.status === "done" || c.status === "error" || c.status === "cancelled";
+  return (
+    <aside className="insp">
+      <div className="subj">
+        <BotAvatar seed={name} />
+        <span className="nm">{name}</span>
+        <span className="st">{t("helper")}</span>
+      </div>
+      <div className="panel">
+        <div className="phead">
+          <span>{t("Task")}</span>
+        </div>
+        {c.label && <div className="rule">“{c.label}”</div>}
+        <div className="kv">
+          <span className="k">{t("Status")}</span>
+          <span className={word === "running" ? "v ok" : "v"}>{t(word)}</span>
+        </div>
+        {terminal && typeof c.completedAt === "number" && (
+          <div className="kv">
+            <span className="k">{t("finished")}</span>
+            <span className="v faint">{hhmmEpoch(c.completedAt)}</span>
+          </div>
+        )}
+        {typeof c.tokenCount === "number" && c.tokenCount > 0 && (
+          <div className="kv">
+            <span className="k">{t("Tokens")}</span>
+            <span className="v faint">
+              {tk(c.tokenCount)} · {t("billed to master")}
+            </span>
+          </div>
+        )}
+        <div className="rule">
+          {t(reachable(c) ? "still reachable" : "ran inline, not reachable")}
+        </div>
+      </div>
+      <div className="panel">
+        <div className="rule">{t("runs for master — its objective and check-ins live on master")}</div>
+      </div>
+    </aside>
+  );
+}
+
 export function Inspector(props: {
   master: AgentState;
   goal: GoalInfo | null;
   bridge: BridgeState | null;
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
+  /** Selection the panel binds to (the focused pane's agent): a helper wins,
+   *  else a root by name, else master. */
+  selectedChild: ChildInfo | null;
+  selectedRoot: string | null;
+  /** The selected root's own state (null until its snapshot lands). */
+  rootGoal: GoalInfo | null;
+  rootAutonomous: AutonomousInfo | null;
+  /** The selected root's connection state has arrived — until then the panels
+   *  say "loading", never "none". */
+  rootLoaded: boolean;
+  rootState: AgentState;
   /** Bumped by App when the bridge state behind the pulled rows may have moved
    *  (attach, heartbeats_changed, refine_complete) — re-pulls crons and lessons. */
   refreshKey?: number;
   onOpenLearn: () => void;
+  /** Ask App to re-pull the selected root's status blocks (after a write). */
+  onRootRefresh: (name: string) => void;
 }) {
   const t = useT();
-  const goal = props.goal;
+  // Subject of every panel below: a helper (honest short panel), a root
+  // session, or master. The helper case renders its own component.
+  const child = props.selectedChild;
+  const root = child ? null : props.selectedRoot;
+  const subjectName = root ?? "master";
+  const goal = root ? props.rootGoal : props.goal;
   const goalActive = Boolean(goal?.active);
-  const auto = props.autonomous;
+  const auto = root ? props.rootAutonomous : props.autonomous;
   const online = Boolean(props.bridge?.connected);
+  const loaded = root ? props.rootLoaded : true;
+  // Check-ins are per session; rows are bridge-stamped with their subject.
+  // Unstamped rows (identity unknown) are shown nowhere rather than guessed;
+  // on old bridges without stamping, everything degrades to master's panel.
+  const stamped = props.heartbeats.some((h) => h.subject !== undefined);
+  const heartbeats = props.heartbeats.filter((h) =>
+    root ? h.subject === root : stamped ? h.subject === "master" : true,
+  );
 
   const [objText, setObjText] = useState("");
   const [objErr, setObjErr] = useState<string | null>(null);
@@ -116,6 +205,7 @@ export function Inspector(props: {
   const [limTokens, setLimTokens] = useState(UNATTENDED_DEFAULTS.tokens);
   const [limTime, setLimTime] = useState(UNATTENDED_DEFAULTS.time);
   const [limCont, setLimCont] = useState(UNATTENDED_DEFAULTS.continued);
+  const [hbEvery, setHbEvery] = useState<string>("30m");
   const [hbText, setHbText] = useState("");
   const [hbErr, setHbErr] = useState<string | null>(null);
   const [crons, setCrons] = useState<CronInfo[]>([]);
@@ -126,16 +216,23 @@ export function Inspector(props: {
 
   const refreshKey = props.refreshKey ?? 0;
 
+  // Scheduled re-entries are master's (cron_list is scoped to its session).
   const loadCrons = useCallback(() => {
+    if (root) {
+      setCrons([]);
+      return;
+    }
     fetch(bridgeUrl("/bridge/crons"))
       .then((r) => r.json())
       .then((d) => setCrons(Array.isArray(d?.crons) ? (d.crons as CronInfo[]) : []))
       .catch(() => setCrons([])); // bridge offline — no rows rather than stale ones
-  }, []);
+  }, [root]);
 
   useEffect(() => {
     loadCrons();
-    fetch(bridgeUrl("/bridge/learned"))
+    // Lessons follow the subject: a root's own local harness rides
+    // ?root=<name>; the global scope is shared either way.
+    fetch(bridgeUrl(root ? `/bridge/learned?root=${encodeURIComponent(root)}` : "/bridge/learned"))
       .then((r) => r.json())
       .then((d) => {
         setLearned(summarizeLearned(d));
@@ -146,7 +243,16 @@ export function Inspector(props: {
         setLearned(null);
         setAutoRefine(null);
       });
-  }, [loadCrons, refreshKey]);
+  }, [loadCrons, refreshKey, root]);
+
+  // Error rows and drafts are per subject — never carried across a selection.
+  useEffect(() => {
+    setObjErr(null);
+    setAutoErr(null);
+    setHbErr(null);
+    setObjText("");
+    setHbText("");
+  }, [child?.id, root]);
 
   const startedAt = auto?.enabled ? auto.startedAt : undefined;
   useEffect(() => {
@@ -156,10 +262,14 @@ export function Inspector(props: {
   }, [startedAt]);
 
   // Objective writes are "/goal …" prompts intercepted by the session (no model
-  // turn); state comes back via goal_update. Same pattern for unattended.
+  // turn); state comes back via goal_update — master's on its own stream, a
+  // root's on the watch_root stream. Same pattern for unattended.
+  const subjectPrompt = (text: string) =>
+    root ? bridgeCmd("root_prompt", text, { target: root }) : bridgeCmd("prompt", text);
+
   const goalCmd = (sub: string) => {
     setObjErr(null);
-    bridgeCmd("prompt", `/goal ${sub}`).catch((e) =>
+    subjectPrompt(`/goal ${sub}`).catch((e) =>
       setObjErr(e instanceof Error ? e.message : t("failed")),
     );
   };
@@ -168,9 +278,16 @@ export function Inspector(props: {
     const text = objText.trim();
     if (!text) return;
     setObjErr(null);
-    bridgeCmd("prompt", `/goal ${text}`)
+    subjectPrompt(`/goal ${text}`)
       .then(() => setObjText(""))
       .catch((e) => setObjErr(e instanceof Error ? e.message : t("failed")));
+  };
+
+  /** Fresh unattended counters for the subject: master's ride an
+   *  autonomous_status custom; a root's come back via the status pull. */
+  const refreshAuto = async () => {
+    if (root) props.onRootRefresh(root);
+    else await bridgeCmd("prompt", "/autonomous status");
   };
 
   const toggleUnattended = async (on: boolean) => {
@@ -183,19 +300,21 @@ export function Inspector(props: {
           `time=${suffixedOr(limTime, "smh", UNATTENDED_DEFAULTS.time)}`,
           `continuations=${countOr(limCont, UNATTENDED_DEFAULTS.continued)}`,
         ].join(" ");
-        await bridgeCmd("prompt", `/autonomous on ${limits}`);
+        await subjectPrompt(`/autonomous on ${limits}`);
         // A pre-limits daemon rejects the syntax as a failed command (the
         // prompt call itself still resolves): if unattended did not switch
         // on, degrade to the plain toggle it does understand.
-        const probe = await fetchAutonomous().catch(() => null);
+        const probe = root
+          ? await fetchRootStatus(root).catch(() => null)
+          : await fetchAutonomous().catch(() => null);
         if (probe?.autonomous && !probe.autonomous.enabled) {
-          await bridgeCmd("prompt", "/autonomous on");
+          await subjectPrompt("/autonomous on");
         }
       } else {
-        await bridgeCmd("prompt", "/autonomous off");
+        await subjectPrompt("/autonomous off");
       }
       // The toggle alone does not emit fresh counters — ask for them.
-      await bridgeCmd("prompt", "/autonomous status");
+      await refreshAuto();
     } catch (e) {
       setAutoErr(e instanceof Error ? e.message : t("failed"));
     }
@@ -203,9 +322,10 @@ export function Inspector(props: {
 
   const updateCheckin = (action: "pause" | "resume" | "clear") => {
     setHbErr(null);
-    bridgeCmd("heartbeat_update", undefined, { action }).catch((e) =>
-      setHbErr(e instanceof Error ? e.message : t("failed")),
-    );
+    const call = root
+      ? bridgeCmd("root_heartbeat_update", undefined, { target: root, action })
+      : bridgeCmd("heartbeat_update", undefined, { action });
+    call.catch((e) => setHbErr(e instanceof Error ? e.message : t("failed")));
   };
 
   const cancelCron = (jobId: string) => {
@@ -215,29 +335,57 @@ export function Inspector(props: {
       .catch((e) => setHbErr(e instanceof Error ? e.message : t("failed")));
   };
 
+  // Structured check-in creation: interval choice + plain instruction — the
+  // schedule string is assembled here, never typed by the user.
   const submitCheckin = () => {
-    const m = /^every\s+([^:]+?)\s*:\s*(.+)$/i.exec(hbText.trim());
-    if (!m) {
-      setHbErr(t("format: every 30m: instruction"));
-      return;
-    }
+    const text = hbText.trim();
+    if (!text) return;
+    const iv = CHECKIN_INTERVALS.find((x) => x.id === hbEvery) ?? CHECKIN_INTERVALS[2];
     setHbErr(null);
-    bridgeCmd("heartbeat_set", m[2].trim(), { schedule: `every ${m[1].trim()}`, mode: "follow_up" })
+    const call = root
+      ? bridgeCmd("root_heartbeat_set", text, {
+          target: root,
+          schedule: iv.schedule,
+          mode: "follow_up",
+        })
+      : bridgeCmd("heartbeat_set", text, { schedule: iv.schedule, mode: "follow_up" });
+    call
       .then(() => setHbText(""))
       .catch((e) => setHbErr(e instanceof Error ? e.message : t("failed")));
   };
 
+  if (child) return <HelperInspector child={child} />;
+
+  const subjectHeader = (
+    <div className="subj">
+      {root ? <BotAvatar seed={root} /> : <span className="chip master" />}
+      <span className="nm">{subjectName}</span>
+      <span className="st">
+        {root
+          ? t(props.rootState === "working" ? "running" : loaded ? "idle" : "loading…")
+          : t("runs this workspace")}
+      </span>
+    </div>
+  );
+
+  // A root whose connection state has not arrived yet (attach-on-select is in
+  // flight): name the subject, say loading — never claim "no objective".
+  if (root && !loaded) {
+    return (
+      <aside className="insp">
+        {subjectHeader}
+        <div className="panel">
+          <div className="rule">
+            {online ? t("loading state…") : t("runtime offline · model only")}
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="insp">
-      <div className="flow">
-        <span className={goalActive ? "active" : ""}>{t("objective")}</span>
-        <i />
-        <span className={auto?.enabled ? "active" : ""}>{t("unattended")}</span>
-        <i />
-        <span className={props.heartbeats.some((h) => h.status === "active") ? "active" : ""}>
-          {t("check-in")}
-        </span>
-      </div>
+      {subjectHeader}
 
       <div className="panel">
         <div className="phead">
@@ -288,21 +436,29 @@ export function Inspector(props: {
             </div>
             <div className="rule">
               {online
-                ? t("master acts when you message it. An objective keeps it going on its own.")
+                ? t("{name} acts when you message it. An objective keeps it going on its own.", {
+                    name: subjectName,
+                  })
                 : t(
-                    "master acts when you message it. Objectives and check-ins need the runtime (bridge offline).",
+                    "{name} acts when you message it. Objectives and check-ins need the runtime (bridge offline).",
+                    { name: subjectName },
                   )}
             </div>
             {online && (
-              <input
-                className="iin"
-                placeholder={t("set an objective…")}
-                value={objText}
-                onChange={(e) => setObjText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitObjective();
-                }}
-              />
+              <div className="hbnew">
+                <input
+                  className="iin"
+                  placeholder={t("set an objective for {name}…", { name: subjectName })}
+                  value={objText}
+                  onChange={(e) => setObjText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitObjective();
+                  }}
+                />
+                <button className="btn" onClick={submitObjective}>
+                  {t("apply")}
+                </button>
+              </div>
             )}
           </>
         )}
@@ -434,12 +590,12 @@ export function Inspector(props: {
         )
       )}
 
-      {(props.heartbeats.length > 0 || crons.length > 0 || online) && (
+      {(heartbeats.length > 0 || crons.length > 0 || online) && (
         <div className="panel">
           <div className="phead">
             <span>{t("Re-entry")}</span>
           </div>
-          {props.heartbeats.map((h) => (
+          {heartbeats.map((h) => (
             <div className="kv hbrow" key={h.id} title={h.prompt}>
               <span className="k">
                 {t(h.source === "rlm_heartbeat" ? "check-in · agent" : "check-in")}
@@ -489,15 +645,33 @@ export function Inspector(props: {
             );
           })}
           {online && (
-            <input
-              className="iin"
-              placeholder={t("new check-in… (every 30m: instruction)")}
-              value={hbText}
-              onChange={(e) => setHbText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submitCheckin();
-              }}
-            />
+            <>
+              <div className="hbnew">
+                <select
+                  value={hbEvery}
+                  aria-label={t("new check-in")}
+                  onChange={(e) => setHbEvery(e.target.value)}
+                >
+                  {CHECKIN_INTERVALS.map((iv) => (
+                    <option key={iv.id} value={iv.id}>
+                      {t(iv.label)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="iin"
+                  placeholder={t("wake it with this prompt…")}
+                  value={hbText}
+                  onChange={(e) => setHbText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitCheckin();
+                  }}
+                />
+                <button className="btn" onClick={submitCheckin}>
+                  {t("add")}
+                </button>
+              </div>
+            </>
           )}
           {hbErr && <div className="ierr">{hbErr}</div>}
         </div>
@@ -533,9 +707,12 @@ export function Inspector(props: {
               </span>
             </div>
           )}
-        <button className="open" onClick={props.onOpenLearn}>
-          {t("open learned →")}
-        </button>
+        {/* The Learned view is master's history — only offered there. */}
+        {!root && (
+          <button className="open" onClick={props.onOpenLearn}>
+            {t("open learned →")}
+          </button>
+        )}
       </div>
     </aside>
   );

@@ -26,7 +26,12 @@ export function helperName(c: ChildInfo): string {
 /** Status word for a helper (runtime words → product words). */
 export function statusWord(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return "running";
-  if (c.status === "done") return c.repliedSinceTask ? "replied" : "needs you";
+  if (c.status === "done") {
+    if (c.repliedSinceTask) return "replied";
+    // An inline helper is gone the moment it finishes — its answer went to
+    // master and nobody is waiting on you; "needs you" would be a false alarm.
+    return reachable(c) ? "needs you" : "finished";
+  }
   if (c.status === "error") return "failed";
   return "stopped";
 }
@@ -42,6 +47,8 @@ export function statusIcon(word: string): { cls: string; glyph: string; word: st
       return { cls: "sti ok", glyph: "✓", word };
     case "failed":
       return { cls: "sti bad", glyph: "✕", word };
+    case "finished":
+      return { cls: "sti halt", glyph: "", word };
     case "stopped":
       return { cls: "sti halt", glyph: "", word };
     case "inactive":
@@ -77,6 +84,8 @@ export function flavorTag(name: string, word: string, working?: string): string 
       return t("waiting on you");
     case "replied":
       return t("left you a note");
+    case "finished":
+      return t("wrapped up");
     case "failed":
       return t("tripped on something");
     case "stopped":

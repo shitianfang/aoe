@@ -10,12 +10,15 @@
  *                               |"agent_message"|"stop_helper"|"remove_helper"
  *                               |"watch_helper"|"unwatch_helper"
  *                               |"watch_root"|"unwatch_root"|"root_prompt"
- *                               |"root_steer"|"root_follow_up"|"root_abort",
+ *                               |"root_steer"|"root_follow_up"|"root_abort"
+ *                               |"root_heartbeat_set"|"root_heartbeat_update",
  *                             text?, target? }
  *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
  *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
  *   GET  /bridge/autonomous { autonomous, autoRefine } — read-only status blocks
  *                         (get_connection_state; null on pre-schema-27 daemons)
+ *   GET  /bridge/root-status?name= { attached, goal, autonomous, autoRefine } —
+ *                         same read-only pull for a watched root session
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
@@ -95,17 +98,37 @@ async function statusPayload() {
   };
 }
 
-function learnedPayload() {
+/** Same read-only pull for a watched root session (rootConns via watch_root).
+ *  Roots are full sessions: goal/autonomous/autoRefine ride the connection
+ *  state exactly like master's (schema 27). attached:false — not watched yet
+ *  or the pull failed — tells the renderer to keep showing "loading". */
+async function rootStatusPayload(name) {
+  const empty = { attached: false, goal: null, autonomous: null, autoRefine: null };
+  const entry = rootConns.get(name);
+  if (!entry || !daemonClient) return empty;
+  const r = await daemonClient
+    .request({ type: "get_connection_state", activeSessionId: entry.activeSessionId })
+    .catch(() => null);
+  if (!r?.success) return empty;
+  return {
+    attached: true,
+    goal: r.data?.goal ?? null,
+    autonomous: r.data?.autonomous ?? null,
+    autoRefine: r.data?.autoRefine ?? null,
+  };
+}
+
+function learnedPayload(sessionUuid = masterUuid) {
   // Local harness lives under the session's artifact dir, keyed by session uuid
   // (state.sessionDir is the sessions root, not this session's artifacts).
-  const local = masterUuid
+  const local = sessionUuid
     ? readHarness(
         path.join(
           os.homedir(),
           ".prime",
           "agent",
           "session-artifacts",
-          masterUuid,
+          sessionUuid,
           "harness",
           "harness_state.json",
         ),
@@ -770,15 +793,26 @@ async function ensureRootConn(name) {
     sendClientEnv: false,
     directTransport: false,
   });
-  const entry = { conn, activeSessionId };
+  const entry = { conn, activeSessionId, uuid: null };
   rootConns.set(name, entry);
-  const resync = (messages, { partial = false, running } = {}) =>
+  // The connection-state blocks the Inspector binds to (goal / unattended /
+  // auto-refine) ride each snapshot — same schema-27 fields as master's.
+  const stateOf = (s) =>
+    s
+      ? {
+          goal: s.goal ?? null,
+          autonomous: s.autonomous ?? null,
+          autoRefine: s.autoRefine ?? null,
+        }
+      : undefined;
+  const resync = (messages, { partial = false, running, state } = {}) =>
     broadcast({
       type: "root_snapshot",
       root: name,
       messages: slimHistory(messages),
       partial,
       ...(running === undefined ? {} : { running }),
+      ...(state ? { state } : {}),
     });
   conn.subscribe((event) => {
     if (event?.type === "session_event") {
@@ -793,6 +827,7 @@ async function ensureRootConn(name) {
       // Canonical transcript after a mid-run attach; replace wholesale.
       resync(event.snapshot?.messages, {
         running: Boolean(event.snapshot?.state?.isStreaming),
+        state: stateOf(event.snapshot?.state),
       });
     } else if (event?.type === "extension_ui_request") {
       const req = event.request;
@@ -802,9 +837,16 @@ async function ensureRootConn(name) {
     }
   });
   const snapshot = await conn.getInitialSnapshot().catch(() => null);
+  // Session uuid = the root's own harness dir under session-artifacts
+  // (GET /bridge/learned?root=).
+  entry.uuid = snapshot?.state?.sessionId ?? null;
   const running = Boolean(snapshot?.state?.isStreaming);
   const messages = snapshot?.messages ?? [];
-  resync(messages, { partial: messages.length === 0 && running, running });
+  resync(messages, {
+    partial: messages.length === 0 && running,
+    running,
+    state: stateOf(snapshot?.state),
+  });
   return entry;
 }
 
@@ -821,6 +863,33 @@ async function unwatchRoot(name) {
 
 async function disposeRootConns() {
   for (const name of [...rootConns.keys()]) await unwatchRoot(name);
+}
+
+/** Global heartbeat rows flattened for the renderer, each stamped with the
+ *  session it belongs to: subject "master" (this workspace's master) or a
+ *  root session's name. Rows whose session identity is unknown carry no
+ *  subject — the renderer shows them nowhere rather than guessing. */
+async function heartbeatsPayload() {
+  const entries = (await masterConn.listHeartbeats()) ?? [];
+  // Fallback identity for jobs whose worker is down: session uuid → name.
+  let nameByUuid = new Map();
+  if (entries.some((e) => e?.job && !e.sessionName)) {
+    const listed = await daemonClient.request({ type: "list", all: true }).catch(() => null);
+    if (listed?.success) {
+      nameByUuid = new Map(
+        (listed.data.sessions || [])
+          .filter((s) => s.sessionId && s.sessionName)
+          .map((s) => [s.sessionId, s.sessionName]),
+      );
+    }
+  }
+  const masterName = masterNameFor(currentWorkspace);
+  return entries.map((e) => {
+    const job = e?.job ?? e;
+    const sessionName = e?.sessionName ?? (job?.sessionId ? nameByUuid.get(job.sessionId) : undefined);
+    const subject = sessionName === masterName ? "master" : sessionName;
+    return { ...job, ...(subject ? { subject } : {}) };
+  });
 }
 
 async function handleCmd(body) {
@@ -922,6 +991,24 @@ async function handleCmd(body) {
       await entry.conn.abort();
       return {};
     }
+    case "root_heartbeat_set": {
+      // Check-ins are per session: set them through the root's own connection
+      // (heartbeat_set is scoped to its activeSessionId; one user heartbeat
+      // per session — a new one replaces the old, runtime rule).
+      const { conn } = await ensureRootConn(String(body.target ?? ""));
+      return {
+        job: await conn.setHeartbeat(
+          String(body.schedule ?? ""),
+          String(body.text ?? ""),
+          body.mode ? String(body.mode) : undefined,
+        ),
+      };
+    }
+    case "root_heartbeat_update": {
+      // action "pause" | "resume" | "clear" — the root's own heartbeat only
+      const { conn } = await ensureRootConn(String(body.target ?? ""));
+      return { job: (await conn.updateHeartbeat(String(body.action ?? ""))) ?? null };
+    }
     case "remove_helper": {
       if (!daemonClient || !masterSessionId) throw new Error("daemon not connected");
       const r = await daemonClient.request({
@@ -975,17 +1062,35 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-  if (req.url === "/bridge/learned") {
+  if (req.url && req.url.split("?")[0] === "/bridge/learned") {
     // autoRefine rides along so the Learned surfaces can render
     // "next review not before" without a second pull; null on old daemons.
-    statusPayload()
+    // ?root=<name> scopes the local harness + autoRefine to a watched root
+    // session (its uuid is captured at attach); default is master.
+    const rootName = new URL(req.url, "http://localhost").searchParams.get("root");
+    const uuid = rootName ? rootConns.get(rootName)?.uuid ?? null : masterUuid;
+    const status = rootName ? rootStatusPayload(rootName) : statusPayload();
+    status
       .then(({ autoRefine }) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ ...learnedPayload(), autoRefine }));
+        res.end(JSON.stringify({ ...learnedPayload(uuid), autoRefine }));
       })
       .catch(() => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ ...learnedPayload(), autoRefine: null }));
+        res.end(JSON.stringify({ ...learnedPayload(uuid), autoRefine: null }));
+      });
+    return;
+  }
+  if (req.url && req.url.split("?")[0] === "/bridge/root-status") {
+    const name = new URL(req.url, "http://localhost").searchParams.get("name") ?? "";
+    rootStatusPayload(name)
+      .then((p) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(p));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
       });
     return;
   }
@@ -1016,8 +1121,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { ...cors, "content-type": "application/json" });
       return res.end(JSON.stringify({ heartbeats: [] }));
     }
-    masterConn
-      .listHeartbeats()
+    // The daemon's heartbeat catalog is global; each entry carries the live
+    // session's name ({ job, sessionName? }). Flatten to job rows stamped
+    // with a `subject` — "master" for this workspace's master, else the root
+    // session's name — so the Inspector can bind rows to the selected agent.
+    // A session whose worker is down has no live name; fall back to mapping
+    // the job's session uuid through the roster.
+    heartbeatsPayload()
       .then((heartbeats) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify({ heartbeats }));

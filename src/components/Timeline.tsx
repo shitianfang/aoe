@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { LessonResult, TimelineItem } from "../types";
 import { LessonCard } from "./LessonCard";
+import { BotAvatar } from "./BotAvatar";
 import { useT } from "../i18n";
 
 /** "lesson kept · summary · [view]" — view expands the full card inline. */
@@ -79,6 +80,20 @@ export function Timeline(props: { items: TimelineItem[] }) {
           <span className="ic" />
           <strong>{item.text}</strong>
           {item.rt ? <span className="rt">{item.rt}</span> : <span className="rt" />}
+        </div>
+      );
+    }
+    if (item.kind === "agent") {
+      // Another agent talked into this conversation — its avatar, its words,
+      // the sender named in small type above the text.
+      return (
+        <div className="msg" key={item.id}>
+          <BotAvatar seed={item.from} />
+          <span className="body">
+            <span className="afrom">{item.from}</span>
+            {item.text}
+          </span>
+          <span className="when">{item.at}</span>
         </div>
       );
     }

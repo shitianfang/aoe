@@ -30,6 +30,8 @@ import { helperName, injectionReasonText } from "./helperDisplay";
 import { FilesColumn } from "./components/FilesColumn";
 import { LearnedColumn } from "./components/LearnedColumn";
 import { Timeline } from "./components/Timeline";
+import { SampleHelper } from "./components/SampleHelper";
+import { isSampleId, sampleById } from "./sampleCrew";
 import { LearnedView } from "./components/LearnedView";
 import { PreviewView } from "./components/PreviewView";
 import { HelperView } from "./components/HelperView";
@@ -128,7 +130,13 @@ function currentPane(s: AppState): PaneView {
   if (s.view === "learned") return { kind: "learned" };
   if (s.view === "preview") return { kind: "preview" };
   // fk: ids are foreign crew — they live in the roots roster, not children.
-  if (s.selectedAgent && (s.selectedAgent.startsWith("fk:") || s.children.some((c) => c.id === s.selectedAgent)))
+  // fk: foreign crew, eg: the written sample crew — neither lives in children.
+  if (
+    s.selectedAgent &&
+    (s.selectedAgent.startsWith("fk:") ||
+      isSampleId(s.selectedAgent) ||
+      s.children.some((c) => c.id === s.selectedAgent))
+  )
     return { kind: "helper", childId: s.selectedAgent };
   if (s.selectedRoot) return { kind: "root", name: s.selectedRoot };
   return { kind: "timeline" };
@@ -373,6 +381,7 @@ function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolea
     (fresh.children === true &&
       v.kind === "helper" &&
       !v.childId.startsWith("fk:") &&
+      !isSampleId(v.childId) &&
       !s.children.some((c) => c.id === v.childId)) ||
     // Foreign crew panes live and die with the roots roster, not master's.
     (fresh.roots === true && v.kind === "helper" && v.childId.startsWith("fk:") && !foreignHere(v.childId)) ||
@@ -2054,6 +2063,10 @@ export function App() {
       );
     }
     if (p.kind === "helper") {
+      // A sample row opens written copy, not a session — checked before the
+      // roster lookup, which would never find one.
+      const eg = sampleById(p.childId);
+      if (eg) return <SampleHelper agent={eg} />;
       const child = findChild(state, p.childId);
       if (!child) {
         // Restored pane whose helper is gone; the roster snapshot reconciles
@@ -2103,6 +2116,8 @@ export function App() {
     if (p.kind === "learned") return tt("Self-evolution");
     if (p.kind === "preview") return tt("Preview");
     if (p.kind === "helper") {
+      const eg = sampleById(p.childId);
+      if (eg) return eg.name;
       const c = findChild(state, p.childId);
       return c ? helperName(c) : tt("helper");
     }

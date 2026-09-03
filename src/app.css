@@ -200,8 +200,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    nothing else. */
 .a .tag { font-family: var(--sans); font-size: 10px; line-height: 1.4; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
 /* the sample crew: present enough to read, plainly not something you can open */
-.a.eg { cursor: default; opacity: .55; }
-.a.eg:hover { background: none; }
+/* The sample crew reads quieter than a real agent but behaves like one — it
+   opens a pane, so it keeps the pointer and the hover. Dimming alone carries
+   "this one is written", and the column note underneath says so in words. */
+.a.eg { opacity: .62; }
+.a.eg:hover { opacity: .85; }
 /* Delete a root agent: hidden until the row is hovered, because it is the one
    irreversible thing in this column and must not invite a stray click. The
    confirm step replaces the glyph with the word, in red. */

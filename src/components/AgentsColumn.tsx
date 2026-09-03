@@ -3,6 +3,7 @@ import type { AgentState, ChildInfo, ClaudeSubagent, RootAgent } from "../types"
 import { flavorTag, helperName, hhmmEpoch, statusIcon, statusWord } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { bridgeCmd } from "../runtime/bridge";
+import { SAMPLE_CREW } from "../sampleCrew";
 import { useLang, useT } from "../i18n";
 
 const ACTIVE = new Set(["queued", "running", "done"]);
@@ -206,21 +207,16 @@ export function AgentsColumn(props: {
     // are mixed on purpose: the column's job is to answer "who is doing what,
     // and what is already finished", and one row per state shows all of it.
     if (props.children.length === 0 && props.claudeAgents.length === 0) {
-      const crew: [string, string, string][] = [
-        ["scout", "read the workspace and list what is here", "done"],
-        ["drafter", "write the page structure into today.html", "done"],
-        ["stylist", "restyle it and publish a version", "running"],
-        ["checker", "compare the last two versions and report", "queued"],
-      ];
-      crew.forEach(([name, task, word], i) => {
-        map.set(`eg:${i}`, {
-          key: `eg:${i}`,
-          label: name,
-          avatar: <BotAvatar seed={name} />,
-          tag: t(task),
-          state: statusIcon(word === "queued" ? "idle" : word),
-          selectable: null,
-          draggable: false,
+      SAMPLE_CREW.forEach((a) => {
+        map.set(`eg:${a.name}`, {
+          key: `eg:${a.name}`,
+          label: a.name,
+          avatar: <BotAvatar seed={a.name} />,
+          tag: t(a.task),
+          state: statusIcon(a.state === "queued" ? "idle" : a.state),
+          // Selectable like any helper: the pane it opens is written copy.
+          selectable: `eg:${a.name}`,
+          draggable: true,
           eg: true,
         });
       });
@@ -354,7 +350,6 @@ export function AgentsColumn(props: {
           }}
           onClick={() => {
             if (confirmDel !== null) return setConfirmDel(null); // anywhere else cancels
-            if (n.eg) return; // a sample row stands for an agent; there is none to open
             if (rootName !== null) props.onSelectRoot(rootName);
             else if (n.key === "master") props.onSelect(null);
             else if (n.selectable) props.onSelect(n.selectable);

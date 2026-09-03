@@ -238,7 +238,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    left, action right; the row collapses to whichever half is present. The 6px
    plus the following .rule's own 2px keeps the panel on the same 8px rhythm
    .phead sets, instead of stacking two paddings into a 16px hole. */
-.insp .selfrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.insp .selfrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* Only when something follows: as the panel's last child the row needs no
+   margin — the panel's own padding closes it, and 6px on top of that reopened
+   the same uneven gap from the other side. */
+.insp .selfrow:not(:last-child) { margin-bottom: 6px; }
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }
@@ -544,6 +548,7 @@ html[lang="zh-CN"] .lesson .btn {
    .lauto's size rather than the mono action scale. */
 html[lang="zh-CN"] .insp .selfev .btn {
   font-family: var(--sans); font-size: 11px; letter-spacing: 0; text-transform: none;
+  white-space: nowrap; /* the row is a row — a short label must not wrap it open */
 }
 
 .send:focus-visible, .a:focus-visible, .theme:focus-visible, .btn:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 2px; }

@@ -281,6 +281,13 @@ body.resizing iframe { pointer-events: none; }
 .ahead .r3 { margin-top: 2px; font-size: 12px; color: var(--t2); }
 
 .transcript { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; padding: 18px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+/* first open: a few example asks; gone once the conversation starts */
+.firstrun { margin: 6px 0 0 34px; max-width: 520px; }
+.firstrun .frh { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; }
+.firstrun .frx { display: block; width: 100%; text-align: left; border: 1px solid var(--hair); background: var(--soft); color: var(--t2); font-size: 12px; padding: 8px 12px; margin-bottom: 6px; }
+.firstrun .frx:hover { border-color: var(--hair-hi); color: var(--t1); }
+/* sample lesson row (empty Self-evolution column) */
+.lsn.eg { opacity: .55; cursor: default; }
 .msg { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
 .msg > .when { margin: 0; padding-top: 4px; font-family: var(--mono); font-size: 9px; color: var(--t3); white-space: nowrap; }
 .msg::before { content: ""; position: absolute; left: 11.5px; top: 30px; bottom: -16px; border-left: 1px dashed var(--hair); }

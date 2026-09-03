@@ -1797,7 +1797,7 @@ export function App() {
             </span>
           </div>
         </div>
-        <Timeline items={state.timeline} />
+        <Timeline items={state.timeline} onExample={send} />
       </>
     );
   };

@@ -26,7 +26,16 @@ function LessonRow(props: { result: LessonResult; at: string }) {
   );
 }
 
-export function Timeline(props: { items: TimelineItem[] }) {
+/** First-open example asks (master timeline only). English keys, ZH in the
+ *  dictionary; each sends as-is on click and the block leaves for good once
+ *  any real conversation exists. */
+const EXAMPLES = [
+  "Put together a small team: one helper researches this workspace, another drafts a summary, then report back to me.",
+  "Tidy the files in this workspace into folders by topic, and tell me what moved.",
+  "Check in with me every morning at 9 with a one-line plan for the day.",
+];
+
+export function Timeline(props: { items: TimelineItem[]; onExample?: (text: string) => void }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Expanded collapsed-history blocks, by item id. Local state: folding is a
@@ -118,9 +127,24 @@ export function Timeline(props: { items: TimelineItem[] }) {
     );
   };
 
+  // Fresh timeline = dividers only. Real rows of any kind retire the examples.
+  const fresh =
+    props.onExample !== undefined &&
+    props.items.every((i) => i.kind === "divider" || i.kind === "collapsed");
+
   return (
     <div className="transcript" ref={ref}>
       {props.items.map(row)}
+      {fresh && (
+        <div className="firstrun">
+          <div className="frh">{t("first time here — try one:")}</div>
+          {EXAMPLES.map((x) => (
+            <button key={x} className="frx" onClick={() => props.onExample?.(t(x))}>
+              {t(x)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

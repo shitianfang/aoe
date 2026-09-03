@@ -154,6 +154,19 @@ const ZH: Record<string, string> = {
   "no skills installed.": "尚未安装技能。",
   "nothing here yet.": "这里还没有内容。",
 
+  /* first open: example asks + sample lesson */
+  "first time here — try one:": "第一次来 —— 试试这些:",
+  "Put together a small team: one helper researches this workspace, another drafts a summary, then report back to me.":
+    "组一个小分队:一个助手调研这个工作区,另一个起草摘要,最后向我汇报。",
+  "Tidy the files in this workspace into folders by topic, and tell me what moved.":
+    "把这个工作区的文件按主题归类整理,并告诉我动了哪些。",
+  "Check in with me every morning at 9 with a one-line plan for the day.":
+    "每天早上 9 点向我报到,给我一行今日计划。",
+  "e.g. ask master for a small team — one helper to research, one to draft.":
+    "例如:让 master 组个小组 —— 一个助手调研,一个起草。",
+  "keep reports under three sentences": "汇报控制在三句话以内",
+  "example · real records replace this": "示例 · 有真实记录后即被替换",
+
   /* composer model pick; on/off are also the Inspector's unattended chip words */
   model: "模型",
   on: "启用",

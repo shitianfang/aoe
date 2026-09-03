@@ -315,6 +315,8 @@ export function AgentsColumn(props: {
           {t("master runs this workspace.")}
           <br />
           {t("helpers appear here when it starts them.")}
+          <br />
+          {t("e.g. ask master for a small team — one helper to research, one to draft.")}
         </div>
       )}
       {inactiveCount > 0 && (

@@ -121,11 +121,21 @@ export function LearnedColumn(props: {
         </>
       )}
       {rows !== null && rows.length === 0 && (
-        <div className="colnote">
-          {t("nothing learned yet.")}
-          <br />
-          {t("agents keep small improvements as they work — they appear here on their own.")}
-        </div>
+        <>
+          <div className="colnote">
+            {t("nothing learned yet.")}
+            <br />
+            {t("agents keep small improvements as they work — they appear here on their own.")}
+          </div>
+          {/* One dimmed sample so the first open shows what a lesson looks
+              like; the first real record takes its place. */}
+          <div className="lsn eg">
+            <span className="ttl">
+              <span className="tx">{t("keep reports under three sentences")}</span>
+            </span>
+            <span className="meta">{t("example · real records replace this")}</span>
+          </div>
+        </>
       )}
       {local.length > 0 && (
         <>

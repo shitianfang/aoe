@@ -208,9 +208,16 @@ function compact<T extends Grid>(s: T): T {
     }
     return { ...g, panes, focus };
   };
+  // Rows first, per column: a pane alone in its column sits at the top of it,
+  // which is also how it already renders (a lone pane spans its column). Then
+  // columns: an empty left column pulls the right one over. Rows before
+  // columns is what settles the diagonals — tr+bl is two full-height columns,
+  // and lifting bl to tl says so, where a column-only pass would leave tl
+  // empty and the canonical form a lie.
   let out = s;
+  if (!out.panes.tl && out.panes.bl) out = slide(out, [["bl", "tl"], ["tr", "tr"], ["br", "br"]]);
+  if (!out.panes.tr && out.panes.br) out = slide(out, [["br", "tr"], ["tl", "tl"], ["bl", "bl"]]);
   if (!out.panes.tl && !out.panes.bl) out = slide(out, [["tr", "tl"], ["br", "bl"]]);
-  if (!out.panes.tl && !out.panes.tr) out = slide(out, [["bl", "tl"], ["br", "tr"]]);
   return out;
 }
 

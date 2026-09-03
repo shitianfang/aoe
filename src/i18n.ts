@@ -170,23 +170,24 @@ const ZH: Record<string, string> = {
   "no skills installed.": "尚未安装技能。",
   "nothing here yet.": "这里还没有内容。",
 
-  /* first open: example asks + sample lesson */
+  /* first open: the three showcase cards + the sample lesson */
   "first time here — try one:": "第一次来 —— 试试这些:",
-  "Three helpers, one each: a name, a palette, a tagline for a new app — then pick the best set.":
-    "三个助手各领一件:给一个新应用起名字、配色、想一句标语 —— 最后你挑出最好的一套。",
-  "a team of 3 · watch the left column": "3 人小队 · 左边那栏能看到他们",
-  "Send fourteen helpers out, one idea each: things a desktop agent could do for me. Then rank them.":
-    "派十四个助手出去,一人一个点子:桌面智能体能替我做的事。然后排个序。",
-  "14 at once · the left column fills up": "14 个同时开工 · 左边那栏会挤满",
-  "Write a single-file HTML day planner to today.html — style and script inline — then publish it.":
-    "写一个单文件 HTML 日程页,样式和脚本都放里面,存成 today.html,然后发布出来。",
-  "a real file · Preview opens on its own": "会真写出文件 · 预览自己就打开了",
-  "Make a poster in poster.html, then improve it three times — layout, colour, type — publishing each pass.":
-    "先做一张海报 poster.html,再改三轮:版式、配色、字体 —— 每改一轮就发一版。",
-  "versions · Preview shows the change side by side": "多个版本 · 预览里并排看得见变化",
+
+  "One AI, a whole crew": "一个 AI,带一整支小队",
+  "the left column fills up": "左边那栏会站满",
+  "Send twelve helpers out, one idea each: things a desktop agent could do for me. Then rank them.":
+    "派十二个助手出去,一人想一个点子:桌面智能体能替我做的事。然后排个序。",
+
+  "Builds it, then makes it better": "先做出来,再一版版改好",
+  "Preview opens itself, versions side by side": "预览会自己打开,几版并排看",
+  "Make a poster in poster.html — one file, style inline. Then improve it three times: layout, colour, type. Publish each pass.":
+    "做一张海报 poster.html,单文件、样式写在里面。然后改三轮:版式、配色、字体,每轮发一版。",
+
+  "Keeps working while you are away": "你不在的时候,它接着干",
+  "it picks its own driver": "它自己挑用哪种方式撑着跑",
   "Keep an eye on this workspace while I'm away: log what changes, and what you'd do about it.":
     "我不在的时候帮我盯着这个工作区:记下有什么变化,还有你打算怎么办。",
-  "long-running on · it picks its own driver": "长程自主已开 · 它自己挑驱动方式",
+
   "keep reports under three sentences": "汇报控制在三句话以内",
   "example · real records replace this": "示例 · 有真实记录后即被替换",
 

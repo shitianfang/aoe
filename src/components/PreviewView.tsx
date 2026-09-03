@@ -69,7 +69,7 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
       return (
         <div className="vshell" ref={measure} style={{ height: BOX_H }}>
           <iframe
-            className="vframe"
+            className="vpage"
             sandbox=""
             srcDoc={text}
             title={`${file.name} ${v ?? "live"}`}

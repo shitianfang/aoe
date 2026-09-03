@@ -52,7 +52,7 @@ for are facts.
 The name is the three things the window is made of, and the three sections below: the agents
 you put on the work, the objectives that keep them going without you, and the evolution they
 keep afterwards. It is early — no binaries, build from source, and
-[Where it stands](#where-it-stands) is the honest list.
+[Where it stands](#where-it-stands) spells out what is missing.
 
 ## Quickstart
 
@@ -238,8 +238,8 @@ prunes them — a page you iterate on all day leaves a copy per turn.
 
 ## House rules
 
-The client is not neutral about how work gets done here, and it is better to say so than to
-let you discover it. Every session AOE creates gets an appended system prompt — never a
+The client is not neutral about how work gets done here. Every session AOE creates gets an
+appended system prompt — never a
 replacement for the runtime's own — telling the agent that this workspace renders what it
 writes: show three genuinely different variants before building anything with a shape, write
 files as you go rather than describing them, never start a web server or ask the user to open

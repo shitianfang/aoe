@@ -11,7 +11,7 @@ export function WorkspacePopup(props: {
   onClose: () => void;
 }) {
   const t = useT();
-  const workspace = props.bridge?.workspace || "general";
+  const workspace = props.bridge?.workspace || "default";
   const [list, setList] = useState<WorkspaceInfo[] | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,7 +19,7 @@ export function WorkspacePopup(props: {
   useEffect(() => {
     fetchWorkspaces()
       .then((r) => setList(r.workspaces))
-      .catch(() => setList([{ name: workspace, pinned: workspace === "general", state: "idle" }]));
+      .catch(() => setList([{ name: workspace, pinned: workspace === "default", state: "idle" }]));
   }, [workspace]);
 
   const go = async (name: string) => {
@@ -104,7 +104,7 @@ export function WorkspacePopup(props: {
             </span>
             {w.pinned && <span className="pin">{t("pinned")}</span>}
             <span className="m">{busy ? "…" : stateWord(w)}</span>
-            {/* The open one and the pinned default are not deletable: general
+            {/* The open one and the pinned default are not deletable: default
                 is recreated on demand, and deleting the folder you are working
                 in would pull the ground out from under the session. */}
             {!w.pinned && w.name !== workspace && (

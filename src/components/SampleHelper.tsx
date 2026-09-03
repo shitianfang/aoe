@@ -2,6 +2,7 @@ import type { SampleAgent } from "../sampleCrew";
 import { BotAvatar } from "./BotAvatar";
 import { Markdown } from "../markdown";
 import { useT } from "../i18n";
+import { ToolText } from "./ToolText";
 
 /** A sample helper's pane: the same shape a real one has — who, its task, the
  *  exchange — built from written copy rather than a session. It reuses
@@ -52,20 +53,19 @@ export function SampleHelper(props: { agent: SampleAgent }) {
             row.kind === "tool" ? (
               // A step, not a speaker: it hangs off the message column under
               // the helper that ran it, the way the live transcript does.
-              <div className="ev" key={i}>
+              <div className={`ev step${row.status === "running" ? " run" : ""}`} key={i}>
                 <span className="ic" />
-                <strong>{row.text}</strong>
-                <span className={row.status === "done" ? "rt ok" : "rt"}>
-                  {t(row.status === "done" ? "done" : "running")}
-                </span>
+                <strong>
+                  <ToolText text={row.text} />
+                </strong>
               </div>
             ) : (
               <div className="msg" key={i}>
                 <BotAvatar seed={a.name} />
                 <div className="body">
                   <Markdown text={t(row.text)} />
-                  {row.at ? <span className="when">{row.at}</span> : null}
                 </div>
+                {row.at ? <span className="when">{row.at}</span> : null}
               </div>
             ),
           )

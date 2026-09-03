@@ -3,6 +3,7 @@ import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
 import { helperName, hhmmEpoch, reachable } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { Markdown } from "../markdown";
+import { ToolText } from "./ToolText";
 import { t, useT } from "../i18n";
 
 function hhmm(iso: string | null | undefined): string {
@@ -160,18 +161,22 @@ export function HelperView(props: {
         ) : (
           props.transcript.map((row, i) =>
             row.kind === "tool" ? (
-              <div className={row.status === "error" ? "ev bad" : "ev"} key={`tr${i}`}>
+              <div
+                className={`ev step${row.status === "running" ? " run" : row.status === "error" ? " bad" : ""}`}
+                key={`tr${i}`}
+              >
                 <span className="ic" />
-                <strong>{row.name === "ipython" ? "python" : row.name}</strong>
-                <span className={row.status === "done" ? "rt ok" : "rt"}>{t(row.status)}</span>
+                <strong>
+                  <ToolText text={row.name === "ipython" ? "python" : row.name} />
+                </strong>
               </div>
             ) : row.role === "assistant" ? (
               <div className="msg" key={`tr${i}`}>
                 <BotAvatar seed={name} />
                 <div className="body">
                   <Markdown text={row.text} />
-                  {row.at ? <span className="when">{hhmm(row.at)}</span> : null}
                 </div>
+                {row.at ? <span className="when">{hhmm(row.at)}</span> : null}
               </div>
             ) : (
               // user rows are the task/steer text sent into the helper;

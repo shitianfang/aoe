@@ -59,11 +59,12 @@ const VENDORED_CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 const PRIME_AGENT_DIR = process.env.PRIME_AGENT_DIR || VENDORED_CORE;
 const SDK_PATH = path.join(PRIME_AGENT_DIR, "packages/coding-agent/dist/index.js");
 const CLI = path.join(PRIME_AGENT_DIR, "prime-agent.sh");
-// Workspaces are directories under one root; "general" is the pinned default.
+// Workspaces are directories under one root; "default" is the pinned one.
 // Top-level session names are globally unique, so each workspace's resident
 // master gets its own session name while the UI always shows "master".
 const WORKSPACE_ROOT =
   process.env.PRIME_WORKSPACE_ROOT || path.join(os.homedir(), ".prime", "desktop");
+const DEFAULT_WS = "default";
 const WS_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
 // Where the last opened workspace is remembered. Dot-prefixed, so the
 // workspace listing (which skips dotted entries) never shows it as one.
@@ -87,8 +88,22 @@ function initialWorkspace() {
   } catch {
     /* no state yet, or unreadable — the default is the right answer */
   }
-  return "general";
+  return DEFAULT_WS;
 }
+
+/** The pinned workspace used to be called "general". Carry an existing one
+ *  over rather than stranding its contents under a name that is no longer
+ *  special — only when the new name is free, so a real "default" always wins. */
+function renameLegacyDefault() {
+  try {
+    const from = path.join(WORKSPACE_ROOT, "general");
+    const to = path.join(WORKSPACE_ROOT, DEFAULT_WS);
+    if (fs.existsSync(from) && !fs.existsSync(to)) fs.renameSync(from, to);
+  } catch {
+    /* best-effort: a failed rename leaves "general" as an ordinary workspace */
+  }
+}
+renameLegacyDefault();
 
 /** Remember the workspace for the next cold start. Best-effort: failing to
  *  write it must never break a switch the user asked for. */
@@ -105,7 +120,7 @@ let currentWorkspace = initialWorkspace();
 let WORKSPACE_DIR = path.join(WORKSPACE_ROOT, currentWorkspace);
 /** AOE_DEBUG_TURNS=1 logs every turn end the roster reports. */
 const DEBUG_TURNS = process.env.AOE_DEBUG_TURNS === "1";
-const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
+const masterNameFor = (ws) => (ws === DEFAULT_WS ? "master" : `master@${ws}`);
 
 /** What this client does that a bare terminal doesn't — appended to the system
  *  prompt of every session the app creates. Without it an agent that just
@@ -925,12 +940,12 @@ async function modelPayload(rootName = null) {
 }
 
 async function workspacesPayload() {
-  fs.mkdirSync(path.join(WORKSPACE_ROOT, "general"), { recursive: true });
+  fs.mkdirSync(path.join(WORKSPACE_ROOT, DEFAULT_WS), { recursive: true });
   const dirs = fs
     .readdirSync(WORKSPACE_ROOT, { withFileTypes: true })
     .filter((d) => d.isDirectory() && !d.name.startsWith("."))
     .map((d) => d.name)
-    .sort((a, b) => (a === "general" ? -1 : b === "general" ? 1 : a.localeCompare(b)));
+    .sort((a, b) => (a === DEFAULT_WS ? -1 : b === DEFAULT_WS ? 1 : a.localeCompare(b)));
   let sessions = [];
   if (daemonClient) {
     const listed = await daemonClient.request({ type: "list", all: true }).catch(() => null);
@@ -942,7 +957,7 @@ async function workspacesPayload() {
     // The roster can lag right after (re)attach; the live connection is truth
     // for the workspace we are attached to.
     if (ws === currentWorkspace && daemon.connected && state === "off") state = "idle";
-    return { name: ws, pinned: ws === "general", state };
+    return { name: ws, pinned: ws === DEFAULT_WS, state };
   });
   return { current: currentWorkspace, workspaces };
 }
@@ -1337,8 +1352,8 @@ async function handleCmd(body) {
       // back in the roster the next time anything listed it.
       const name = String(body.text ?? "").trim();
       if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
-      // general is recreated on demand, so deleting it only looks like it worked.
-      if (name === "general") throw new Error("the default workspace stays");
+      // The default is recreated on demand, so deleting it only looks like it worked.
+      if (name === DEFAULT_WS) throw new Error("the default workspace stays");
       if (name === currentWorkspace) throw new Error("open another workspace first");
       const listed = await daemonClient.request({ type: "list", all: true });
       if (!listed.success) throw new Error(listed.error || "list failed");

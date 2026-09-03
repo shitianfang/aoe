@@ -128,6 +128,11 @@ export interface HarnessStats {
   /** One bucket per local day that has at least one round, oldest first, with
    *  empty days filled in so the strip reads as a calendar, not a list. */
   days: Array<{ day: string; n: number; kept: number }>;
+  /** One point per round, oldest first: how many lessons had ever been written
+   *  by then, and how many were still standing. The gap between the two is the
+   *  part that did not survive — which is the only honest thing this data can
+   *  say about whether the learning is worth anything. */
+  curve: Array<{ k: number; written: number; alive: number; at: string; label: string }>;
   /** Newest round timestamp, or "" when nothing has run. */
   last: string;
 }
@@ -179,8 +184,34 @@ export function harnessStats(data: HarnessData): HarnessStats {
     }
   }
 
+  // Replay the rounds oldest-first, applying each round's edits to a live set.
+  // create/update put an id in, delete takes it out; `written` only ever grows.
+  const alive = new Set<string>();
+  const everWritten = new Set<string>();
+  const curve: HarnessStats["curve"] = [];
+  const oldestFirst = [...data.lessons].reverse();
+  oldestFirst.forEach((l, i) => {
+    for (const c of l.changes ?? []) {
+      const ref = parseChange(c);
+      if (ref === null) continue;
+      if (ref.action === "delete") alive.delete(ref.id);
+      else {
+        alive.add(ref.id);
+        everWritten.add(ref.id);
+      }
+    }
+    curve.push({
+      k: i + 1,
+      written: everWritten.size,
+      alive: alive.size,
+      at: l.created_at ?? "",
+      label: l.title ?? "",
+    });
+  });
+
   return {
     byKind,
+    curve,
     entries: data.entries.length,
     rounds: data.lessons.length,
     rollbacks,

@@ -4,6 +4,7 @@ import type { LessonResult, TimelineItem } from "../types";
 import { LessonCard } from "./LessonCard";
 import { FirstRun } from "./FirstRun";
 import { BotAvatar } from "./BotAvatar";
+import { ToolText } from "./ToolText";
 import { Markdown } from "../markdown";
 import { useT } from "../i18n";
 
@@ -71,12 +72,18 @@ export function Timeline(props: {
     }
     if (item.kind === "tool") {
       return (
-        <div className={`ev${item.status === "error" ? " bad" : ""}`} key={item.id}>
+        // Same step row as a helper's pane: state in the diamond, no repeated
+        // status word. The time stays — master's timeline spans a whole
+        // session, and when a step ran is the thing you scan it for.
+        <div
+          className={`ev step${item.status === "running" ? " run" : item.status === "error" ? " bad" : ""}`}
+          key={item.id}
+        >
           <span className="ic" />
-          <strong>{item.name}</strong>
-          <span className={item.status === "done" ? "rt ok" : "rt"}>
-            {item.status === "running" ? t("running…") : `${t(item.status)} · ${item.at}`}
-          </span>
+          <strong>
+            <ToolText text={item.name} />
+          </strong>
+          {item.status !== "running" && <span className="rt">{item.at}</span>}
         </div>
       );
     }

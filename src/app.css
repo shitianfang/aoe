@@ -154,6 +154,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .kinds .kd { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--t2); }
 .kinds .kd .c { font-family: var(--mono); font-size: 11px; color: var(--t1); }
 .kinds .kd.z, .kinds .kd.z .c { color: var(--t3); }
+/* Written versus still standing, one point per round. Step segments, hairline
+   baseline, no grid, no legend box — the two lines are labelled at their ends.
+   The gap between them is the reading: learning that did not survive. */
+.curve { margin-top: 18px; max-width: 430px; }
+.curve .ax { stroke: var(--hair); stroke-width: 1; }
+.curve .ln { fill: none; stroke-width: 1.25; stroke-linejoin: miter; }
+.curve .ln.written { stroke: var(--t3); stroke-dasharray: 3 2; }
+.curve .ln.alive { stroke: var(--t1); }
+.curve .pt { fill: var(--t1); }
+.curve .ld { stroke: var(--hair-hi); stroke-width: 1; }
+.curve .ld.on { stroke: var(--t3); }
+.curve .lb { font-family: var(--mono); font-size: 8px; fill: var(--t3); }
+.curve .lb.on { fill: var(--t1); }
+.curve .tk { font-family: var(--mono); font-size: 8px; fill: var(--t3); }
+
 /* The one thing a number cannot say: is it still learning, or did it stop.
    One column per day over a fixed window; a quiet day is a baseline hairline,
    not a track, so silence reads as silence. */
@@ -530,6 +545,29 @@ body.resizing iframe { pointer-events: none; }
 /* The dashed spine .msg drops is cut for the timeline's 16px gap; at 8 it
    would overshoot past the top of the row it points at. */
 .transcript.hevents .msg::before { bottom: -8px; }
+/* ---- a step is not a speaker ----
+   A tool row used to be the heaviest thing on the pane: a filled, bordered
+   card, repeated six times down a transcript, each one louder than the
+   sentences it sat between. That inverts the hierarchy — the helper's words
+   are what you read, the steps are how it got there. So the card goes: no
+   fill, no border, no repeated 完成. State moves into the diamond, in the same
+   square language the agents column already speaks (filled = done, pulsing
+   green = running, red = failed), and the row is left as one quiet line of
+   machine text hanging off the helper's spine. */
+.transcript .ev.step { padding: 3px 0; border: 0; background: none; }
+.transcript .ev.step strong { color: var(--t2); }
+.transcript .ev.step .tn { color: var(--t3); }
+.transcript .ev.step .tn::after { content: " · "; }
+.transcript .ev.step .ic { background: var(--t3); border-color: var(--t3); opacity: .5; }
+.transcript .ev.step.run .ic {
+  background: var(--green); border-color: var(--green); opacity: 1;
+  animation: stpulse 1.6s ease-in-out infinite;
+}
+.transcript .ev.step.bad .ic { background: var(--red); border-color: var(--red); opacity: 1; }
+/* Consecutive steps are one run of work, so they sit tighter to each other
+   than a step sits to the sentence above it. */
+.transcript .ev.step + .ev.step { margin-top: -5px; }
+
 /* ...and carries on down the tool rows, so a run of steps hangs off the helper
    that took them instead of floating in the message column on its own. Offset
    is .msg's own 11.5px spine less the 34px indent. */

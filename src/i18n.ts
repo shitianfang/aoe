@@ -276,8 +276,7 @@ const ZH: Record<string, string> = {
   "attached mid-run · catching up…": "中途连上 · 正在补齐进度…",
   "no conversation yet": "还没有对话",
   "inactive · a message wakes it": "未活动 · 发消息可唤醒",
-  "runs workspace {ws}": "负责工作区 {ws}",
-  "switch top-left": "左上角可切换",
+  "runs workspace {ws} (switch top-left)": "负责工作区 {ws} (左上角切换)",
 
   /* composer */
   "Message {name}…": "发消息给 {name}…",
@@ -381,6 +380,10 @@ const ZH: Record<string, string> = {
   "changed nothing": "其中没改动",
   "{n} rounds": "{n} 次",
   "where it came from": "怎么来的",
+  /* the yield curve: everything ever written, against what is still standing */
+  "written versus still standing": "学到的与还留着的",
+  written: "学到",
+  "still standing": "留着",
   /* learned pane (one lesson's full record) */
   lesson: "经验",
   "pick a lesson on the left to see its full record.": "在左侧点一条经验,查看完整记录。",

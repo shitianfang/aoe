@@ -590,7 +590,7 @@ export function App() {
   // Split ratios: the left column's share and the top row's share, each in
   // [0.2, 0.8] and persisted per workspace. Layouts saved before the grid held
   // one bare number — the column ratio — so read that shape too.
-  const ratioKey = `pane-ratio:${state.bridge?.workspace || "general"}`;
+  const ratioKey = `pane-ratio:${state.bridge?.workspace || "default"}`;
   const [paneRatio, setPaneRatio] = useState({ col: 0.5, row: 0.5 });
   useEffect(() => {
     const raw = loadJson<unknown>(ratioKey, null);
@@ -1243,7 +1243,7 @@ export function App() {
           };
           // Split layout is per workspace; restore once per key so a
           // reconnect hello never clobbers the user's in-session layout.
-          const splitKey = `center-split:${ws ?? "general"}`;
+          const splitKey = `center-split:${ws ?? "default"}`;
           // The long-running switch hides itself when the runtime is gone (it
           // needs the kernel skills). Disarm rather than keep it armed behind a
           // control the user can no longer see, or it fires on reconnect.
@@ -1576,7 +1576,7 @@ export function App() {
     .map((a) => a.name)
     .sort()
     .join("\n");
-  const learnedSeenKey = `learned-seen:${state.bridge?.workspace || "general"}`;
+  const learnedSeenKey = `learned-seen:${state.bridge?.workspace || "default"}`;
   const learnedColumnOpen = state.column === "learned";
   const learnedConnected = Boolean(state.bridge?.connected);
   useEffect(() => {
@@ -2118,13 +2118,15 @@ export function App() {
             <span className="chip master" />
             <span className="nm">master</span>
             <span className="rel">
-              {tt("runs workspace {ws}", { ws: state.bridge?.workspace || "general" })} ·{" "}
+              {tt("runs workspace {ws} (switch top-left)", {
+                ws: state.bridge?.workspace || "default",
+              })}{" "}
+              ·{" "}
               {state.master === "working" ? (
                 <span className="run">{tt("running")}</span>
               ) : (
                 <>{tt("idle")}</>
-              )}{" "}
-              · {tt("switch top-left")}
+              )}
             </span>
           </div>
         </div>
@@ -2406,7 +2408,7 @@ export function App() {
       >
         <Rail
           column={state.column}
-          workspace={state.bridge?.workspace || "general"}
+          workspace={state.bridge?.workspace || "default"}
           bridge={state.bridge}
           learnedOn={state.column === "learned"}
           learnedUnread={learnedUnread}
@@ -2429,7 +2431,7 @@ export function App() {
         ) : state.column === "agents" ? (
           <AgentsColumn
             master={state.master}
-            workspace={state.bridge?.workspace || "general"}
+            workspace={state.bridge?.workspace || "default"}
             children={state.children}
             claudeAgents={state.claudeAgents}
             others={state.others}

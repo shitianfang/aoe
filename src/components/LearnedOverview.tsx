@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AutoRefineInfo } from "../types";
 import { getLang, useT } from "../i18n";
 import { ENTRY_KINDS, type HarnessData, type HarnessStats } from "../runtime/learned";
+import { LearnedCurve } from "./LearnedCurve";
 
 /** Days the activity strip covers. Fixed, so the strip means the same thing
  *  every time it is opened — a window that grows with the data would make a
@@ -99,25 +100,8 @@ export function LearnedOverview(props: {
         })}
       </div>
 
-      {s.rounds > 0 && (
-        <div className="spark">
-          <div className="row" style={{ width: WINDOW_DAYS * 8 - 2 }}>
-            {strip.map((d, i) => (
-              <span
-                className={`b${d.n === 0 ? " z" : ""}${d.day === today ? " open" : ""}`}
-                key={d.day === "" ? `pad-${i}` : d.day}
-                title={d.day === "" ? "" : `${dayLabel(d.day)} · ${t("{n} rounds", { n: d.n })}`}
-              >
-                <i style={{ height: d.n === 0 ? undefined : `${Math.round(Math.sqrt(d.n / peak) * 100)}%` }} />
-              </span>
-            ))}
-          </div>
-          <div className="ax" style={{ width: WINDOW_DAYS * 8 - 2 }}>
-            <span>{strip[0].day === "" ? "" : dayLabel(strip[0].day)}</span>
-            <span>{dayLabel(strip[strip.length - 1].day)}</span>
-          </div>
-        </div>
-      )}
+      {/* The one chart. Its reading is the gap: learning that did not last. */}
+      <LearnedCurve stats={s} />
 
       {/* The auto side's one real control, with the rhythm it runs at. Hidden —
           never faked — when the daemon predates the status block. */}

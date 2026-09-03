@@ -49,6 +49,9 @@ export function Composer(props: {
   /** Pane-bound mode: this composer lives in a root's pane and always messages
    *  that root — the to ▾ popup is hidden, the label is fixed. */
   fixedRoot?: string;
+  /** Bumped when a watch_root attach lands — the moment a root's own model
+   *  becomes readable. Re-pulls the current pick; the catalog never needed it. */
+  rootWatchEpoch?: number;
   /** Long-running mode: master (or the pane's root) is asked to set up one of
    *  the three drivers itself. Helpers have none of their own, so the switch
    *  is hidden when the target is one. */
@@ -76,34 +79,23 @@ export function Composer(props: {
   const modelRoot =
     props.fixedRoot ?? (props.target.kind === "root" ? props.target.name : undefined);
   const noModel = !props.fixedRoot && props.target.kind === "helper";
+  /* The catalog no longer waits on anything — it is one list for the daemon.
+     Which model the subject is ON is session state, and for a root that only
+     becomes knowable once its watch attach lands; rootWatchEpoch is the bridge
+     telling us it did, so this re-asks exactly then instead of guessing. */
   useEffect(() => {
     setDaemonModels(null); // never show the previous subject's model under this name
     if (!connected || noModel) return;
     let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    /* A root answers for itself only once its watch attach has landed, and that
-       attach is a separate round trip that routinely finishes after this one —
-       so an empty catalog for a root means "not yet", not "no models", and
-       settling for it leaves a freshly opened agent with no picker at all.
-       Ask again a few times before believing it. Master is attached already. */
-    const load = (left: number) => {
-      fetchModels(modelRoot)
-        .then((v) => {
-          if (!live) return;
-          if (modelRoot && v.models.length === 0 && left > 0) {
-            timer = setTimeout(() => load(left - 1), 600);
-            return;
-          }
-          setDaemonModels(v);
-        })
-        .catch(() => undefined);
-    };
-    load(modelRoot ? 8 : 0);
+    fetchModels(modelRoot)
+      .then((v) => {
+        if (live) setDaemonModels(v);
+      })
+      .catch(() => undefined);
     return () => {
       live = false;
-      if (timer) clearTimeout(timer);
     };
-  }, [connected, workspace, modelRoot, noModel]);
+  }, [connected, workspace, modelRoot, noModel, props.rootWatchEpoch]);
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -190,6 +182,9 @@ export function Composer(props: {
           );
         }}
       >
+        {/* Not yet knowable (a root before its attach): an empty box beats
+            implying the subject sits on whatever happens to sort first. */}
+        {!cur && <option value="">—</option>}
         {cur &&
           !daemonModels.models.some((x) => x.provider === cur.provider && x.id === cur.id) && (
             <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>

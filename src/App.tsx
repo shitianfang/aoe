@@ -631,6 +631,10 @@ export function App() {
       saveJson("insp-width", 250);
     }
   };
+  // Bumped when a watch_root attach lands: until it does, a root has no
+  // connection here and its own model is unreadable. The composer re-pulls on
+  // this rather than polling for the attach to show up.
+  const [rootWatchEpoch, setRootWatchEpoch] = useState(0);
   // Bumped when the bridge-pulled rows the inspector owns (scheduled
   // re-entries) may have moved: attach, heartbeats_changed.
   const [inspectorKey, setInspectorKey] = useState(0);
@@ -1876,7 +1880,9 @@ export function App() {
     if (!rootWatchKey) return;
     const names = rootWatchKey.split("\n");
     for (const name of names) {
-      bridgeCmd("watch_root", undefined, { target: name }).catch(() => {
+      bridgeCmd("watch_root", undefined, { target: name })
+        .then(() => setRootWatchEpoch((n) => n + 1))
+        .catch(() => {
         refreshOthers();
         setState((s) => reconcileSplit(s.selectedRoot === name ? { ...s, selectedRoot: null } : s));
       });
@@ -1952,6 +1958,7 @@ export function App() {
       children={state.children}
       others={state.others}
       target={state.target}
+      rootWatchEpoch={rootWatchEpoch}
       working={state.working}
       error={state.error}
       longRun={Boolean(state.longRun[masterComposerSubject])}
@@ -1975,6 +1982,7 @@ export function App() {
       children={state.children}
       others={state.others}
       target={state.target}
+      rootWatchEpoch={rootWatchEpoch}
       working={state.working}
       error={state.error}
       viewRoot={{ name, state: rootStateOf(name), working: state.rootWorking[name] || undefined }}

@@ -811,14 +811,23 @@ async function switchWorkspace(name) {
  *  renderer shows no picker rather than master's model under its name. */
 async function modelPayload(rootName = null) {
   const entry = rootName ? rootConns.get(rootName) : null;
+  // Two halves with different owners. What you may switch TO is the catalog
+  // models.json and auth.json describe — one list for the whole daemon, so any
+  // attached connection answers for it. What the subject is currently ON is
+  // session state, and only that half needs the subject's own connection: a
+  // root has one after watch_root, master always. Tying the catalog to the
+  // root's connection as well made the picker race the attach and vanish for
+  // every agent but master.
   const sessionId = rootName ? entry?.activeSessionId : masterSessionId;
-  const conn = rootName ? entry?.conn : masterConn;
-  if (!daemonClient || !sessionId || !conn) return { current: null, models: [] };
+  const conn = (rootName ? entry?.conn : masterConn) ?? masterConn;
+  if (!daemonClient || !conn) return { current: null, models: [] };
   const slim = (m) => ({ id: m.id, name: m.name || m.id, provider: m.provider });
   const [stateR, catalog] = await Promise.all([
-    daemonClient
-      .request({ type: "get_connection_state", activeSessionId: sessionId })
-      .catch(() => null),
+    sessionId
+      ? daemonClient
+          .request({ type: "get_connection_state", activeSessionId: sessionId })
+          .catch(() => null)
+      : null,
     conn.getModelCatalog().catch(() => null),
   ]);
   const current = stateR?.success && stateR.data?.model ? slim(stateR.data.model) : null;

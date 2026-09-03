@@ -1,0 +1,28 @@
+AOE
+Copyright (c) 2026 shitianfang
+
+This product bundles third-party software.
+
+--------------------------------------------------------------------------------
+core/ — prime-agent
+--------------------------------------------------------------------------------
+
+Everything under core/ is a vendored fork of prime-agent:
+
+  Upstream:  https://github.com/PrimeIntellect-ai/prime-agent
+  Fork:      https://github.com/shitianfang/prime-agent
+  Vendored:  commit 55fbf4f909a83ead490ea10e48a4cf54ce27cb6c
+  License:   MIT — Copyright (c) 2025 Mario Zechner
+                   Copyright (c) 2026 Prime Intellect
+             Full text retained at core/LICENSE.
+
+The fork carries five changes not present upstream at the time of vendoring:
+
+  - preview.publish — agents declare work products as a host request
+  - machine-readable status for refinements, autonomy, children, auto-refine
+  - autonomous status mirrored on connection state
+  - limit overrides on /autonomous on
+  - the refiner emits a concise display title for each lesson
+
+These raise the daemon schema from 25 to 27. They are offered upstream; the
+subtree is pulled forward with `npm run core:pull`.

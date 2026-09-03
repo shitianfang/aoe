@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "vite --port 3000 --host",
     "bridge": "node electron/bridge.mjs",
-    "dev:bridge": "PRIME_AGENT_DIR=${PRIME_AGENT_DIR:-/workspace/prime-agent-fork} node electron/bridge.mjs",
+    "core:install": "npm --prefix core install",
+    "core:build": "npm --prefix core run build",
+    "core:pull": "git subtree pull --prefix=core https://github.com/shitianfang/prime-agent.git main --squash",
     "build": "tsc --noEmit && vite build",
     "app": "electron .",
     "dist:win": "vite build && electron-builder --win --publish never",
@@ -64,5 +66,11 @@
       ],
       "category": "Utility"
     }
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shitianfang/aoe.git"
+  },
+  "homepage": "https://github.com/shitianfang/aoe"
 }

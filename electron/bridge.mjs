@@ -40,10 +40,16 @@ import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
+import { fileURLToPath } from "node:url";
 import { createPreviewStore } from "./preview.mjs";
 
 const PORT = Number(process.env.PRIME_BRIDGE_PORT || 3117);
-const PRIME_AGENT_DIR = process.env.PRIME_AGENT_DIR || "/workspace/prime-agent";
+// The agent runtime ships in this repo at core/, so a source checkout needs no
+// configuration. Packaged builds do not bundle core/ — they set PRIME_AGENT_DIR
+// to a built prime-agent checkout on the target machine, which also lets a
+// source checkout point at upstream instead of the vendored fork.
+const VENDORED_CORE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "core");
+const PRIME_AGENT_DIR = process.env.PRIME_AGENT_DIR || VENDORED_CORE;
 const SDK_PATH = path.join(PRIME_AGENT_DIR, "packages/coding-agent/dist/index.js");
 const CLI = path.join(PRIME_AGENT_DIR, "prime-agent.sh");
 // Workspaces are directories under one root; "general" is the pinned default.

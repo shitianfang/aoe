@@ -23,10 +23,11 @@ export async function runMasterTurn(
   history: ChatMessage[],
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  onTool?: (label: string) => void,
 ): Promise<string> {
   if (getActiveProvider() === "claude") {
     const lastUser = [...history].reverse().find((m) => m.role === "user");
-    return streamClaudeTurn(lastUser?.content ?? "", SYSTEM_PROMPT, onDelta, signal);
+    return streamClaudeTurn(lastUser?.content ?? "", SYSTEM_PROMPT, onDelta, onTool, signal);
   }
   return streamChat([{ role: "system", content: SYSTEM_PROMPT }, ...history], onDelta, signal);
 }

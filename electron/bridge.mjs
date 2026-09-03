@@ -24,8 +24,9 @@
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
- *   POST /bridge/claude   { text, sessionId?, system? } → SSE {type:"delta"|"done"|"error"}
- *                         — chats through the local `claude -p` CLI (user's own login)
+ *   POST /bridge/claude   { text, sessionId?, system? } → SSE {type:"delta"|"tool"|"done"|"error"}
+ *                         — runs the local `claude -p` CLI (user's own login) as a
+ *                         real agent: tools enabled in the workspace directory
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
  * The renderer never touches the daemon socket directly.
@@ -1082,11 +1083,12 @@ async function handleCmd(body) {
   }
 }
 
-/** POST /bridge/claude — chat through the locally installed official `claude`
- *  CLI. The child inherits process.env so the user's own login is used; no
- *  credential is ever read or forwarded here. Streams SSE frames:
- *  {type:"delta",text} per chunk, then {type:"done",sessionId}, or
- *  {type:"error",message} on failure. */
+/** POST /bridge/claude — one agent turn through the locally installed official
+ *  `claude` CLI. The child inherits process.env so the user's own login is
+ *  used; no credential is ever read or forwarded here. `claude -p` is a full
+ *  agent runner, so master gets real tool use in the workspace directory.
+ *  Streams SSE frames: {type:"delta",text} per chunk, {type:"tool",name,detail}
+ *  when a tool runs, then {type:"done",sessionId}, or {type:"error",message}. */
 function handleClaude(body, req, res, cors) {
   const text = String(body.text ?? "");
   const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
@@ -1101,10 +1103,18 @@ function handleClaude(body, req, res, cors) {
   const emit = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
 
   const args = ["-p", text, "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
-  if (system) args.push("--append-system-prompt", system);
-  if (sessionId) args.push("--resume", sessionId);
+  // Master is the user's local workspace agent: edits auto-accepted, commands
+  // and web lookups allowed — deliberately, that is its job. cwd bounds it to
+  // the workspace directory below.
+  args.push("--permission-mode", "acceptEdits", "--allowedTools", "Bash,WebSearch,WebFetch");
   // WORKSPACE_DIR is mutable (workspace switch) — read it per request.
   const cwd = fs.existsSync(WORKSPACE_DIR) ? WORKSPACE_DIR : os.homedir();
+  // The workspace folder is the boundary: cwd pins the CLI there, its own
+  // permission model auto-denies file access outside the working directory in
+  // -p mode, and the system prompt states the boundary outright.
+  const bounded = `${system ? `${system} ` : ""}Your workspace is ${cwd}. Work only inside this folder; never read or modify anything outside it.`;
+  args.push("--append-system-prompt", bounded);
+  if (sessionId) args.push("--resume", sessionId);
   const child = spawn("claude", args, { cwd, env: process.env });
 
   let stdoutBuf = "";
@@ -1132,6 +1142,19 @@ function handleClaude(body, req, res, cors) {
     ) {
       sawDelta = true;
       emit({ type: "delta", text: obj.event.delta.text });
+      return;
+    }
+    if (obj.type === "assistant") {
+      // Tool calls ride complete assistant messages; text already streamed as
+      // deltas above. detail = the human-readable heart of the input.
+      for (const b of obj.message?.content ?? []) {
+        if (b?.type !== "tool_use") continue;
+        const i = b.input ?? {};
+        const detail = String(
+          i.command ?? i.file_path ?? i.path ?? i.pattern ?? i.query ?? i.url ?? i.description ?? "",
+        ).slice(0, 80);
+        emit({ type: "tool", name: b.name, detail });
+      }
       return;
     }
     if (obj.type === "result") {

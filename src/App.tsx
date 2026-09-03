@@ -1364,6 +1364,7 @@ export function App() {
       setState((s) => ({
         ...s,
         master: "idle",
+        working: undefined,
         error,
         timeline: s.timeline
           .map((t) => (t.id === masterId ? patch(t) : t))
@@ -1381,6 +1382,8 @@ export function App() {
           }));
         },
         abort.signal,
+        // Tool activity (claude path) rides the same strip the daemon uses.
+        (label) => setState((s) => ({ ...s, working: label })),
       );
       historyRef.current.push({ role: "assistant", content: reply });
       settle((t) => (t.kind === "master" ? { ...t, streaming: false } : t));

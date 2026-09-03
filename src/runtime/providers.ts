@@ -10,16 +10,20 @@ declare const __NIM_MODEL__: string;
 export const CLAUDE_PICK = "claude";
 
 /** What the composer's model picker offers: Claude Code first, then the NIM
- *  models with the build's default on top. Labels drop the vendor prefix. */
+ *  models with the build's default on top. Labels drop the vendor prefix.
+ *  Every id below is verified against the live NIM /v1/models catalog
+ *  (2026-09) — the catalog rotates, so re-check before editing this list. */
 export const MODEL_PICKS: ReadonlyArray<{ id: string; label: string }> = [
   { id: CLAUDE_PICK, label: "Claude Code" },
   ...Array.from(
     new Set([
       __NIM_MODEL__,
-      "deepseek-ai/deepseek-r1",
-      "meta/llama-3.3-70b-instruct",
-      "qwen/qwen2.5-coder-32b-instruct",
-      "moonshotai/kimi-k2-instruct",
+      "deepseek-ai/deepseek-v4-pro-0813",
+      "moonshotai/kimi-k3",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "nvidia/nemotron-3-super-120b-a12b",
+      "minimaxai/minimax-m3",
+      "openai/gpt-oss-120b",
     ]),
   ).map((m) => ({ id: m, label: m.split("/").pop() ?? m })),
 ];

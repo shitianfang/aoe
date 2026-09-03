@@ -245,6 +245,15 @@ describe("builtin skills", () => {
 			expect(compact?.kind === "python" && compact.python.importName).toBe("compact");
 		});
 
+		it("loads the bundled autonomous skill as a python skill", () => {
+			const { skills } = loadSkillsFromDir({ dir: getBundledSkillsDir(), source: "builtin" });
+
+			const autonomous = skills.find((s) => s.name === "autonomous");
+			expect(autonomous).toBeDefined();
+			expect(autonomous?.kind).toBe("python");
+			expect(autonomous?.kind === "python" && autonomous.python.importName).toBe("autonomous");
+		});
+
 		it("loads the bundled preview skill as a python skill", () => {
 			const { skills } = loadSkillsFromDir({ dir: getBundledSkillsDir(), source: "builtin" });
 

@@ -34,6 +34,7 @@ export function Composer(props: {
   children: ChildInfo[];
   target: ComposerTarget;
   delivery: DeliveryMode;
+  working?: string;
   error?: string;
   onTarget: (t: ComposerTarget) => void;
   onDelivery: (d: DeliveryMode) => void;
@@ -86,6 +87,9 @@ export function Composer(props: {
     const nextAt = hhmm(next);
     if (nextAt) segs.push(`next check-in ${nextAt}`);
     if (props.bridge && !props.bridge.connected) segs.push("runtime offline · model only");
+    const helpersRunning = props.children.some((c) => c.status === "running" || c.status === "queued");
+    if (busy && props.working) segs.push(props.working.toLowerCase());
+    else if (!busy && helpersRunning) segs.push("waiting on helpers");
     if (segs.length === 0) segs.push(busy ? "master running" : "master idle");
     return (
       <>

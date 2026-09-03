@@ -16,7 +16,9 @@ export type BridgeMessage =
   | { type: "snapshot"; state: { goal: unknown; heartbeat: unknown }; children: unknown[]; messages: unknown[] }
   | { type: "event"; event: Record<string, unknown> }
   | { type: "heartbeats_changed" }
-  | { type: "preview_update" };
+  | { type: "preview_update" }
+  | { type: "file_activity"; file: { path: string; name: string; at: string } }
+  | { type: "working_message"; text: string };
 
 // Packaged app: Electron main hosts the daemon bridge and hands its port over
 // via the page query. Dev: same-origin Vite proxy.

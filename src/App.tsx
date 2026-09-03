@@ -193,6 +193,7 @@ export function App() {
         setState((s) => ({
           ...s,
           master: "idle",
+          working: undefined,
           timeline: s.timeline.map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x)),
         }));
       } else if (t === "goal_update") {
@@ -247,6 +248,8 @@ export function App() {
         }
         if (message.role !== "assistant") return;
         const text = extractText(message);
+        // Reasoning-only updates carry no text; never render an empty bubble.
+        if (text === "" && !daemonMsgRef.current) return;
         const key = message.id ?? "assistant";
         const applyText = (itemId: string, value: string, streaming: boolean) =>
           setState((s) => ({
@@ -284,7 +287,8 @@ export function App() {
           }
         }
       } else if (t === "tool_execution_start") {
-        const toolName = String(event.toolName ?? "tool");
+        const raw = String(event.toolName ?? "tool");
+        const toolName = raw === "ipython" ? "python" : raw;
         const path = filePathFromArgs(event.args);
         const label = path ? `${toolName} · ${path.split(/[\\/]/).pop()}` : toolName;
         const writes = toolName === "edit" || toolName === "write";
@@ -364,6 +368,11 @@ export function App() {
         refreshHeartbeats();
       } else if (m.type === "preview_update") {
         refreshPreview();
+      } else if (m.type === "file_activity") {
+        // fs truth from the bridge's per-turn scan (writes happen inside the kernel)
+        setState((s) => ({ ...s, files: upsertFile(s.files, m.file.path, "master") }));
+      } else if (m.type === "working_message") {
+        setState((s) => ({ ...s, working: m.text || undefined }));
       } else if (m.type === "snapshot") {
         // The snapshot roster is authoritative: helpers can vanish (the agent
         // may delete its own). Merge by id, keep cached session ids, drop the
@@ -613,6 +622,7 @@ export function App() {
           children={state.children}
           target={state.target}
           delivery={state.delivery}
+          working={state.working}
           error={state.error}
           onTarget={setTarget}
           onDelivery={setDelivery}

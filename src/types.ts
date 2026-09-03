@@ -118,6 +118,8 @@ export interface AppState {
   autonomous: AutonomousInfo | null;
   target: ComposerTarget;
   delivery: DeliveryMode;
+  /** Runtime's own "what am I doing" line (setWorkingMessage), shown while working. */
+  working?: string;
   /** Last error surfaced to the strip, if any. */
   error?: string;
 }

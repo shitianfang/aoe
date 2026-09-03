@@ -70,6 +70,51 @@ let preview = createPreviewStore({
   onUpdate: () => broadcast({ type: "preview_update" }),
 });
 
+// ---- workspace file activity ----------------------------------------------
+// All real writes happen inside the python kernel (the only tool is ipython),
+// so the filesystem is the source of truth: scan the workspace at each turn
+// end and diff against the last manifest.
+const SCAN_IGNORE = new Set(["node_modules", ".git", "__pycache__"]);
+let manifest = new Map();
+
+function scanWorkspace(dir, prefix = "", out = new Map(), depth = 0) {
+  if (depth > 4) return out;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (e.name.startsWith(".")) continue;
+    const rel = prefix ? `${prefix}/${e.name}` : e.name;
+    if (e.isDirectory()) {
+      if (!SCAN_IGNORE.has(e.name)) scanWorkspace(path.join(dir, e.name), rel, out, depth + 1);
+    } else if (e.isFile()) {
+      try {
+        const st = fs.statSync(path.join(dir, e.name));
+        out.set(rel, `${st.mtimeMs}:${st.size}`);
+      } catch {
+        /* raced with a delete */
+      }
+    }
+  }
+  return out;
+}
+
+function resetManifest() {
+  manifest = scanWorkspace(WORKSPACE_DIR);
+}
+
+function diffWorkspace() {
+  const next = scanWorkspace(WORKSPACE_DIR);
+  const changed = [];
+  for (const [rel, sig] of next) if (manifest.get(rel) !== sig) changed.push(rel);
+  manifest = next;
+  return changed;
+}
+// ---------------------------------------------------------------------------
+
 function canConnect(socketPath) {
   return new Promise((resolve) => {
     const sock = createConnection(socketPath);
@@ -154,8 +199,29 @@ async function attachMaster() {
   masterConn.subscribe((event) => {
     // AgentConnectionEvent wraps session events; renderer consumes the inner shape.
     if (event?.type === "session_event") {
-      preview.observe(event.event); // edit/write + agent_end feed the preview store
-      broadcast({ type: "event", event: event.event });
+      const inner = event.event;
+      if (inner?.type === "agent_end") {
+        // fs truth first, so the preview snapshot pass sees every change
+        for (const rel of diffWorkspace()) {
+          preview.touch(rel);
+          broadcast({
+            type: "file_activity",
+            file: { path: rel, name: rel.split("/").pop(), at: new Date().toISOString() },
+          });
+        }
+        preview.observe(inner);
+        // agent_end carries the full message history — the renderer never needs it
+        broadcast({ type: "event", event: { type: "agent_end" } });
+        return;
+      }
+      preview.observe(inner);
+      broadcast({ type: "event", event: inner });
+    } else if (event?.type === "extension_ui_request") {
+      // free "what is it doing" copy (setWorkingMessage); empty payload clears
+      const req = event.request;
+      if (req?.method === "setWorkingMessage") {
+        broadcast({ type: "working_message", text: req.payload?.message ?? "" });
+      }
     } else if (event?.type === "connection_status" || event?.type === "closed") {
       broadcast({ type: "bridge_status", event });
     } else if (event?.type === "heartbeats_changed") {
@@ -172,8 +238,8 @@ async function attachMaster() {
     error: null,
     workspace: currentWorkspace,
   };
-  broadcast({ type: "hello", daemon });
-  broadcast({
+  resetManifest();
+  lastSnapshot = {
     type: "snapshot",
     state: {
       goal: snapshot.state?.goal ?? null,
@@ -181,9 +247,14 @@ async function attachMaster() {
       sessionDir: snapshot.state?.sessionDir ?? null,
     },
     children: snapshot.children ?? [],
-    messages: snapshot.messages ?? [],
-  });
+    messages: [],
+  };
+  broadcast({ type: "hello", daemon });
+  broadcast(lastSnapshot);
 }
+
+/** Latest snapshot payload, replayed to late-joining SSE clients. */
+let lastSnapshot = null;
 
 async function switchWorkspace(name) {
   if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
@@ -378,6 +449,9 @@ const server = http.createServer(async (req, res) => {
       connection: "keep-alive",
     });
     res.write(`data: ${JSON.stringify({ type: "hello", daemon })}\n\n`);
+    if (daemon.connected && lastSnapshot) {
+      res.write(`data: ${JSON.stringify(lastSnapshot)}\n\n`);
+    }
     sseClients.add(res);
     req.on("close", () => sseClients.delete(res));
     return;

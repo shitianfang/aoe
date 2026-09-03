@@ -60,6 +60,14 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     return PREVIEWABLE.test(rel) ? rel : null;
   }
 
+  /** Mark a (possibly relative) path as changed this turn; used by the
+   *  bridge's fs scan — real writes happen inside the python kernel and never
+   *  surface as edit/write tool events. */
+  function touch(p) {
+    const rel = toRel(p);
+    if (rel) touched.add(rel);
+  }
+
   function observe(event) {
     if (!event || typeof event !== "object") return;
     if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
@@ -135,5 +143,5 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     return { buffer: fs.readFileSync(path.join(root, snap.file)), contentType };
   }
 
-  return { observe, list, read };
+  return { observe, touch, list, read };
 }

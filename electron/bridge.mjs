@@ -24,7 +24,8 @@
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
- *   POST /bridge/claude   { text, sessionId?, system? } → SSE {type:"delta"|"tool"|"done"|"error"}
+ *   POST /bridge/claude   { text, sessionId?, system? } → SSE
+ *                         {type:"delta"|"tool"|"subagent"|"done"|"error"}
  *                         — runs the local `claude -p` CLI (user's own login) as a
  *                         real agent: tools enabled in the workspace directory
  *
@@ -1088,7 +1089,8 @@ async function handleCmd(body) {
  *  used; no credential is ever read or forwarded here. `claude -p` is a full
  *  agent runner, so master gets real tool use in the workspace directory.
  *  Streams SSE frames: {type:"delta",text} per chunk, {type:"tool",name,detail}
- *  when a tool runs, then {type:"done",sessionId}, or {type:"error",message}. */
+ *  when a tool runs, {type:"subagent",id,label,status} for Task subagent
+ *  lifecycles, then {type:"done",sessionId}, or {type:"error",message}. */
 function handleClaude(body, req, res, cors) {
   const text = String(body.text ?? "");
   const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
@@ -1121,6 +1123,9 @@ function handleClaude(body, req, res, cors) {
   let stderrTail = "";
   let sawDelta = false;
   let ended = false;
+  /** Running Task subagents by tool_use id — they get lifecycle frames so the
+   *  renderer can show a read-only card while they run. */
+  const subagents = new Map();
   const end = (payload) => {
     if (ended) return;
     ended = true;
@@ -1140,6 +1145,8 @@ function handleClaude(body, req, res, cors) {
       obj.event?.type === "content_block_delta" &&
       obj.event?.delta?.type === "text_delta"
     ) {
+      // A subagent's own prose must not leak into master's bubble.
+      if (obj.parent_tool_use_id) return;
       sawDelta = true;
       emit({ type: "delta", text: obj.event.delta.text });
       return;
@@ -1147,17 +1154,38 @@ function handleClaude(body, req, res, cors) {
     if (obj.type === "assistant") {
       // Tool calls ride complete assistant messages; text already streamed as
       // deltas above. detail = the human-readable heart of the input.
-      for (const b of obj.message?.content ?? []) {
+      const content = obj.message?.content;
+      for (const b of Array.isArray(content) ? content : []) {
         if (b?.type !== "tool_use") continue;
         const i = b.input ?? {};
         const detail = String(
           i.command ?? i.file_path ?? i.path ?? i.pattern ?? i.query ?? i.url ?? i.description ?? "",
         ).slice(0, 80);
         emit({ type: "tool", name: b.name, detail });
+        // Master's own Task launches become subagent cards; nested ones don't.
+        if (!obj.parent_tool_use_id && (b.name === "Task" || b.name === "Agent") && b.id) {
+          subagents.set(b.id, detail || b.name);
+          emit({ type: "subagent", id: b.id, label: detail || b.name, status: "running" });
+        }
+      }
+      return;
+    }
+    if (obj.type === "user") {
+      // A tool_result answering a tracked Task id means that subagent is done.
+      const content = obj.message?.content;
+      for (const b of Array.isArray(content) ? content : []) {
+        if (b?.type === "tool_result" && subagents.has(b.tool_use_id)) {
+          emit({ type: "subagent", id: b.tool_use_id, label: subagents.get(b.tool_use_id), status: "done" });
+          subagents.delete(b.tool_use_id);
+        }
       }
       return;
     }
     if (obj.type === "result") {
+      for (const [sid, label] of subagents) {
+        emit({ type: "subagent", id: sid, label, status: "done" });
+      }
+      subagents.clear();
       // Fallback for CLIs without partial messages: the final text only rides
       // the result. When deltas already streamed, forwarding it would double-emit.
       if (!sawDelta && typeof obj.result === "string" && obj.result) {

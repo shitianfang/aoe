@@ -1,6 +1,7 @@
 import { streamChat, type ChatMessage } from "./nim";
 import { streamClaudeTurn } from "./claude";
 import { getActiveProvider } from "./providers";
+import type { ClaudeSubagent } from "../types";
 
 /**
  * The resident commander of a workspace. For now it is a plain conversation
@@ -24,10 +25,11 @@ export async function runMasterTurn(
   onDelta: (text: string) => void,
   signal?: AbortSignal,
   onTool?: (label: string) => void,
+  onSubagent?: (sa: ClaudeSubagent) => void,
 ): Promise<string> {
   if (getActiveProvider() === "claude") {
     const lastUser = [...history].reverse().find((m) => m.role === "user");
-    return streamClaudeTurn(lastUser?.content ?? "", SYSTEM_PROMPT, onDelta, onTool, signal);
+    return streamClaudeTurn(lastUser?.content ?? "", SYSTEM_PROMPT, onDelta, onTool, onSubagent, signal);
   }
   return streamChat([{ role: "system", content: SYSTEM_PROMPT }, ...history], onDelta, signal);
 }

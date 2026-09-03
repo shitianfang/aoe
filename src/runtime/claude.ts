@@ -8,6 +8,7 @@
  */
 
 import { bridgeUrl } from "./bridge";
+import type { ClaudeSubagent } from "../types";
 
 let sessionId: string | null = null;
 
@@ -16,6 +17,7 @@ export async function streamClaudeTurn(
   system: string,
   onDelta: (t: string) => void,
   onTool?: (label: string) => void,
+  onSubagent?: (sa: ClaudeSubagent) => void,
   signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(bridgeUrl("/bridge/claude"), {
@@ -50,6 +52,9 @@ export async function streamClaudeTurn(
         message?: string;
         name?: string;
         detail?: string;
+        id?: string;
+        label?: string;
+        status?: string;
       };
       try {
         frame = JSON.parse(payload);
@@ -61,6 +66,12 @@ export async function streamClaudeTurn(
         onDelta(frame.text);
       } else if (frame.type === "tool" && frame.name) {
         onTool?.(frame.detail ? `${frame.name} · ${frame.detail}` : frame.name);
+      } else if (frame.type === "subagent" && frame.id) {
+        onSubagent?.({
+          id: frame.id,
+          label: frame.label || "subagent",
+          status: frame.status === "done" ? "done" : "running",
+        });
       } else if (frame.type === "done") {
         if (frame.sessionId) sessionId = frame.sessionId;
       } else if (frame.type === "error") {

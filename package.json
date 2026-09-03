@@ -1,15 +1,15 @@
 {
-  "name": "prime-desktop",
+  "name": "aoe",
   "version": "0.4.1",
   "private": true,
-  "description": "Prime Agent desktop client — a calm workspace for proactive, self-improving, multi-agent work",
+  "description": "AOE — a calm desktop workspace for proactive, self-improving, multi-agent work",
   "author": "shitianfang",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --port 3000 --host",
     "bridge": "node electron/bridge.mjs",
-    "dev:bridge": "PRIME_AGENT_DIR=/workspace/prime-agent-fork node electron/bridge.mjs",
+    "dev:bridge": "PRIME_AGENT_DIR=/workspace/prime-agent node electron/bridge.mjs",
     "build": "tsc --noEmit && vite build",
     "app": "electron .",
     "dist:win": "vite build && electron-builder --win --publish never",
@@ -30,8 +30,8 @@
     "vite": "^5.4.11"
   },
   "build": {
-    "appId": "ai.primeintellect.desktop",
-    "productName": "Prime Agent",
+    "appId": "ai.primeintellect.aoe",
+    "productName": "AOE",
     "files": [
       "dist/**",
       "electron/**"

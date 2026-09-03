@@ -1,4 +1,4 @@
-# Prime Agent Desktop
+# AOE
 
 A calm desktop client for [prime-agent](https://github.com/PrimeIntellect-ai/prime-agent) — built for
 knowledge workers around three ideas: proactive (long unattended runs), self-improving (lessons), and
@@ -20,8 +20,8 @@ npm run app            # Electron shell pointing at the dev server
 
 The bridge needs **Node >= 22.8** and **uv** on PATH (the prime-agent daemon and its Python kernel
 require them), plus a built prime-agent checkout at `PRIME_AGENT_DIR` (default `/workspace/prime-agent`).
-`npm run dev:bridge` runs the bridge against the preview-publish fork at `/workspace/prime-agent-fork`
-(daemon capability `preview_events` — declared previews in the Preview view).
+`npm run dev:bridge` runs the bridge against the fork checkout at `/workspace/prime-agent`
+(the same as the default; the fork adds `preview.publish` and `autonomous.*` host requests).
 Without the bridge the app falls back to plain NIM chat ("model only" in the title bar).
 
 The NIM key stays server-side (Vite dev proxy / bridge). Never commit `.env`.
@@ -40,7 +40,7 @@ npm run dist:win       # zip target, output in release/
 
 The packaged app hosts the daemon bridge itself. On the target machine it needs:
 
-- `NIM_API_KEY` env var, or `%APPDATA%/prime-desktop/config.json` with `{ "nimApiKey": "nvapi-..." }`
+- `NIM_API_KEY` env var, or `%APPDATA%/AOE/config.json` with `{ "nimApiKey": "nvapi-..." }`
 - for the real runtime: Node >= 22.8 and uv on PATH, and `PRIME_AGENT_DIR` pointing at a built
   prime-agent checkout (otherwise the app runs in model-only mode)
 
@@ -55,5 +55,6 @@ The packaged app hosts the daemon bridge itself. On the target machine it needs:
 - [x] Files and Preview from filesystem truth (per-turn scan; version snapshots)
 - [x] Workspaces with pinned general default
 - [x] Windows zip releases
-- [ ] Preview host-request pipeline in core (client-side inference for now)
+- [x] Preview host-request pipeline in core (fork: `preview.publish`)
+- [x] Long-running switch: master picks its own driver (goal / heartbeat / unattended; fork adds `autonomous.*`)
 - [ ] Windows end-to-end validation on a real machine

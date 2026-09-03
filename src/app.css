@@ -99,7 +99,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .edetail .econtent { margin: 8px 0 0; padding: 8px 10px; background: var(--soft); border: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; }
 .edetail .lf { display: flex; gap: 8px; align-items: center; padding: 9px 0 0; }
 /* expanded history record (Learned pane) */
-.edetail .hfull { font-size: 12px; color: var(--t1); }
+/* The summary answers "what did it learn" — it is the pane's headline, not
+   another metadata line. Louder than the owner/time row above it, and it
+   wraps freely; the record's key/value rows stay at 12px underneath. */
+.edetail .hfull { margin-top: 10px; font-size: 15px; line-height: 1.5; color: var(--t1); overflow-wrap: break-word; }
 .edetail .hkv { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; margin-top: 7px; font-size: 12px; }
 .edetail .hk { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); padding-top: 2px; }
 .edetail .hv { color: var(--t2); overflow-wrap: break-word; }
@@ -232,8 +235,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }
-.lsn .ttl { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--t1); }
-.lsn .ttl .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The title IS what was learned, so it gets two lines rather than one
+   ellipsis. Baseline alignment in a flex row takes the item's FIRST
+   baseline — that keeps the time beside the title's opening line instead of
+   stranding a timestamp on a line of its own above it. */
+.lsn .ttl { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; line-height: 1.45; color: var(--t1); }
+.lsn .ttl .tx { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .lsn .ttl .tm { margin-left: auto; flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .lsn .meta { display: block; margin-top: 2px; font-family: var(--mono); font-size: 9px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* empty center pane */
@@ -474,6 +481,43 @@ body.resizing iframe { pointer-events: none; }
 .iin::placeholder { color: var(--t3); }
 .iin:focus { border-color: var(--t3); }
 .ierr { margin-top: 6px; font-family: var(--mono); font-size: 9px; color: var(--red); }
+
+/* ---- CJK micro-typography (one block — do not scatter these) ----
+   Every small label in this shell is an English typographic device: 8–9px
+   MONO, uppercased, tracked out .06–.14em. In Latin that reads as a crisp
+   caption. In Chinese it reads as damage — uppercase does nothing to 自进化,
+   the tracking pulls a compound apart, and a hanzi at 8.5px is a smudge no
+   matter the weight. CJK buys the same quiet the other way round: keep the
+   muted ink, drop the mono face and the tracking, and give it size.
+   Scoped on the lang that i18n's stampHtml() already stamps, so the English
+   rendering stays exactly as tuned — only Chinese is overridden. */
+html[lang="zh-CN"] .sec,
+html[lang="zh-CN"] .lhint,
+html[lang="zh-CN"] .colnote,
+html[lang="zh-CN"] .edetail .hk,
+html[lang="zh-CN"] .lesson .ll {
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
+}
+html[lang="zh-CN"] .lauto,
+html[lang="zh-CN"] .lsn .meta,
+html[lang="zh-CN"] .edetail .eh,
+html[lang="zh-CN"] .lesson .lh {
+  font-family: var(--sans); font-size: 11px; letter-spacing: 0;
+}
+html[lang="zh-CN"] .edetail .eh .id { font-size: 12px; }
+/* ids stay mono: machine text, and mono is what makes it scannable. Clock
+   digits (.lsn .ttl .tm) keep theirs for the same reason. */
+html[lang="zh-CN"] .lesson .lh .id { font-family: var(--mono); }
+html[lang="zh-CN"] .edetail .lf .note,
+html[lang="zh-CN"] .lesson .lf .note {
+  font-family: var(--sans); font-size: 10px; letter-spacing: 0;
+}
+/* the two real operations sit under the record they act on — without this the
+   pane reads clean right up until you look at its buttons */
+html[lang="zh-CN"] .learn .btn,
+html[lang="zh-CN"] .lesson .btn {
+  font-family: var(--sans); font-size: 10px; letter-spacing: 0; text-transform: none;
+}
 
 .send:focus-visible, .a:focus-visible, .theme:focus-visible, .btn:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 2px; }
 ::-webkit-scrollbar { width: 6px; }

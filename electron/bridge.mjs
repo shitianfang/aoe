@@ -223,7 +223,10 @@ async function workspacesPayload() {
   }
   const workspaces = dirs.map((ws) => {
     const s = sessions.find((x) => x.sessionName === masterNameFor(ws) && (x.rlmDepth ?? 0) === 0);
-    const state = s?.isSessionActive ? (s.isStreaming ? "running" : "idle") : "off";
+    let state = s?.isSessionActive ? (s.isStreaming ? "running" : "idle") : "off";
+    // The roster can lag right after (re)attach; the live connection is truth
+    // for the workspace we are attached to.
+    if (ws === currentWorkspace && daemon.connected && state === "off") state = "idle";
     return { name: ws, pinned: ws === "general", state };
   });
   return { current: currentWorkspace, workspaces };

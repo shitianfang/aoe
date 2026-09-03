@@ -1940,6 +1940,16 @@ export function App() {
   const rootStateOf = (name: string): AgentState =>
     state.rootStates[name] ??
     (state.others.find((a) => a.name === name)?.state === "running" ? "working" : "idle");
+  // Who Preview says is writing: the agent behind the most recent file, while
+  // it is still working. Silent the rest of the time — a status line that is
+  // always lit says nothing.
+  const previewWriter = (() => {
+    const who = state.files[0]?.who;
+    if (!who) return undefined;
+    const busy = who === "master" ? state.master === "working" : rootStateOf(who) === "working";
+    return busy ? who : undefined;
+  })();
+
   // Busy-ness the composer acts on — the current target's, not the view's.
   const targetState: AgentState =
     state.target.kind === "root" ? rootStateOf(state.target.name) : state.master;
@@ -2059,6 +2069,7 @@ export function App() {
           selectedPath={state.previewPath}
           timeline={state.timeline}
           onSelect={selectPreviewFile}
+          writer={previewWriter}
         />
       );
     }
@@ -2090,7 +2101,9 @@ export function App() {
       );
     }
     if (p.kind === "root") return renderRootPane(p.name);
-    // master gets the same one-line agent header as root/helper panes
+    // master gets the same agent header as root/helper panes, plus the one
+    // line only master can carry: which workspace it is running, and where to
+    // click to change it.
     return (
       <>
         <div className="ahead">
@@ -2105,6 +2118,11 @@ export function App() {
                 <>{tt("idle")}</>
               )}
             </span>
+          </div>
+          <div className="wsw">
+            {tt("top-left switches workspace · now in {ws}", {
+              ws: state.bridge?.workspace || "general",
+            })}
           </div>
         </div>
         <Timeline items={state.timeline} onExample={sendExample} />

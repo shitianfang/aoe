@@ -314,7 +314,7 @@ Without the runtime, the app degrades to model-only chat rather than breaking:
   unlike NIM. It has not been made to work on Windows.
 - **NVIDIA NIM** — `NIM_API_KEY` from `.env`, proxied server-side; the renderer never sees a
   key. Keys come from [build.nvidia.com](https://build.nvidia.com); `NIM_MODEL` defaults to
-  `deepseek-ai/deepseek-v4-flash-0731`.
+  `deepseek-ai/deepseek-v4-pro-0813`.
 
 ## Configuration
 
@@ -326,7 +326,7 @@ Without the runtime, the app degrades to model-only chat rather than breaking:
 | `PRIME_WORKSPACE` | workspace to open | last opened, else `general` |
 | `PRIME_AGENT_DAEMON_SOCKET` | daemon socket path | the SDK's platform default |
 | `NIM_API_KEY` | key for the fallback chat provider | — |
-| `NIM_MODEL` | model for the fallback chat provider | `deepseek-ai/deepseek-v4-flash-0731` |
+| `NIM_MODEL` | model for the fallback chat provider | `deepseek-ai/deepseek-v4-pro-0813` |
 | `AOE_DEV_URL` | dev server the Electron shell loads | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | log every roster turn end | off |
 

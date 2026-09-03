@@ -15,16 +15,19 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         // The NIM key lives server-side only; the renderer never sees it.
+        // Aimed at the bridge rather than at NVIDIA directly: the bridge is
+        // where every NIM request — the daemon's included — is counted, and a
+        // request that skipped it would be missing from the usage readout.
         "/api/nim": {
-          target: "https://integrate.api.nvidia.com",
+          target: `http://127.0.0.1:${env.PRIME_BRIDGE_PORT ?? "3117"}`,
           changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/nim/, "/v1"),
+          rewrite: (p) => p.replace(/^\/api\/nim/, "/nim/v1"),
           headers: { Authorization: `Bearer ${env.NIM_API_KEY ?? ""}` },
         },
       },
     },
     define: {
-      __NIM_MODEL__: JSON.stringify(env.NIM_MODEL ?? "deepseek-ai/deepseek-v4-flash-0731"),
+      __NIM_MODEL__: JSON.stringify(env.NIM_MODEL ?? "deepseek-ai/deepseek-v4-pro-0813"),
     },
   };
 });

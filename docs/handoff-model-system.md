@@ -10,7 +10,7 @@
 
 - master 的对话有三个后端：**daemon**（在线时唯一路径，模型由 runtime 决定）、**claude -p**（离线回退之一，本机 Claude Code 登录）、**NIM**（离线回退之二）。三者共用 Composer 左下**同一个模型下拉**：在线列 runtime 目录并真切换（`set_model`），离线选 Claude Code / NIM 模型。
 - claude -p 不是纯文字包装：开了工具（`--permission-mode acceptEdits --allowedTools Bash,WebSearch,WebFetch`），cwd 钉在工作区目录，是真 agent。它的 Task 子 agent 显示为 Agents 栏 master 下的**只读卡片**（不可对话，这是 CLI 机制边界）。
-- NIM 模型列表**全部经过实时验证**——旧目录会轮换下架（llama-3.3/qwen2.5/deepseek-r1/kimi-k2 都已 404），改列表前必须先查 `GET https://integrate.api.nvidia.com/v1/models`。stepfun 不在 NIM 上。
+- NIM 模型列表**全部经过实时验证**——旧目录会轮换下架（llama-3.3/qwen2.5/deepseek-r1/kimi-k2 都已 404；`openai/gpt-oss-120b` 2026-09-03T08:00Z EOL，现在直接 410 Gone），改列表前必须先查 `GET https://integrate.api.nvidia.com/v1/models`。stepfun 不在 NIM 上。
 - 所有链路都端到端实测过（curl 真调用 + 真实事件流），非纸面。
 
 ## 1. 用户既定决策（不要走回头路）
@@ -27,7 +27,13 @@
 - 对话走 prime-agent runtime，模型由 daemon 会话决定。
 - `GET /bridge/model` → `{ current, models }`：current 来自 `get_connection_state` 的 `state.model`；models 来自 `masterConn.getModelCatalog()`，按 `configuredProviders` 过滤（目前只有 `nvidia-nim`）。
 - 切换：cmd op `set_model`（`{ text: modelId, provider }`）→ `masterConn.setModel()`，持久化进会话。只作用于**当前工作区的 master**，root/helper 不受影响。
-- runtime 目录注册在 `~/.prime/agent/models.json`。当前已注册 7 个（都实测过）：deepseek-v4-flash（默认）、deepseek-v4-pro、kimi-k3、nemotron-3.5-lightning-30b-a3b、nemotron-3-super-120b-a12b、minimax-m3、gpt-oss-120b。**这 7 个全是 reasoning 模型**（都吐 `reasoning_content`），compat 统一 `requiresReasoningContentOnAssistantMessages: true` + `thinkingFormat: "deepseek"`。改 models.json 后要重启 daemon 才生效。
+- runtime 目录注册在 `~/.prime/agent/models.json`。当前已注册 **6 个**（都实测过）：deepseek-v4-flash、deepseek-v4-pro、kimi-k3、nemotron-3.5-lightning-30b-a3b、nemotron-3-super-120b-a12b、minimax-m3。gpt-oss-120b 已于 2026-09-03 从 NIM 下架（410），已删除。改 models.json 后要重启 daemon 才生效。
+- **新会话的默认模型不在 models.json 里，在 `~/.prime/agent/settings.json` 的 `defaultModel`**（`set_model` / `root_set_model` 会回写它）。2026-09-03 从 nemotron-3.5-lightning 改成 `deepseek-ai/deepseek-v4-pro-0813`：Lightning 的 AA 智力指数只有 24，是目录里最弱的一档，却在当默认。`NIM_MODEL`（vite define / main.cjs）是**离线直连**那条路的默认，两者是两个独立的默认值，一起改。
+- **`reasoning_content` 不是统一的**（原文写"7 个全吐"，实测不成立，2026-09-03 逐个 curl 复核）：
+  flash / kimi-k3 / nemotron-3-super / nemotron-3.5-lightning 会吐，**pro 和 minimax-m3 不吐**。
+  好在 NIM 两种形态都收：这四个模型第二轮**回传或不回传** `reasoning_content` 都是 200，
+  pro / minimax 不回传也是 200——所以 models.json 里只有 flash 带 compat 块**不是 bug**，
+  加不加都能跑。真要统一，也只该加在会吐的那四个上。
 
 ### 2b. claude -p（离线回退，选 "Claude Code"）
 
@@ -68,6 +74,11 @@
 - claude 子 agent卡片不可对话（CLI 机制如此），只在当前 turn 存活。
 - `set_model` 只管 master；root 会话的模型切换未做。
 - 打包形态（electron main 托管 bridge + /bridge/claude）**没在打包环境验证过**，只验了 dev。
-- models.json 里 7 个模型的 contextWindow/maxTokens 是保守通用值（128k/32k），未逐个核实。
+- ~~models.json 里 7 个模型的 contextWindow/maxTokens 是保守通用值（128k/32k），未逐个核实。~~
+  **contextWindow 已于 2026-09-03 逐个实测**（发一个超长请求，400 的报文会点名该部署的真实上限）：
+  flash / pro / kimi-k3 = `1048576`，nemotron-3-super / nemotron-3.5-lightning = `1000000`，
+  minimax-m3 = `262144`。此前统一写 128k，把 Nemotron 3 Super 唯一的强项（RULER@1M 91.8）
+  和 DeepSeek 的百万窗口全砍掉了。`maxTokens` 仍是 32768——那不是模型上限，是**故意**的单轮
+  输出封顶（NIM 对这几个模型的 max_tokens 基本不校验），要改是策略问题不是核实问题。
 - test root 曾出现 turn 长期不关闭（child 回消息后 needs_input 挂着），daemon 拒收新 prompt 报 "already processing"——重启 daemon 可清；根因在 runtime 侧，未查。
 - 首开示例（Timeline `EXAMPLES`、自进化示例行、Agents 空态例句）在有真实数据后自动退场；文案改动记得同步 i18n.ts。

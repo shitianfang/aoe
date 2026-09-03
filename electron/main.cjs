@@ -2,15 +2,17 @@ const { app, BrowserWindow, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
-const https = require("node:https");
 
 const DEV_URL = process.env.AOE_DEV_URL || process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
-const NIM_UPSTREAM = "https://integrate.api.nvidia.com/v1";
+// Not NVIDIA directly: the daemon bridge (hosted in this process for a
+// packaged build) proxies to NIM and is the single place requests are counted
+// for the usage readout. Going straight out would leave that count short.
+const NIM_UPSTREAM = () => `http://127.0.0.1:${process.env.PRIME_BRIDGE_PORT || "3117"}/nim/v1`;
 
 /** Key and model come from the environment or <userData>/config.json — never from the bundle. */
 function loadNimConfig() {
   let key = process.env.NIM_API_KEY || "";
-  let model = process.env.NIM_MODEL || "deepseek-ai/deepseek-v4-flash-0731";
+  let model = process.env.NIM_MODEL || "deepseek-ai/deepseek-v4-pro-0813";
   try {
     const p = path.join(app.getPath("userData"), "config.json");
     // Renaming the app to AOE moved userData; an install that predates the
@@ -58,8 +60,8 @@ function startBridge() {
       return;
     }
     const send = (body) => {
-      const upstream = https.request(
-        NIM_UPSTREAM + req.url.slice("/api/nim".length),
+      const upstream = http.request(
+        NIM_UPSTREAM() + req.url.slice("/api/nim".length),
         {
           method: req.method,
           headers: {

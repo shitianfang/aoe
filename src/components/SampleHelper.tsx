@@ -5,9 +5,10 @@ import { useT } from "../i18n";
 
 /** A sample helper's pane: the same shape a real one has — who, its task, the
  *  exchange — built from written copy rather than a session. It reuses
- *  HelperView's classes so it reads as the real thing, and says 示例 in the
- *  header so it is never mistaken for one. No composer and no stop/remove:
- *  there is nothing on the other end to send to. */
+ *  HelperView's rows verbatim, down to the words on a tool row, so what a
+ *  newcomer learns here still holds when the first real helper opens; the
+ *  header says 示例 so it is never mistaken for one. No composer and no
+ *  stop/remove: there is nothing on the other end to send to. */
 export function SampleHelper(props: { agent: SampleAgent }) {
   const t = useT();
   const a = props.agent;
@@ -34,21 +35,19 @@ export function SampleHelper(props: { agent: SampleAgent }) {
         ) : (
           a.turns.map((row, i) =>
             row.kind === "tool" ? (
-              // Indented to the message column: a tool call is the helper's own
-              // step, not a rule between speakers. Flush left it read as a
-              // divider sitting between master and the reply.
-              <div className="ev egtool" key={i}>
+              // A step, not a speaker: it hangs off the message column under
+              // the helper that ran it, the way the live transcript does.
+              <div className="ev" key={i}>
                 <span className="ic" />
                 <strong>{row.text}</strong>
                 <span className={row.status === "done" ? "rt ok" : "rt"}>
-                  {t(row.status === "done" ? "done" : "running…")}
+                  {t(row.status === "done" ? "done" : "running")}
                 </span>
               </div>
             ) : (
               <div className="msg" key={i}>
                 <BotAvatar seed={a.name} />
                 <div className="body">
-                  <span className="afrom">{a.name}</span>
                   <Markdown text={t(row.text)} />
                   {row.at ? <span className="when">{row.at}</span> : null}
                 </div>
@@ -56,7 +55,11 @@ export function SampleHelper(props: { agent: SampleAgent }) {
             ),
           )
         )}
-        <div className="div">{t("example · a real helper's own words appear here")}</div>
+        {/* A queued helper's pane is already one dashed line saying nothing
+            has started; a second one under it says the same thing twice. */}
+        {a.turns.length > 0 && (
+          <div className="div">{t("example · a real helper's own words appear here")}</div>
+        )}
       </div>
     </div>
   );

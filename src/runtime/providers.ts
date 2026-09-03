@@ -30,19 +30,24 @@ export function isClaudePick(id: string): boolean {
 /** What the composer's model picker offers: the Claude Code models first,
  *  then the NIM models with the build's default on top. Labels drop the
  *  vendor prefix. Every NIM id below is verified against the live NIM
- *  /v1/models catalog (2026-09) — the catalog rotates, so re-check before
- *  editing this list. */
+ *  /v1/models catalog (2026-09-03) — the catalog rotates, so re-check before
+ *  editing this list. `openai/gpt-oss-120b` was dropped after NIM retired it
+ *  (410 Gone, end of life 2026-09-03); the surviving `gpt-oss-20b` is not
+ *  worth a row. The default is Pro rather than Flash: they sit a point apart
+ *  on general intelligence, but Pro leads coding and agentic work by a wide
+ *  margin, and the two smallest models measurably fail to follow the client
+ *  system prompt. */
 export const MODEL_PICKS: ReadonlyArray<{ id: string; label: string }> = [
   ...CLAUDE_MODELS,
   ...Array.from(
     new Set([
       __NIM_MODEL__,
       "deepseek-ai/deepseek-v4-pro-0813",
+      "deepseek-ai/deepseek-v4-flash-0731",
       "moonshotai/kimi-k3",
-      "nvidia/nemotron-3.5-lightning-30b-a3b",
-      "nvidia/nemotron-3-super-120b-a12b",
       "minimaxai/minimax-m3",
-      "openai/gpt-oss-120b",
+      "nvidia/nemotron-3-super-120b-a12b",
+      "nvidia/nemotron-3.5-lightning-30b-a3b",
     ]),
   ).map((m) => ({ id: m, label: m.split("/").pop() ?? m })),
 ];

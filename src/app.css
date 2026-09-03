@@ -111,7 +111,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .edetail .eh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .edetail .eh .id { color: var(--t1); font-size: 10.5px; font-weight: 700; }
 .edetail .econtent { margin: 8px 0 0; padding: 8px 10px; background: var(--soft); border: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; }
-.edetail .lf { display: flex; gap: 8px; align-items: center; padding: 9px 0 0; }
+.edetail .lf { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 16px 0 0; }
 /* expanded history record (Learned pane) */
 /* The summary answers "what did it learn" — it is the pane's headline, not
    another metadata line. Louder than the owner/time row above it, and it
@@ -131,7 +131,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* a review that applied nothing — the honest short answer, in place of edits */
 .edetail .hnone { margin-top: 12px; font-size: 12px; line-height: 1.6; color: var(--t3); max-width: 62ch; }
 /* the fold over the refiner's own paragraphs */
-.edetail .more { display: inline-flex; align-items: baseline; gap: 6px; margin-top: 13px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.edetail .more { display: inline-flex; align-items: baseline; gap: 6px; margin-top: 13px; padding: 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
 .edetail .more:hover { color: var(--t1); }
 .edetail .more .cv { font-size: 8px; }
 .edetail .lf .note { font-family: var(--mono); font-size: 8px; color: var(--t3); }
@@ -351,6 +351,8 @@ body.resizing iframe { pointer-events: none; }
 .ahead .run { color: var(--green); }
 .ahead .need { color: var(--red); }
 .ahead .r1 .act { margin-left: auto; display: flex; gap: 8px; }
+/* master only: the workspace it runs, and the corner mark that switches it. */
+.ahead .wsw { margin-top: 3px; font-family: var(--mono); font-size: 9px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t2); background: transparent; border: 1px solid var(--hair-hi); padding: 4px 9px; cursor: pointer; }
 .btn:hover { color: var(--t1); border-color: var(--t3); }
 .ahead .r3 { margin-top: 2px; font-size: 12px; color: var(--t2); }
@@ -461,11 +463,19 @@ body.resizing iframe { pointer-events: none; }
 .ev.good .rt { color: var(--green); }
 .ev.bad .ic { border-color: var(--red); }
 .ev.bad .rt { color: var(--red); }
+/* A helper's pane is one agent talking, so its steps sit closer together than
+   the timeline's turns do. Tool rows keep .ev's 34px indent — the message
+   column — because every one of them is a step that helper took, not a rule
+   drawn between two speakers. */
 .transcript.hevents { gap: 8px; }
-.transcript.hevents .ev { margin-left: 0; }
-/* a sample tool row belongs to the helper that ran it, so it lines up with
-   the message column rather than sitting flush against the pane edge */
-.transcript.hevents .ev.egtool { margin-left: 34px; }
+/* The dashed spine .msg drops is cut for the timeline's 16px gap; at 8 it
+   would overshoot past the top of the row it points at. */
+.transcript.hevents .msg::before { bottom: -8px; }
+/* ...and carries on down the tool rows, so a run of steps hangs off the helper
+   that took them instead of floating in the message column on its own. Offset
+   is .msg's own 11.5px spine less the 34px indent. */
+.transcript.hevents .ev { position: relative; }
+.transcript.hevents .ev::before { content: ""; position: absolute; left: -22.5px; top: -8px; bottom: 0; border-left: 1px dashed var(--hair); }
 
 /* ---- composer (centered, self-contained box; input on top, controls below) ---- */
 /* Same box model as .composer below it — 620 of content inside 16 of padding —
@@ -531,7 +541,7 @@ body.resizing iframe { pointer-events: none; }
 .pstat { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; font-family: var(--mono); font-size: 9px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
 .pstat .dot { width: 6px; height: 6px; background: var(--green); }
 .vbox { min-width: 0; border: 1px solid var(--hair-hi); background: var(--win); }
-.vbox .vh { display: flex; justify-content: space-between; padding: 7px 10px; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 9px; color: var(--t3); }
+.vbox .vh { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .vbox .vh b { color: var(--t1); }
 .vbox .vempty { padding: 14px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .pfiles { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }

@@ -7,13 +7,21 @@
  * each surface says 示例 out loud, and why the rows retire the instant a real
  * helper exists.
  *
+ * Written, but not invented: each pane is the shape a watched helper really
+ * produces — it says what it is about to do, takes its steps, then reports.
+ * Tool rows carry what the bridge puts in them (`python · <first line of the
+ * code>`, capped at 60 characters), because "python" on its own says nothing
+ * about the work, and a sample that shows less than the real thing teaches the
+ * wrong lesson. preview.publish is a call inside the REPL, not a tool of its
+ * own, so it appears the way it would actually appear.
+ *
  * Names double as ids (`eg:<name>`), so the pane a row opens is found without
  * any lookup table.
  */
 
 export interface SampleTurn {
   kind: "reply" | "tool";
-  /** task/reply: the words. tool: the tool's name. */
+  /** task/reply: the words. tool: the tool's name, detail and all. */
   text: string;
   /** tool rows only. */
   status?: "done" | "running";
@@ -37,7 +45,9 @@ export const SAMPLE_CREW: SampleAgent[] = [
     state: "done",
     at: "14:22",
     turns: [
-      { kind: "tool", text: "python", status: "done" },
+      { kind: "reply", at: "14:20", text: "Reading the whole workspace first, so nothing gets rewritten twice." },
+      { kind: "tool", text: 'python · sorted(p.name for p in Path(".").iterdir())', status: "done" },
+      { kind: "tool", text: 'python · print(Path("notes.md").read_text())', status: "done" },
       {
         kind: "reply",
         at: "14:22",
@@ -51,7 +61,9 @@ export const SAMPLE_CREW: SampleAgent[] = [
     state: "done",
     at: "14:26",
     turns: [
-      { kind: "tool", text: "python", status: "done" },
+      { kind: "reply", at: "14:23", text: "Building from scout's outline: one file, no build step, opens anywhere." },
+      { kind: "tool", text: 'python · outline = parse(Path("notes.md").read_text())', status: "done" },
+      { kind: "tool", text: 'python · Path("today.html").write_text(render(outline))', status: "done" },
       {
         kind: "reply",
         at: "14:26",
@@ -64,13 +76,18 @@ export const SAMPLE_CREW: SampleAgent[] = [
     task: "restyle it and publish a version",
     state: "running",
     turns: [
-      { kind: "tool", text: "python", status: "done" },
+      { kind: "reply", at: "14:28", text: "Type and spacing this pass. Colour is the pass after it." },
+      { kind: "tool", text: 'python · Path("today.html").write_text(styled(html))', status: "done" },
       {
         kind: "reply",
         at: "14:31",
         text: "Type and spacing done. Publishing the first version now so there is something to compare the next pass against.",
       },
-      { kind: "tool", text: "preview.publish", status: "running" },
+      {
+        kind: "tool",
+        text: 'python · await preview.publish("today.html")',
+        status: "running",
+      },
     ],
   },
   {

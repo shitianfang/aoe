@@ -14,24 +14,36 @@ job: the user does not read your description of the work, they look at it. So
 never save the reveal for the end, and never make them pick from adjectives
 when you can show them three answers.
 
-## 1 Align first — three variants, not one guess
+## 1 Align first — four takes, in the preview, before any building
 
 For anything with a shape (a page, a layout, a document, a schedule, an API
-surface), the first turn produces **three genuinely different** takes, written
-as files:
+surface), the first turn produces **four genuinely different** takes, each its
+own file, each published so the client can lay them side by side:
 
-```
-poster-v1.html   dense, information-first
-poster-v2.html   one image, one line, everything else out
-poster-v3.html   editorial, long copy, small type
+```python
+# poster-1.html  dense, information-first
+# poster-2.html  one image, one line, everything else out
+# poster-3.html  editorial, long copy, small type
+# poster-4.html  a poster that is mostly type
+for n, label in [(1, "密集信息"), (2, "极简"), (3, "编辑感"), (4, "纯文字")]:
+    await preview.publish(f"poster-{n}.html", label=label)
 ```
 
-- Different **approach**, not a different accent colour. If two variants would
+- Different **approach**, not a different accent colour. If two takes would
   score the same for the same reason, one of them is wasted.
-- One line per variant on what it trades away. Then ask the user to pick, or to
-  mix ("v2's layout with v1's copy").
-- Skip the variants only when the request already pins the shape down — say so
-  in one line and build the one thing.
+- Four, because two invites "neither" and three tends to collapse into a middle
+  one; four covers the corners of the space.
+- A label the user can read, and one line per take on what it trades away. Then
+  stop: ask them to pick, or to mix ("2's layout with 1's copy").
+- This turn plans. Do not build the real thing inside it — the point is that
+  they see the direction before the work exists, not after.
+- Skip the four only when the request already pins the shape down — say so in
+  one line and build the one thing.
+
+A revision of a take is a new publish of the same file: the client keeps the
+last four versions of it, so a row of versions reads as the history of one
+take, and a row of files reads as the four takes. Both are the same picture,
+and both are how the user checks you without asking.
 
 ## 2 Keep it live
 
@@ -49,16 +61,17 @@ await preview.publish("poster-v2.html", label="Poster · sparse")
 Before you call something done, have it judged blind.
 
 1. Copy the finalists to neutral names inside `.review/` — `a.html`, `b.html`,
-   `c.html` — shuffled, with no provenance: no `v2` in the name, no comment
-   saying which is newest or yours. `.review/` is dot-prefixed on purpose: the
-   client's file scan ignores it, so the scratch copies never reach Preview.
+   `c.html`, `d.html` — shuffled, with no provenance: no `-2` in the name, no
+   comment saying which is newest or yours. `.review/` is dot-prefixed on
+   purpose: the client's file scan ignores it, so the scratch copies never
+   reach Preview.
 2. Spawn one judge per lens, each blind:
 
 ```python
 goal = "<the user's request, verbatim>"
-await rlm(f"Read .review/a.html, .review/b.html, .review/c.html. Score each "
-          f"1-10 against this goal: {goal}. Judge only whether it does the "
-          f"job. One line of reasoning per file. Reply with the table.",
+await rlm(f"Read .review/a.html … d.html. Score each 1-10 against this goal: "
+          f"{goal}. Judge only whether it does the job. One line of reasoning "
+          f"per file. Reply with the table.",
           name="judge-job")
 await rlm(..., name="judge-craft")   # reads well, holds together, no jank
 await rlm(..., name="judge-break")   # what fails first, edge cases, missing states

@@ -270,7 +270,7 @@ worker：关掉应用，那队人照跑。
 | `PRIME_WORKSPACE` | 打开哪个工作区 | 上次那个，没有则 `general` |
 | `PRIME_AGENT_DAEMON_SOCKET` | 守护进程 socket 路径 | SDK 的平台默认值 |
 | `NIM_API_KEY` | 兜底聊天的 key | — |
-| `NIM_MODEL` | 兜底聊天的模型 | `deepseek-ai/deepseek-v4-flash-0731` |
+| `NIM_MODEL` | 兜底聊天的模型 | `deepseek-ai/deepseek-v4-pro-0813` |
 | `AOE_DEV_URL` | Electron 外壳加载的 dev 地址 | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | 打印每一次 roster 轮次结束 | 关 |
 

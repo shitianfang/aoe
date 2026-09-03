@@ -137,10 +137,16 @@ const ZH: Record<string, string> = {
   "example · real helpers replace this": "示例 · 有真实助手后即被替换",
   example: "示例",
   "example · a real helper's own words appear here": "示例 · 真实助手会在这里说自己的话",
+  "Reading the whole workspace first, so nothing gets rewritten twice.":
+    "先把整个工作区读一遍,免得同一处改两回。",
   "Four files, all at the top level. `notes.md` is the only one with real content — a page outline. Nothing references anything else, so this can be rebuilt from scratch without breaking a link.":
     "四个文件,都在顶层。只有 `notes.md` 有实质内容 —— 一份页面提纲。文件之间没有互相引用,所以从头重做也不会弄断链接。",
+  "Building from scout's outline: one file, no build step, opens anywhere.":
+    "照 scout 的提纲来搭:单文件、不用构建,放哪都能打开。",
   "`today.html` written — one file, no external assets. Header, a three-block day view, and a footer. Style is a placeholder; I left the class names for stylist to work against.":
     "`today.html` 写好了 —— 单文件,不依赖外部资源。页头、三段式日程、页脚。样式先占个位,类名留给 stylist 接手。",
+  "Type and spacing this pass. Colour is the pass after it.":
+    "这一轮只动字体和间距,颜色留到下一轮。",
   "Type and spacing done. Publishing the first version now so there is something to compare the next pass against.":
     "字体和间距调完了。先发一版出去,下一轮改完才有东西可以对比。",
   "ask master for a team and they appear here, each with its task.":
@@ -179,7 +185,7 @@ const ZH: Record<string, string> = {
   "nothing here yet.": "这里还没有内容。",
 
   /* first open: the three showcase cards + the sample lesson */
-  "first time here — try one:": "第一次来 —— 试试这些:",
+  "first time here — try one:": "试试这些",
 
   "One AI, a whole crew": "一个 AI,带一整支小队",
   "the left column fills up": "左边那栏会站满",
@@ -251,6 +257,7 @@ const ZH: Record<string, string> = {
   "no conversation yet": "还没有对话",
   "inactive · a message wakes it": "未活动 · 发消息可唤醒",
   "runs this workspace": "负责这个工作区",
+  "top-left switches workspace · now in {ws}": "点击左上角切换工作区,当前工作区:{ws}",
 
   /* composer */
   "Message {name}…": "发消息给 {name}…",
@@ -358,6 +365,7 @@ const ZH: Record<string, string> = {
   "side by side": "并排",
   "{who} is writing": "{who} 正在写",
   "{n} versions kept": "留了 {n} 版",
+  "{n} takes to pick from": "{n} 版方案待选",
 
   /* inspector */
   "check-in": "定时跟进",

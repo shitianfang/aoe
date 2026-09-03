@@ -134,6 +134,26 @@ export async function fetchModels(
   return { current: data.current ?? null, models: data.models ?? [] };
 }
 
+/** NIM requests in the trailing minute (GET /bridge/nim). Counted by the
+ *  bridge because NVIDIA sends no rate-limit header and offers no usage
+ *  endpoint — every NIM request, the daemon's included, is proxied through the
+ *  bridge so this number is the whole account's, not just this window's.
+ *  `limit` is the free tier's ~40 RPM per key (NIM_RPM overrides it). */
+export interface NimUsage {
+  used: number;
+  limit: number;
+  inflight: number;
+  resetInMs: number;
+  /** Age of the last 429, or null if none has ever come back. */
+  throttledMsAgo: number | null;
+}
+
+export async function fetchNimUsage(): Promise<NimUsage> {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/nim`);
+  if (!r.ok) throw new Error(`nim usage failed (${r.status})`);
+  return r.json();
+}
+
 export function setDaemonModel(m: DaemonModel, root?: string): Promise<Record<string, unknown>> {
   return root
     ? bridgeCmd("root_set_model", m.id, { provider: m.provider, target: root })

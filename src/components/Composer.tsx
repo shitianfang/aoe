@@ -13,7 +13,13 @@ import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
 import { MODEL_PICKS, isClaudePick, setModelPick, useModelPick } from "../runtime/providers";
-import { fetchModels, setDaemonModel, type DaemonModel } from "../runtime/bridge";
+import {
+  fetchModels,
+  fetchNimUsage,
+  setDaemonModel,
+  type DaemonModel,
+  type NimUsage,
+} from "../runtime/bridge";
 
 function popupStatus(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return t("running");
@@ -96,6 +102,30 @@ export function Composer(props: {
       live = false;
     };
   }, [connected, workspace, modelRoot, noModel, props.rootWatchEpoch]);
+
+  // NIM's minute budget. NVIDIA returns no rate-limit header and has no usage
+  // endpoint, so the bridge counts what it proxies and this polls that count —
+  // there is nothing to subscribe to. Only the composer that shows a picker
+  // asks (a pane composer would just duplicate master's number).
+  const [nim, setNim] = useState<NimUsage | null>(null);
+  const showsPicker = !noModel && !(!connected && modelRoot);
+  useEffect(() => {
+    if (!showsPicker) return;
+    let live = true;
+    const tick = () =>
+      fetchNimUsage()
+        .then((u) => live && setNim(u))
+        // Bridge down or too old to answer: show nothing rather than a stale
+        // number, which would read as "you have budget left" at the worst time.
+        .catch(() => live && setNim(null));
+    tick();
+    const h = window.setInterval(tick, 5000);
+    return () => {
+      live = false;
+      window.clearInterval(h);
+    };
+  }, [showsPicker]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -252,6 +282,38 @@ export function Composer(props: {
     );
   };
 
+  /** The minute's NIM budget, beside the picker. One number and, only when it
+   *  matters, one coloured square — the words live in the tooltip, like every
+   *  other status in this shell. Hidden while the subject is on a Claude model:
+   *  that traffic never touches the NIM key. */
+  const nimMeter = () => {
+    if (!nim || !showsPicker) return null;
+    const onNim = connected
+      ? daemonModels?.current?.provider === "nvidia-nim"
+      : !isClaudePick(offlinePick);
+    if (!onNim) return null;
+    // A 429 is worth shouting about only while it is still true; NIM's window
+    // is a minute and it recovers on its own.
+    const throttled = nim.throttledMsAgo !== null && nim.throttledMsAgo < 20_000;
+    const near = nim.used >= nim.limit * 0.75;
+    const title = throttled
+      ? t("NVIDIA just answered 429. {used} of ~{limit} requests this minute; {inflight} in flight — about five at once is where it starts refusing.", {
+          used: nim.used,
+          limit: nim.limit,
+          inflight: nim.inflight,
+        })
+      : t("NIM: {used} of ~{limit} requests this minute. The free tier's ceiling is per key and shared by every model, so this counts the runtime's calls as well as this window's.", {
+          used: nim.used,
+          limit: nim.limit,
+        });
+    return (
+      <span className={`nimq${throttled ? " hot" : near ? " warm" : ""}`} title={title}>
+        {(throttled || near) && <i className="sq" />}
+        {nim.used}/{nim.limit}
+      </span>
+    );
+  };
+
   const pick = (t: ComposerTarget) => {
     props.onTarget(t);
     setPopOpen(false);
@@ -262,6 +324,7 @@ export function Composer(props: {
     <>
       <div className="strip">
         {modelPick()}
+        {nimMeter()}
         <span className="segs" title={props.error}>
           {strip()}
         </span>

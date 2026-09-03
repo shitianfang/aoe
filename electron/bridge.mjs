@@ -27,6 +27,11 @@
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
+ *   GET  /bridge/nim      { used, limit, inflight, resetInMs, throttledMsAgo } —
+ *                         NIM requests in the trailing minute, counted here
+ *                         because NVIDIA returns no rate-limit header at all
+ *   ALL  /nim/*           proxy to integrate.api.nvidia.com, and the one place
+ *                         every NIM request (daemon's and renderer's) passes
  *   POST /bridge/claude   { text, sessionId?, system?, model? } → SSE
  *                         {type:"delta"|"tool"|"subagent"|"done"|"error"}
  *                         — runs the local `claude -p` CLI (user's own login) as a
@@ -36,6 +41,7 @@
  * The renderer never touches the daemon socket directly.
  */
 import http from "node:http";
+import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -112,7 +118,7 @@ The client watches your working directory. Every .html, .md, .png and .pdf file 
 How work goes here:
 
 1. Write inside your working directory. A file you leave elsewhere is invisible to the client unless you publish it by absolute path, so the workspace is the default and anywhere else needs a reason.
-2. Align before building. For anything with a shape — a page, a layout, a document, a plan — your first turn writes three genuinely different variants as separate files (\`thing-v1.html\`, \`-v2\`, \`-v3\`), one line each on what it trades away, and stops there for the user to pick. Do not ask which style they prefer when you can show three answers. Skip the variants only when the request already pins the shape down, and say in one line that you skipped them.
+2. Align before building, through the preview. For anything with a shape — a page, a layout, a document, a plan — your first turn produces **four** takes on it as four files (\`thing-1.html\` … \`thing-4.html\`), publishes each one with a short label, writes one line per take on what it trades away, and then stops for the user to pick. The client lays the four side by side, so they choose from rendered pages instead of from your adjectives — which is the whole point: nobody finds out at the end that it was not what they wanted. That turn plans; it does not build. Skip the four only when the request already pins the shape down, and say in one line that you skipped them.
 3. Show progress as it happens: write files as you go, so every turn end updates Preview. Never start a web server, and never ask the user to open a browser or a file manager to see your work — writing the file is what shows it.
 4. Publish a finished deliverable: \`await preview.publish("file.html", label="Short title")\`.
 5. Before your first file write, read the \`aoe-way\` skill and work by it: the variant rules, the blind subagent review protocol, and what to report so the user can check you instead of trusting you.
@@ -1638,6 +1644,100 @@ function handleClaude(body, req, res, cors) {
   });
 }
 
+/* ── NIM traffic funnels through here ──────────────────────────────────────
+ *
+ *  NVIDIA publishes no way to read your own budget: verified 2026-09-03, a NIM
+ *  response carries no `X-RateLimit-*` header on 200 OR on 429 (the 429 body is
+ *  the whole story — `{"status":429,"title":"Too Many Requests"}`), and
+ *  /v1/usage, /v1/limits, /v1/account and /v1/credits are all 404. So the only
+ *  honest readout is one we count ourselves, and counting only works if every
+ *  request passes one point. That is what this is: the daemon reaches NIM
+ *  through `baseUrl` in ~/.prime/agent/models.json and the renderer through the
+ *  Vite (dev) or Electron main (packaged) proxy — both now aimed at /nim here
+ *  rather than at api.nvidia.com, so one counter sees all of it.
+ *
+ *  The ceiling is a constant because NVIDIA will not tell us: the free tier is
+ *  ~40 requests/minute per key, shared across every model. Measured on this key
+ *  the same day: 25 back-to-back requests (~19 RPM) all passed, while 20 at once
+ *  took 13 × 429 — concurrency runs out well before the minute does, at about 5
+ *  in flight. `inflight` is reported for that reason; a fan-out of helpers trips
+ *  it long before `used` looks alarming. */
+const NIM_UPSTREAM = "https://integrate.api.nvidia.com";
+const NIM_LIMIT = Number(process.env.NIM_RPM || 40);
+const NIM_WINDOW_MS = 60_000;
+/** Start times of the requests forwarded in the trailing window. */
+const nimHits = [];
+let nimInflight = 0;
+let nimThrottledAt = 0;
+
+/** Only used for a request that arrives without one of its own — the daemon
+ *  and the Vite proxy both send their own Authorization, and the renderer must
+ *  never hold a key at all. auth.json is where the runtime already keeps it. */
+function nimKey() {
+  if (process.env.NIM_API_KEY) return process.env.NIM_API_KEY;
+  const auth = readJsonFile(path.join(AGENT_HOME, "auth.json"));
+  return auth?.["nvidia-nim"]?.key || "";
+}
+
+function nimUsage() {
+  const now = Date.now();
+  while (nimHits.length && now - nimHits[0] > NIM_WINDOW_MS) nimHits.shift();
+  return {
+    used: nimHits.length,
+    limit: NIM_LIMIT,
+    inflight: nimInflight,
+    // How long until the oldest request ages out and a slot comes back.
+    resetInMs: nimHits.length ? NIM_WINDOW_MS - (now - nimHits[0]) : 0,
+    // null unless a 429 came back recently — what makes the readout go red.
+    throttledMsAgo: nimThrottledAt ? now - nimThrottledAt : null,
+  };
+}
+
+/** Forward /nim/<path> to NIM, counting it. Streams straight through, so an
+ *  SSE completion is untouched. */
+function handleNim(req, res, cors) {
+  const now = Date.now();
+  while (nimHits.length && now - nimHits[0] > NIM_WINDOW_MS) nimHits.shift();
+  nimHits.push(now);
+  nimInflight++;
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    nimInflight--;
+  };
+  const up = https.request(
+    NIM_UPSTREAM + req.url.slice("/nim".length),
+    {
+      method: req.method,
+      headers: {
+        "content-type": req.headers["content-type"] || "application/json",
+        accept: req.headers.accept || "*/*",
+        authorization: req.headers.authorization || `Bearer ${nimKey()}`,
+      },
+    },
+    (upRes) => {
+      if (upRes.statusCode === 429) nimThrottledAt = Date.now();
+      res.writeHead(upRes.statusCode || 502, { ...upRes.headers, ...cors });
+      upRes.pipe(res);
+      upRes.on("end", done);
+      upRes.on("close", done);
+    },
+  );
+  up.on("error", (e) => {
+    done();
+    if (res.headersSent) return res.end();
+    res.writeHead(502, { ...cors, "content-type": "application/json" });
+    res.end(JSON.stringify({ error: `bridge: NIM unreachable (${e?.message || e})` }));
+  });
+  // Client hung up mid-stream: stop paying for the rest of it.
+  res.on("close", () => {
+    done();
+    up.destroy();
+  });
+  req.pipe(up);
+}
+
 const server = http.createServer(async (req, res) => {
   const cors = {
     "Access-Control-Allow-Origin": "*",
@@ -1742,6 +1842,13 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: e?.message || String(e) }));
       });
     return;
+  }
+  if (req.url === "/bridge/nim") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    return res.end(JSON.stringify(nimUsage()));
+  }
+  if (req.url && req.url.startsWith("/nim/")) {
+    return handleNim(req, res, cors);
   }
   if (req.url === "/bridge/skills") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

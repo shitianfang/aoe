@@ -24,9 +24,12 @@ function kindOf(name: string): "html" | "md" | "png" | "pdf" | null {
  *  The viewport itself follows the room available: a wide column gets a desktop
  *  page, a narrow one a tablet, and the scale is whatever makes it fit. */
 const BOX_H = 420;
+/** Card height follows its width, so a thumbnail stays a page-shaped card
+ *  instead of a tall box with dead air under a 28% projection. */
+const boxHeight = (w: number) => (w > 0 ? Math.min(BOX_H, Math.max(180, Math.round(w * 1.35))) : BOX_H);
 const pageWidthFor = (w: number) => (w >= 620 ? 1100 : w >= 380 ? 900 : w >= 240 ? 720 : 480);
 /** Room one card needs before another one is worth adding. */
-const CARD_MIN = 190;
+const CARD_MIN = 140;
 /** Cards never go past four, however wide the pane gets. */
 const MAX_CARDS = 4;
 
@@ -64,6 +67,7 @@ function VersionPane(props: {
   const [measure, width] = useWidth();
   const pageW = pageWidthFor(width);
   const scale = width > 0 ? Math.min(1, width / pageW) : 1;
+  const boxH = boxHeight(width);
 
   useEffect(() => {
     setText(null);
@@ -83,13 +87,13 @@ function VersionPane(props: {
     if (text === null) return <div className="vempty">{t("loading…")}</div>;
     if (kind === "html")
       return (
-        <div className="vshell" ref={measure} style={{ height: BOX_H }}>
+        <div className="vshell" ref={measure} style={{ height: boxH }}>
           <iframe
             className="vpage"
             sandbox=""
             srcDoc={text}
             title={`${file.name} ${v ?? "live"}`}
-            style={{ width: pageW, height: Math.round(BOX_H / scale), transform: `scale(${scale})` }}
+            style={{ width: pageW, height: Math.round(boxH / scale), transform: `scale(${scale})` }}
           />
         </div>
       );
@@ -152,7 +156,10 @@ export function PreviewView(props: {
   // how four variants written for an alignment round line up.
   const fit = row ? Math.max(1, Math.min(MAX_CARDS, Math.floor((width || CARD_MIN) / CARD_MIN))) : 1;
   const versions = file.versions.slice(-fit);
-  const siblings = file.versions.length > 1 || props.files.length < 2 ? [] : props.files.slice(0, fit);
+  // The list arrives newest-first; a variant row reads left to right in the
+  // order the agent produced them.
+  const siblings =
+    file.versions.length > 1 || props.files.length < 2 ? [] : props.files.slice(0, fit).reverse();
   const cards: Array<{ file: PreviewFile; version: PreviewVersion | null; head?: string }> =
     siblings.length > 1
       ? siblings.map((f) => ({
@@ -215,7 +222,10 @@ export function PreviewView(props: {
             </>
           ) : (
             <>
-              {t("preview")} · {t("{n} versions kept", { n: String(file.versions.length) })}
+              {t("preview")} ·{" "}
+              {siblings.length > 1
+                ? t("{n} takes to pick from", { n: String(siblings.length) })
+                : t("{n} versions kept", { n: String(file.versions.length) })}
             </>
           )}
         </div>

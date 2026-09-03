@@ -174,23 +174,25 @@ export function LearnedView(props: {
             </span>
           </div>
         ) : null}
+        {/* The fold is labelled with what it hides, so a closed pane still says
+            what you would be opening. The first section reuses that label
+            rather than repeating it one line lower. */}
         {(reason !== null || outcome !== null) && (
           <>
             <button className="more" onClick={() => setOpen(!open)} aria-expanded={open}>
-              {t("evidence")}
+              {reason !== null ? t("why it was kept") : t("expected")}
               <span className="cv">{open ? "▴" : "▾"}</span>
             </button>
             {open && (
               <>
                 {reason !== null && (
                   <div className="hkv">
-                    <span className="hk">{t("why it was kept")}</span>
                     <span className="hv">{reason}</span>
                   </div>
                 )}
                 {outcome !== null && (
                   <div className="hkv">
-                    <span className="hk">{t("expected")}</span>
+                    {reason !== null && <span className="hk">{t("expected")}</span>}
                     <span className="hv">
                       {outcome} <span className="dim">{t("(not checked by the system)")}</span>
                     </span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { PreviewFile, PreviewVersion, TimelineItem } from "../types";
 import { fetchPreviewText, previewFileUrl } from "../runtime/preview";
 import { useT } from "../i18n";
@@ -28,6 +28,21 @@ const pageWidthFor = (w: number) => (w >= 620 ? 1100 : w >= 380 ? 900 : w >= 240
 /** Below this, two projections side by side are both unreadable — show one. */
 const PAIR_MIN = 560;
 
+/** Width of an element as it changes: `ref` on the node, width in px (0 until
+ *  it is mounted and measured). */
+function useWidth(): [(el: HTMLDivElement | null) => void, number] {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!el) return;
+    setWidth(el.clientWidth);
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return [setEl, width];
+}
+
 /** One version pane: md as plain text, html in a sandboxed iframe, png/pdf raw. */
 function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null; current: boolean }) {
   const t = useT();
@@ -37,19 +52,7 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
   const [text, setText] = useState<string | null>(null);
   // Projection for html: the box measures the column, the page gets a viewport
   // and a scale that fits inside it. 1:1 once the column is wide enough.
-  const [width, setWidth] = useState(0);
-  const box = useRef<HTMLDivElement | null>(null);
-  const measure = useCallback((el: HTMLDivElement | null) => {
-    box.current = el;
-    if (el) setWidth(el.clientWidth);
-  }, []);
-  useEffect(() => {
-    const el = box.current;
-    if (!el || kind !== "html") return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [kind, text]);
+  const [measure, width] = useWidth();
   const pageW = pageWidthFor(width);
   const scale = width > 0 ? Math.min(1, width / pageW) : 1;
 
@@ -113,19 +116,7 @@ export function PreviewView(props: {
   const t = useT();
   // The view measures itself: whether a side-by-side diff fits is a question
   // about this pane's width, not about how many versions exist.
-  const [width, setWidth] = useState(0);
-  const view = useRef<HTMLDivElement | null>(null);
-  const measure = useCallback((el: HTMLDivElement | null) => {
-    view.current = el;
-    if (el) setWidth(el.clientWidth);
-  }, []);
-  useEffect(() => {
-    const el = view.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [width === 0]);
+  const [measure, width] = useWidth();
   const file =
     (props.selectedPath ? props.files.find((f) => f.path === props.selectedPath) : undefined) ??
     props.files[0];

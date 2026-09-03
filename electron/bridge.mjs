@@ -16,6 +16,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
+import { createPreviewStore } from "./preview.mjs";
 
 const PORT = Number(process.env.PRIME_BRIDGE_PORT || 3117);
 const PRIME_AGENT_DIR = process.env.PRIME_AGENT_DIR || "/workspace/prime-agent";
@@ -53,6 +54,13 @@ function broadcast(payload) {
   const frame = `data: ${JSON.stringify(payload)}\n\n`;
   for (const res of sseClients) res.write(frame);
 }
+
+// Preview pipeline (client-inferred, electron/preview.mjs): fed from the
+// session-event tap below; versions snapshot on agent_end.
+const preview = createPreviewStore({
+  workspaceDir: WORKSPACE_DIR,
+  onUpdate: () => broadcast({ type: "preview_update" }),
+});
 
 function canConnect(socketPath) {
   return new Promise((resolve) => {
@@ -127,6 +135,7 @@ async function connectDaemon() {
   masterConn.subscribe((event) => {
     // AgentConnectionEvent wraps session events; renderer consumes the inner shape.
     if (event?.type === "session_event") {
+      preview.observe(event.event); // edit/write + agent_end feed the preview store
       broadcast({ type: "event", event: event.event });
     } else if (event?.type === "connection_status" || event?.type === "closed") {
       broadcast({ type: "bridge_status", event });
@@ -244,6 +253,24 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: e?.message || String(e) }));
       });
     return;
+  }
+  if (req.url === "/bridge/preview") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    return res.end(JSON.stringify({ files: preview.list() }));
+  }
+  if (req.url && req.url.startsWith("/bridge/preview/file")) {
+    const u = new URL(req.url, "http://localhost");
+    try {
+      const { buffer, contentType } = preview.read(
+        u.searchParams.get("path") ?? "",
+        u.searchParams.get("v") ?? "",
+      );
+      res.writeHead(200, { ...cors, "content-type": contentType });
+      return res.end(buffer);
+    } catch (e) {
+      res.writeHead(404, { ...cors, "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: e?.message || "not found" }));
+    }
   }
   if (req.url === "/bridge/health") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

@@ -7,10 +7,10 @@ export type ColumnView = "agents" | "files";
 
 /** One rendered row in the master timeline. */
 export type TimelineItem =
-  | { kind: "divider"; id: string; text: string }
+  | { kind: "divider"; id: string; text: string; ts?: number }
   | { kind: "user"; id: string; text: string; at: string }
   | { kind: "master"; id: string; text: string; at: string; streaming?: boolean }
-  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string };
+  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number };
 
 /** GoalState subset we render (see docs/daemon-integration.md). */
 export interface GoalInfo {
@@ -51,17 +51,18 @@ export interface FileActivity {
   at: string;
 }
 
-/** Preview pipeline state; the publish pipeline does not exist yet, so the
- *  provider returns null and the view shows an honest empty state. */
+/** Preview pipeline (client-inferred, bridge /bridge/preview): one version is
+ *  snapshot per file per turn-with-changes; `live` = written this turn. */
 export interface PreviewVersion {
   label: string;
+  /** ISO timestamp of the snapshot. */
   at: string;
 }
-export interface PreviewState {
-  fileName: string;
+export interface PreviewFile {
+  path: string;
+  name: string;
   live: boolean;
   versions: PreviewVersion[];
-  between: Array<{ id: string; text: string; rt: string; tone: "" | "good" | "bad" }>;
 }
 
 export interface BridgeState {
@@ -110,7 +111,9 @@ export interface AppState {
   children: ChildInfo[];
   helperEvents: Record<string, HelperEvent[]>;
   files: FileActivity[];
-  preview: PreviewState | null;
+  previewFiles: PreviewFile[];
+  /** Selected file in the Preview view; null = most recently changed. */
+  previewPath: string | null;
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
   target: ComposerTarget;

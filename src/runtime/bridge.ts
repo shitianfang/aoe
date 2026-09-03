@@ -14,7 +14,9 @@ export interface BridgeHello {
 export type BridgeMessage =
   | { type: "hello"; daemon: BridgeHello }
   | { type: "snapshot"; state: { goal: unknown; heartbeat: unknown }; children: unknown[]; messages: unknown[] }
-  | { type: "event"; event: Record<string, unknown> };
+  | { type: "event"; event: Record<string, unknown> }
+  | { type: "heartbeats_changed" }
+  | { type: "preview_update" };
 
 export function openBridge(onMessage: (m: BridgeMessage) => void): { close: () => void } {
   const es = new EventSource("/bridge/events");

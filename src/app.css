@@ -301,11 +301,19 @@ body.resizing iframe { pointer-events: none; }
 .ahead .r3 { margin-top: 2px; font-size: 12px; color: var(--t2); }
 
 .transcript { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; padding: 18px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
-/* first open: a few example asks; gone once the conversation starts */
+/* first open: the showcase — five asks, each with what it will demonstrate.
+   Gone once the conversation starts. The cards are soft-surface blocks with
+   air between them, no outlines: the background change is the separation, and
+   hover just steps the surface up. Everything here is sans and >=11px because
+   these strings are Chinese by default — the 8.5px uppercase mono label the
+   rest of the app uses is an English device and unreadable set in CJK. */
 .firstrun { margin: 6px 0 0 34px; max-width: 520px; }
-.firstrun .frh { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); margin-bottom: 8px; }
-.firstrun .frx { display: block; width: 100%; text-align: left; border: 1px solid var(--hair); background: var(--soft); color: var(--t2); font-size: 12px; padding: 8px 12px; margin-bottom: 6px; }
-.firstrun .frx:hover { border-color: var(--hair-hi); color: var(--t1); }
+.firstrun .frh { font-size: 11px; color: var(--t3); margin-bottom: 9px; }
+.firstrun .frx { display: block; width: 100%; text-align: left; background: var(--soft); color: var(--t2); padding: 9px 12px; margin-bottom: 5px; }
+.firstrun .frx:hover { background: var(--soft2); color: var(--t1); }
+.firstrun .frx .ask { display: block; font-size: 12.5px; line-height: 1.5; }
+.firstrun .frx .shows { display: block; margin-top: 3px; font-size: 11px; line-height: 1.45; color: var(--t3); }
+.firstrun .frx:hover .shows { color: var(--t2); }
 /* sample lesson row (empty Self-evolution column) */
 .lsn.eg { opacity: .55; cursor: default; }
 .msg { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; }

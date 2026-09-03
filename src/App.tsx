@@ -1692,6 +1692,25 @@ export function App() {
     [sendViaNim, sendToHelper, postRoot],
   );
 
+  /** The first-run showcase's send. A card that wants long-running mode gets
+   *  the real switch flipped, not a private code path — so the composer shows
+   *  it on and `send` adds the preamble and the note row as it always does.
+   *  setState lands after this handler, but `send` reads stateRef *now*, so
+   *  the ref is brought forward too or the first click would go out unwrapped. */
+  const sendExample = useCallback(
+    (text: string, opts?: { longRun?: boolean }) => {
+      if (opts?.longRun) {
+        setLongRun("master", true);
+        stateRef.current = {
+          ...stateRef.current,
+          longRun: { ...stateRef.current.longRun, master: true },
+        };
+      }
+      void send(text);
+    },
+    [send, setLongRun],
+  );
+
   const selectedChild = findChild(state, state.selectedAgent);
   const needsYou = state.children.filter((c) => c.status === "done" && !c.repliedSinceTask).length;
 
@@ -1950,7 +1969,7 @@ export function App() {
             </span>
           </div>
         </div>
-        <Timeline items={state.timeline} onExample={send} />
+        <Timeline items={state.timeline} onExample={sendExample} />
       </>
     );
   };

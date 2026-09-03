@@ -1,6 +1,10 @@
 # HANDOFF：长程自主运行模式（长程自主开关 + autonomous skill）
 
-写于 2026-09-03，会话 c982c5f6。接手的人或 agent 先读本文，再读 `/workspace/handoff/HANDOFF.md`（原始交互设计，词表在 §4，铁律在 §0；仓库 `shitianfang/prime-agent-client-handoff`）。
+
+> 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
+> 和 `仓库根` 是对它们的回指；结论仍然有效，路径按现在的单仓布局读。
+
+写于 2026-09-03，会话 c982c5f6。接手的人或 agent 先读本文，再读 `shitianfang/prime-agent-client-handoff` 的 `HANDOFF.md`（原始交互设计，词表在 §4，铁律在 §0；仓库 `shitianfang/prime-agent-client-handoff`）。
 
 本文覆盖的是**实现**，不是设计。设计线的结论不重复。
 
@@ -30,18 +34,18 @@
 
 | 仓库 | 位置 | 本次提交 | 状态 |
 |---|---|---|---|
-| fork | `/workspace/prime-agent` | `d91113c00` | **未推送**。相对 `fork/main`(`bfa11f049`) ahead 1，相对上游 `origin/main` ahead 7 |
-| 客户端 | `/workspace/prime-desktop` | `167f158` | **已被其他会话 push 到 origin/main**，内容是审查修复后的版本（已核对 `stripLongRun`、`masterComposerSubject` 均在内） |
+| fork | `core/` | `d91113c00` | **未推送**。相对 `fork/main`(`bfa11f049`) ahead 1，相对上游 `origin/main` ahead 7 |
+| 客户端 | `仓库根` | `167f158` | **已被其他会话 push 到 origin/main**，内容是审查修复后的版本（已核对 `stripLongRun`、`masterComposerSubject` 均在内） |
 
-`/workspace/prime-agent` 的 `origin` 指向**上游** `PrimeIntellect-ai/prime-agent`，fork 是额外加的 remote `fork`（`shitianfang/prime-agent`）。拉 fork 代码用 `git pull fork main`，`git pull` 默认走上游。
+`core/` 的 `origin` 指向**上游** `PrimeIntellect-ai/prime-agent`，fork 是额外加的 remote `fork`（`shitianfang/prime-agent`）。拉 fork 代码用 `git pull fork main`，`git pull` 默认走上游。
 
 ### ⚠️ 并发写入警告
 
-本次会话期间，`/workspace/prime-desktop` 被**另一个会话反复修改和推送**：中途凭空多出 `c58d4ee`、`3612a57`、`5180357`、`2c44fe7` 四个提交，工作区里一度出现别人未提交的 `electron/bridge.mjs` 改动（`/bridge/model` 端点 + 模型切换），我的 commit hash 也被别人重写过（`686dc9a` → `167f158`）。
+本次会话期间，`仓库根` 被**另一个会话反复修改和推送**：中途凭空多出 `c58d4ee`、`3612a57`、`5180357`、`2c44fe7` 四个提交，工作区里一度出现别人未提交的 `electron/bridge.mjs` 改动（`/bridge/model` 端点 + 模型切换），我的 commit hash 也被别人重写过（`686dc9a` → `167f158`）。
 
 **动手前先 `git fetch` 并检查 `git status`，不要假设工作区是你上次看到的样子。提交时用精确路径 `git add <path>`，不要 `git add -A`。**
 
-另外 `/workspace/prime-agent` 的工作区里长期有两个未提交的生成文件改动（`package-lock.json`、`packages/ai/src/models.generated.ts`），不是本次产物，**不要提交它们**。
+另外 `core/` 的工作区里长期有两个未提交的生成文件改动（`package-lock.json`、`packages/ai/src/models.generated.ts`），不是本次产物，**不要提交它们**。
 
 ## 2. 做了什么
 
@@ -146,9 +150,9 @@ assistant(tool_use ipython) → custom autonomous_status → toolResult
 
 1. **复核 §3 的六处修复**，尤其 3.1 的延迟方案是否真的把消息放在了安全位置，以及 3.1 末尾那条"不必再走 `_agentEventQueue`"的判断。
 2. **补 3.1 的回归测试**。哪怕只是构造一个能让 `isStreaming` 为真的场景，断言 `agent.state.messages` 在 handler 返回后没有增长。
-3. `cd /workspace/prime-agent && npm run build`，然后实机走一遍：勾选 → 发一条长任务 → 看 master 选了哪个 → 看右栏是否亮起。
+3. `cd core/ && npm run build`，然后实机走一遍：勾选 → 发一条长任务 → 看 master 选了哪个 → 看右栏是否亮起。
 4. 通过后推送 fork：`git push fork main`。客户端那侧已经在 `origin/main` 上了。
-5. 修 `package.json` 的 `dev:bridge`：它指向 `PRIME_AGENT_DIR=/workspace/prime-agent-fork`，**这个目录不存在**，fork 代码就在 `/workspace/prime-agent`（也是 bridge 的默认路径）。README 里同一处描述也过时。
+5. ~~修 `package.json` 的 `dev:bridge`~~ —— 已随并库解决：运行时进了仓库的 `core/`，bridge 自己按脚本位置解析，`dev:bridge` 已删除。
 6. README 的 Status 里 `[ ] Preview host-request pipeline in core` 已过时，fork 上做完了。
 
 ## 7. 背景：三个驱动器不是三种做法，是三个环节
@@ -184,7 +188,7 @@ assistant(tool_use ipython) → custom autonomous_status → toolResult
 ## 9. 关键文件索引
 
 ```
-fork（/workspace/prime-agent）
+fork（core/）
   packages/coding-agent/src/core/autonomous.ts          限额解析、setAutonomousEnabled、AUTONOMOUS_SKILL_NAME
   packages/coding-agent/src/core/agent-session.ts       handleAutonomousHostRequest、_requestAutonomousStatusEmit、
                                                         _flushPendingAutonomousStatus、_createKernelHostHandlers、
@@ -192,7 +196,7 @@ fork（/workspace/prime-agent）
   packages/coding-agent/skills/autonomous/              SKILL.md + pyproject + src/autonomous/__init__.py
   packages/coding-agent/test/suite/agent-session-autonomous-host.test.ts
 
-客户端（/workspace/prime-desktop）
+客户端（仓库根）
   src/runtime/longrun.ts        LONG_RUN_PREAMBLE、withLongRun、stripLongRun
   src/components/Composer.tsx   .lrun 开关（crow 行内，helper 目标时让位给 delivered now）
   src/App.tsx                   longRunNote、historyToItems 的剥离、send/postRoot 的应用点、

@@ -1,6 +1,10 @@
 # HANDOFF：模型系统（claude -p 包装器 + NIM 目录 + daemon 模型切换）
 
-写于 2026-09-03。接手的人或 agent 先读本文，再读 `/workspace/handoff/HANDOFF.md`（原始交互设计）与 `docs/` 下其他 handoff。本文覆盖**模型接入这条线**的实现与决策，兼及同期修掉的一批可见性 bug。
+
+> 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
+> 和 `仓库根` 是对它们的回指；结论仍然有效，路径按现在的单仓布局读。
+
+写于 2026-09-03。接手的人或 agent 先读本文，再读 `shitianfang/prime-agent-client-handoff` 的 `HANDOFF.md`（原始交互设计）与 `docs/` 下其他 handoff。本文覆盖**模型接入这条线**的实现与决策，兼及同期修掉的一批可见性 bug。
 
 ## 0. 三十秒摘要
 

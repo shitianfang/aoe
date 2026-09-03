@@ -1,5 +1,9 @@
 # E2E 走查 #1:知识工作者双 helper 场景(2026-09-03)
 
+
+> 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
+> 和 `仓库根` 是对它们的回指；结论仍然有效，路径按现在的单仓布局读。
+
 场景:通过 bridge(127.0.0.1:3117,`POST /bridge/cmd`,经 Vite 3000 同源代理发送)向常驻
 master(NVIDIA NIM `deepseek-ai/deepseek-v4-flash-0731`)下发任务:并行派生两个 helper ——
 `notes-digest`(把 cwd 文件列表整理成 markdown 写入 `summary.md` 并回报)与 `checker`
@@ -16,7 +20,7 @@ master(NVIDIA NIM `deepseek-ai/deepseek-v4-flash-0731`)下发任务:并行派生
 > SSE 流在两个 helper 进入 `running` 之后断开。此后的终态事件帧(`status:"done"`、
 > `repliedSinceTask:true`、`agent_message` 的 message_end)未被本次 SSE 捕获;这些条目的
 > 证据改用磁盘上的 master transcript(`~/.prime/agent/sessions/01a06426-bc02-….jsonl`)、
-> helper registry 文件,以及 `/workspace/probe/events.log` 中同 daemon 的历史真实样本,
+> helper registry 文件,以及 `本地抓取的 events.log` 中同 daemon 的历史真实样本,
 > 并逐条标注"部分验证"。按主会话要求未重跑场景(节约配额)。全程无 429/402 额度错误。
 
 本次 SSE 实际捕获的事件分布(114 帧):
@@ -137,7 +141,7 @@ chip 文案是裸 `ipython`(无 path 后缀)—— 语义上它其实是"派生�
   # master transcript 第 349 行,ipython toolCall 的 code:
   result = await edit.run(path="/home/vscode/.prime/desktop/general/summary.md",
                           old_str=…, new_str=…)   # → "Edited /home/vscode/.prime/desktop/general/summary.md"
-  # edit.__file__ = /workspace/prime-agent/packages/coding-agent/skills/edit/src/edit/__init__.py
+  # edit.__file__ = core/packages/coding-agent/skills/edit/src/edit/__init__.py
   ```
 - 且 helper 的工具事件只出现在 helper 自己的 daemon 子会话里,bridge 只 attach master,
   事件根本到不了 renderer。

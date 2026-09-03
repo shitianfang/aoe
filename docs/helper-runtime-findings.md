@@ -1,12 +1,16 @@
 # RLM helper(子代理)运行时实测结论(2026-09-02)
 
-在远程 dev box(非 root 用户)上实跑,daemon protocol v7,
+
+> 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
+> 和 `仓库根` 是对它们的回指；结论仍然有效，路径按现在的单仓布局读。
+
+在远程 Linux dev box(非 root 用户)上实跑,daemon protocol v7,
 schema `protocol-7-schema-25-585ef1102921`,appVersion `0.9.1`,provider = NVIDIA NIM
 (`deepseek-ai/deepseek-v4-flash-0731`)。
 
 **结论先行:helper 派生跑通了;`rlm_child_update` / `snapshot.children` / `get_rlm_children` /
 `agent_message` 四种形状全部拿到真实样本;多 attach 可行(同一个 `DaemonClient` 同时 attach
-master 和子会话)。** 探针脚本与原始事件日志见 `/workspace/probe/`。
+master 和子会话)。** 探针脚本与原始事件日志未随本仓库发布。
 
 ---
 
@@ -49,7 +53,7 @@ worker 是 daemon supervisor fork 出来的,**PATH 是从 supervisor 继承的**
 
 ```bash
 pkill -f 'prime-agent'                     # 停掉 supervisor + 所有 worker
-cd /workspace/prime-desktop
+cd 仓库根
 PATH=$HOME/.local/node22/bin:$HOME/.local/bin:$PATH node electron/bridge.mjs &   # bridge 自己会拉起 daemon
 ```
 
@@ -75,7 +79,7 @@ curl -s http://127.0.0.1:3117/bridge/health
   "runtime": {
     "buildId": "release-0.9.1",
     "executablePath": "/home/vscode/.local/node22/bin/node",
-    "entrypointPath": "/workspace/prime-agent/packages/coding-agent/dist/cli.js"
+    "entrypointPath": "core/packages/coding-agent/dist/cli.js"
   },
   "supervisorGeneration": "e117cf86-…", "supervisorOwnerToken": "1124b4e3-…",
   "supervisorPid": 17067, "supervisorProcessStartId": "proc:671068196",
@@ -452,7 +456,7 @@ const childConn = await sdk.DaemonAgentConnection.attach(client, childActiveSess
 
 ## 8. 产物
 
-探针脚本与原始日志(远程 `/workspace/probe/`,本机同路径已 scp 回):
+探针脚本与原始日志(未随本仓库发布,下表记录当时的产物构成):
 
 | 文件 | 说明 |
 |---|---|
@@ -464,11 +468,7 @@ const childConn = await sdk.DaemonAgentConnection.attach(client, childActiveSess
 | `multi-attach.log` | spawn-and-multiattach 的全量 NDJSON(含子会话事件流) |
 | `probe.out` / `multiattach.out` | 两次运行的 stdout |
 
-运行方式(远程):
+运行方式:在探针目录下,用 Node >= 22.8 直接跑,例如
+`node spawn-and-multiattach.mjs`。
 
-```bash
-cd /workspace/probe
-PATH=$HOME/.local/node22/bin:$HOME/.local/bin:$PATH node spawn-and-multiattach.mjs
-```
-
-未改动 `/workspace/prime-agent` 与 `/workspace/prime-desktop` 任何代码,未提交任何东西。
+全程只读:未改动运行时或客户端任何代码,未提交任何东西。

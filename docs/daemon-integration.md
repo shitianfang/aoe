@@ -1,6 +1,10 @@
 # prime-agent daemon 接入要点(调研结论,2026-09-02)
 
-来源:对 `/workspace/prime-agent`(`@earendil-works/pi-coding-agent` 0.9.1)的源码级调研。
+
+> 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
+> 和 `仓库根` 是对它们的回指；结论仍然有效，路径按现在的单仓布局读。
+
+来源:对 `core/`(`@earendil-works/pi-coding-agent` 0.9.1)的源码级调研。
 文档 daemon.md 写 protocol v4 已过时,**代码为准:`DAEMON_PROTOCOL_VERSION = 7`**(`src/modes/daemon/daemon-protocol.ts:55`),schema `protocol-7-schema-25-585ef1102921`。
 
 ## 拓扑与传输
@@ -9,7 +13,7 @@
 - 传输:Unix socket `tmpdir()/prime-agent-$uid/daemon.sock`;**Windows 是 named pipe `\\.\pipe\prime-agent-daemon`**(`daemon-socket.ts:70-75`)。JSONL 分帧,无 TCP/HTTP。
 - 连接后 daemon 推 `daemon_hello`(protocol/schemaId/appVersion/serverCapabilities)。
 - **命令必须用 envelope**:`{"type":"command","id","protocol":{name,version:7},"clientId","command":{...}}`,裸命令被拒(`daemon-supervisor.ts:1485-1490`)。SDK 的 `DaemonClient` 自动封装。
-- 版本严格判等(`daemon-launch.ts:70-76`):protocol.version + schemaId + appVersion 三者全等,否则判 stale。**桌面端 SDK 必须与拉起 daemon 的 CLI 同源同版本**(用同一份 /workspace/prime-agent 构建产物)。
+- 版本严格判等(`daemon-launch.ts:70-76`):protocol.version + schemaId + appVersion 三者全等,否则判 stale。**桌面端 SDK 必须与拉起 daemon 的 CLI 同源同版本**(用同一份 core/ 构建产物)。
 
 ## 接入方式(选定:方案 C)
 

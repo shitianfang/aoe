@@ -18,11 +18,15 @@ function kindOf(name: string): "html" | "md" | "png" | "pdf" | null {
 }
 
 /** A page written for a desktop window, shown in a column a fraction of that
- *  width: render it at this logical viewport and project it down, instead of
- *  handing it a 300px viewport it was never laid out for. */
-const PAGE_W = 1100;
+ *  width. Render it at a logical viewport it was plausibly laid out for and
+ *  project the whole thing down, instead of handing it a 200px viewport (which
+ *  triggers the mobile layout, or none) or cropping it.
+ *  The viewport itself follows the room available: a wide column gets a desktop
+ *  page, a narrow one a tablet, and the scale is whatever makes it fit. */
 const BOX_H = 420;
-const MIN_SCALE = 0.3;
+const pageWidthFor = (w: number) => (w >= 620 ? 1100 : w >= 380 ? 900 : w >= 240 ? 720 : 480);
+/** Below this, two projections side by side are both unreadable — show one. */
+const PAIR_MIN = 560;
 
 /** One version pane: md as plain text, html in a sandboxed iframe, png/pdf raw. */
 function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null; current: boolean }) {
@@ -31,23 +35,23 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
   const kind = kindOf(file.name);
   const v = version?.label;
   const [text, setText] = useState<string | null>(null);
-  // Projection scale for html: the box measures itself, the page keeps its
-  // desktop width. 1 when the column is already wide enough.
-  const [scale, setScale] = useState(MIN_SCALE);
+  // Projection for html: the box measures the column, the page gets a viewport
+  // and a scale that fits inside it. 1:1 once the column is wide enough.
+  const [width, setWidth] = useState(0);
   const box = useRef<HTMLDivElement | null>(null);
   const measure = useCallback((el: HTMLDivElement | null) => {
     box.current = el;
-    if (el) setScale(Math.min(1, Math.max(MIN_SCALE, el.clientWidth / PAGE_W)));
+    if (el) setWidth(el.clientWidth);
   }, []);
   useEffect(() => {
     const el = box.current;
     if (!el || kind !== "html") return;
-    const ro = new ResizeObserver(() => {
-      setScale(Math.min(1, Math.max(MIN_SCALE, el.clientWidth / PAGE_W)));
-    });
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
     ro.observe(el);
     return () => ro.disconnect();
   }, [kind, text]);
+  const pageW = pageWidthFor(width);
+  const scale = width > 0 ? Math.min(1, width / pageW) : 1;
 
   useEffect(() => {
     setText(null);
@@ -73,7 +77,7 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
             sandbox=""
             srcDoc={text}
             title={`${file.name} ${v ?? "live"}`}
-            style={{ width: PAGE_W, height: Math.round(BOX_H / scale), transform: `scale(${scale})` }}
+            style={{ width: pageW, height: Math.round(BOX_H / scale), transform: `scale(${scale})` }}
           />
         </div>
       );
@@ -85,6 +89,7 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
   // The zoom is stated, not silent: a page at 34% is a projection, and the
   // user should know that before judging its type sizes.
   const zoom = kind === "html" && scale < 1 ? `${Math.round(scale * 100)}% · ` : "";
+
   return (
     <div className="vbox">
       <div className="vh">
@@ -106,6 +111,21 @@ export function PreviewView(props: {
   onSelect: (path: string) => void;
 }) {
   const t = useT();
+  // The view measures itself: whether a side-by-side diff fits is a question
+  // about this pane's width, not about how many versions exist.
+  const [width, setWidth] = useState(0);
+  const view = useRef<HTMLDivElement | null>(null);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    view.current = el;
+    if (el) setWidth(el.clientWidth);
+  }, []);
+  useEffect(() => {
+    const el = view.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width === 0]);
   const file =
     (props.selectedPath ? props.files.find((f) => f.path === props.selectedPath) : undefined) ??
     props.files[0];
@@ -113,7 +133,7 @@ export function PreviewView(props: {
   if (!file) {
     return (
       <div className="view">
-        <div className="prev">
+        <div className="prev" ref={measure}>
           <div className="colnote" style={{ padding: 0 }}>
             {t("nothing published yet — files an agent writes will preview here.")}
           </div>
@@ -122,9 +142,12 @@ export function PreviewView(props: {
     );
   }
 
-  // Last two snapshots side by side; a file touched this turn but never
-  // snapshotted yet gets a single live pane.
-  const shown = file.versions.slice(-2);
+  // Last two snapshots side by side, but only where two columns can carry
+  // them; a narrow pane shows the current version alone instead of two
+  // thumbnails nobody can read. A file touched this turn but never snapshotted
+  // yet gets a single live pane.
+  const pair = width === 0 || width >= PAIR_MIN;
+  const shown = file.versions.slice(pair ? -2 : -1);
   const [from, to] = shown.length === 2 ? shown : [undefined, undefined];
 
   // Timeline events that happened between the two shown snapshots (real
@@ -142,7 +165,7 @@ export function PreviewView(props: {
 
   return (
     <div className="view">
-      <div className="prev">
+      <div className="prev" ref={measure}>
         {props.files.length > 1 && (
           <div className="pfiles">
             {props.files.map((f) => (

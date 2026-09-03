@@ -349,8 +349,14 @@ body.resizing iframe { pointer-events: none; }
    what you will watch happen, and the ask sits underneath in lighter type —
    nobody reads a paragraph to decide what to click. Background separation,
    no outlines. */
-.firstrun { margin: 10px 0 0 34px; max-width: 520px; }
-.firstrun .frh { font-size: 11px; color: var(--t3); margin-bottom: 10px; }
+/* Centered, like the composer it sits above — the block is an invitation, not
+   another message in the thread, so it does not hang off the avatar gutter.
+   In a flex column an auto margin only centers a box that is not stretched,
+   hence the explicit width the max-width then caps. Only the heading centers
+   its text; a card keeps its text left, because a centered two-line sentence
+   is harder to read and the three icons would stop lining up. */
+.firstrun { width: 100%; max-width: 520px; margin: 10px auto 0; }
+.firstrun .frh { font-size: 11px; color: var(--t3); margin-bottom: 10px; text-align: center; }
 .firstrun .frx { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 11px; align-items: start; width: 100%; text-align: left; background: var(--soft); padding: 11px 13px; margin-bottom: 6px; }
 .firstrun .frx:hover { background: var(--soft2); }
 .firstrun .frx .ic { display: block; color: var(--t3); padding-top: 2px; }

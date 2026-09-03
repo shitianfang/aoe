@@ -17,6 +17,12 @@ function stateLine(c: ChildInfo): JSX.Element {
   // helpers rehydrated after a restart — then the word stands alone.
   const done = typeof c.completedAt === "number" ? ` ${hhmmEpoch(c.completedAt)}` : "";
   if (c.status === "queued") return <>{t("queued · not yet started")}</>;
+  if (c.foreign) {
+    // Another root's crew member: roster words, no reply bookkeeping of ours.
+    if (c.status === "running") return <span className="run">{t("running")}</span>;
+    if (c.status === "error") return <span className="need">{t("failed")}</span>;
+    return <>{t(c.status === "inactive" ? "inactive" : "idle")}</>;
+  }
   if (c.status === "running") {
     return (
       <>
@@ -56,6 +62,7 @@ function stateLine(c: ChildInfo): JSX.Element {
 }
 
 function stripLine(c: ChildInfo): string {
+  if (c.foreign) return t("on {name}'s team", { name: c.parentName ?? "?" });
   const base = t("own cost billed to master");
   if (c.status === "running" || c.status === "queued") return `${base} · ${t("running")}`;
   if (c.status === "done")
@@ -97,17 +104,21 @@ export function HelperView(props: {
           <BotAvatar seed={name} />
           <span className="nm">{name}</span>
           <span className="rel">{t("helper")} · {stateLine(c)}</span>
-          <span className="act">
-            {running ? (
-              <button className="btn" onClick={() => props.onStop(c.id)}>
-                {t("stop helper")}
-              </button>
-            ) : (
-              <button className="btn" onClick={() => props.onRemove(c.id)}>
-                {t("remove helper")}
-              </button>
-            )}
-          </span>
+          {/* Stop/remove act on master's own family; a foreign crew member
+              is its root's to manage — no buttons here. */}
+          {!c.foreign && (
+            <span className="act">
+              {running ? (
+                <button className="btn" onClick={() => props.onStop(c.id)}>
+                  {t("stop helper")}
+                </button>
+              ) : (
+                <button className="btn" onClick={() => props.onRemove(c.id)}>
+                  {t("remove helper")}
+                </button>
+              )}
+            </span>
+          )}
         </div>
         {/* Unreachable helpers show the task as a message row in the record
             below — no duplicate header line. */}

@@ -26,6 +26,8 @@ export function helperName(c: ChildInfo): string {
 /** Status word for a helper (runtime words → product words). */
 export function statusWord(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return "running";
+  if (c.status === "idle") return "idle"; // foreign crew: roster words pass through
+  if (c.status === "inactive") return "inactive";
   if (c.status === "done") {
     if (c.repliedSinceTask) return "replied";
     // An inline helper is gone the moment it finishes — its answer went to

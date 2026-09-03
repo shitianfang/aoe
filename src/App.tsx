@@ -119,7 +119,8 @@ function currentPane(s: AppState): PaneView {
   if (s.view === "empty") return { kind: "empty" };
   if (s.view === "learned") return { kind: "learned" };
   if (s.view === "preview") return { kind: "preview" };
-  if (s.selectedAgent && s.children.some((c) => c.id === s.selectedAgent))
+  // fk: ids are foreign crew — they live in the roots roster, not children.
+  if (s.selectedAgent && (s.selectedAgent.startsWith("fk:") || s.children.some((c) => c.id === s.selectedAgent)))
     return { kind: "helper", childId: s.selectedAgent };
   if (s.selectedRoot) return { kind: "root", name: s.selectedRoot };
   return { kind: "timeline" };
@@ -233,11 +234,50 @@ function showFocused(s: AppState, v: PaneView): AppState {
   return openIn(s, focusSideOf(s), v);
 }
 
+/** Another root's crew, promoted from the roster to ChildInfo the moment a
+ *  row carries a live session id — same shape, so the whole helper pipeline
+ *  (watch, transcript, pane, per-pane send) works unchanged. Stub rows
+ *  without a session stay column-only. */
+function foreignKidsOf(others: RootAgent[]): ChildInfo[] {
+  const out: ChildInfo[] = [];
+  for (const a of others) {
+    for (const k of a.kids ?? []) {
+      if (!k.activeSessionId) continue;
+      out.push({
+        id: `fk:${k.activeSessionId}`,
+        label: k.name,
+        sessionName: k.name,
+        status: k.failed ? "error" : k.state,
+        activeSessionId: k.activeSessionId,
+        foreign: true,
+        parentName: a.name,
+      });
+    }
+  }
+  return out;
+}
+
+/** One lookup for master's own helpers and foreign crew alike. */
+function findChild(s: AppState, childId: string | null): ChildInfo | null {
+  if (childId === null) return null;
+  return (
+    s.children.find((c) => c.id === childId) ??
+    foreignKidsOf(s.others).find((c) => c.id === childId) ??
+    null
+  );
+}
+
 /** Drop tabs whose helper/root vanished from a fresh roster (flags say which
  *  roster is fresh); removeTab fixes actives and collapses emptied panes. */
 function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolean } = {}): AppState {
+  const foreignHere = (id: string) => foreignKidsOf(s.others).some((c) => c.id === id);
   const stale = (v: PaneView) =>
-    (fresh.children === true && v.kind === "helper" && !s.children.some((c) => c.id === v.childId)) ||
+    (fresh.children === true &&
+      v.kind === "helper" &&
+      !v.childId.startsWith("fk:") &&
+      !s.children.some((c) => c.id === v.childId)) ||
+    // Foreign crew panes live and die with the roots roster, not master's.
+    (fresh.roots === true && v.kind === "helper" && v.childId.startsWith("fk:") && !foreignHere(v.childId)) ||
     (fresh.roots === true && v.kind === "root" && !s.others.some((a) => a.name === v.name));
   let out = s;
   for (let guard = 0; guard < 40; guard++) {
@@ -487,12 +527,21 @@ export function App() {
   const applyOthers = useCallback((others: RootAgent[]) => {
     setState((s) => {
       const has = (n: string | null) => n !== null && others.some((a) => a.name === n);
+      // Foreign crew live and die with this roster too: a recycled kid must
+      // not linger as a ghost selection or message target.
+      const fkids = foreignKidsOf(others);
+      const fkGone = (cid: string | null) =>
+        cid !== null && cid.startsWith("fk:") && !fkids.some((c) => c.id === cid);
+      const staleTarget =
+        (s.target.kind === "root" && !has(s.target.name)) ||
+        (s.target.kind === "helper" && fkGone(s.target.childId));
       return reconcileSplit(
         {
           ...s,
           others,
           selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
-          target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
+          selectedAgent: fkGone(s.selectedAgent) ? null : s.selectedAgent,
+          target: staleTarget ? { kind: "master" } : s.target,
         },
         { roots: true },
       );
@@ -1100,7 +1149,9 @@ export function App() {
         // activeSessionId. resync replaces the child's rows; msg/tool append,
         // except a tool_execution_end updating the row its _start appended.
         setState((s) => {
-          const child = s.children.find((c) => c.activeSessionId === m.sessionId);
+          const child =
+            s.children.find((c) => c.activeSessionId === m.sessionId) ??
+            foreignKidsOf(s.others).find((c) => c.activeSessionId === m.sessionId);
           if (!child) return s;
           const ev = m.event;
           if (ev.kind === "resync") {
@@ -1119,7 +1170,9 @@ export function App() {
         });
       } else if (m.type === "helper_working") {
         setState((s) => {
-          const child = s.children.find((c) => c.activeSessionId === m.sessionId);
+          const child =
+            s.children.find((c) => c.activeSessionId === m.sessionId) ??
+            foreignKidsOf(s.others).find((c) => c.activeSessionId === m.sessionId);
           if (!child) return s;
           return { ...s, helperWorking: { ...s.helperWorking, [child.id]: m.text } };
         });
@@ -1208,7 +1261,10 @@ export function App() {
             const prev = s.children.find((p) => p.id === c.id);
             return { ...prev, ...c, activeSessionId: c.activeSessionId ?? prev?.activeSessionId };
           });
-          const has = (cid: string | null) => cid !== null && children.some((c) => c.id === cid);
+          // Foreign crew (fk:) selections ride the roots roster, not master's
+          // snapshot — a fresh snapshot must not evict them.
+          const has = (cid: string | null) =>
+            cid !== null && (cid.startsWith("fk:") || children.some((c) => c.id === cid));
           return reconcileSplit(
             {
               ...s,
@@ -1537,9 +1593,7 @@ export function App() {
     async (text: string) => {
       const current = stateRef.current;
       if (current.target.kind === "helper") {
-        const child = current.children.find(
-          (c) => c.id === (current.target as { childId: string }).childId,
-        );
+        const child = findChild(current, (current.target as { childId: string }).childId);
         if (child) await sendToHelper(child, text);
         return;
       }
@@ -1598,15 +1652,12 @@ export function App() {
     [sendViaNim, sendToHelper, postRoot],
   );
 
-  const selectedChild = state.selectedAgent
-    ? state.children.find((c) => c.id === state.selectedAgent) ?? null
-    : null;
+  const selectedChild = findChild(state, state.selectedAgent);
   const needsYou = state.children.filter((c) => c.status === "done" && !c.repliedSinceTask).length;
 
   // Either pane can hold a helper or root view now — watch whatever is open.
   const otherPane = state.split?.other ?? null;
-  const otherHelper =
-    otherPane?.kind === "helper" ? state.children.find((c) => c.id === otherPane.childId) ?? null : null;
+  const otherHelper = otherPane?.kind === "helper" ? findChild(state, otherPane.childId) : null;
 
   // Watch open helpers' live sessions (second attaches on the same daemon
   // socket). Attach can fail when the helper ran inline or was deleted — no
@@ -1819,7 +1870,7 @@ export function App() {
       );
     }
     if (p.kind === "helper") {
-      const child = state.children.find((c) => c.id === p.childId) ?? null;
+      const child = findChild(state, p.childId);
       if (!child) {
         // Restored pane whose helper is gone; the roster snapshot reconciles
         // it away — until then, say so instead of inventing content.
@@ -1870,7 +1921,7 @@ export function App() {
     if (p.kind === "learned") return tt("Self-evolution");
     if (p.kind === "preview") return tt("Preview");
     if (p.kind === "helper") {
-      const c = state.children.find((x) => x.id === p.childId);
+      const c = findChild(state, p.childId);
       return c ? helperName(c) : tt("helper");
     }
     if (p.kind === "root") return p.name;

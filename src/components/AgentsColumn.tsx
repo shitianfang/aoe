@@ -148,18 +148,22 @@ export function AgentsColumn(props: {
         selectable: null,
         draggable: true,
       });
-      // Roster kids: another root's sub-agents, read-only rows (no session of
-      // ours to select or message) — a root with kids is an agent team.
+      // Roster kids: another root's crew — a root with kids is an agent team.
+      // A kid with a live session opens like a helper (view + message); one
+      // without (recycled/inline) stays a read-only stub.
       (a.kids ?? []).forEach((k, i) => {
-        const key = `rk:${a.name}:${i}`;
+        // Stable identity when the session id exists; index only for stubs —
+        // an index key would re-seat rows onto other agents as the crew churns.
+        const key = `rk:${a.name}:${k.activeSessionId ?? i}`;
         kin[key] = `root:${a.name}`;
+        const word = k.failed ? "failed" : k.state;
         map.set(key, {
           key,
           label: k.name,
           avatar: <BotAvatar seed={k.name} />,
-          tag: flavorTag(k.name, k.state),
-          state: statusIcon(k.state),
-          selectable: null,
+          tag: flavorTag(k.name, word),
+          state: statusIcon(word),
+          selectable: k.activeSessionId ? `fk:${k.activeSessionId}` : null,
           draggable: false,
         });
       });
@@ -237,9 +241,35 @@ export function AgentsColumn(props: {
   const childrenOf = (key: string): Node[] =>
     [...nodes.values()].filter((n) => n.key !== key && parentOf(n.key) === key);
 
+  /** A folded team row swaps its flavor tag for the crew's live numbers.
+   *  Only states that exist get shown; an all-quiet crew keeps the flavor. */
+  const foldSummary = (kids: Node[]): React.ReactNode | null => {
+    const count = (w: string) => kids.filter((k) => k.state.word === w).length;
+    const parts: React.ReactNode[] = [];
+    const run = count("running");
+    const need = count("needs you");
+    const fail = count("failed");
+    if (run > 0) parts.push(<span key="run">{t("{n} running", { n: run })}</span>);
+    if (need > 0)
+      parts.push(
+        <span key="need" className="tagbad">
+          {t("{n} need you", { n: need })}
+        </span>,
+      );
+    if (fail > 0)
+      parts.push(
+        <span key="fail" className="tagbad">
+          {t("{n} failed", { n: fail })}
+        </span>,
+      );
+    if (parts.length === 0) return null;
+    return parts.flatMap((p, i) => (i > 0 ? [" · ", p] : [p]));
+  };
+
   const renderNode = (n: Node, depth: number): React.ReactNode => {
     const kids = childrenOf(n.key);
     const isFolded = kids.length > 0 && (folded[n.key] ?? n.key.startsWith("root:"));
+    const summary = isFolded ? foldSummary(kids) : null;
     const rootName = n.key.startsWith("root:") ? n.key.slice(5) : null;
     const selected =
       rootName !== null
@@ -289,7 +319,11 @@ export function AgentsColumn(props: {
                 </button>
               )}
             </span>
-            {n.tag && <span className="tag">{n.tag}</span>}
+            {summary !== null ? (
+              <span className="tag">{summary}</span>
+            ) : (
+              n.tag && <span className="tag">{n.tag}</span>
+            )}
           </span>
           <span className={n.state.cls} title={t(n.state.word)}>
             {n.state.glyph}

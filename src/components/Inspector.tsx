@@ -107,16 +107,24 @@ function HelperInspector(props: { child: ChildInfo }) {
           <div className="kv">
             <span className="k">{t("Tokens")}</span>
             <span className="v faint">
-              {tk(c.tokenCount)} · {t("billed to master")}
+              {tk(c.tokenCount)}{c.foreign ? "" : ` · ${t("billed to master")}`}
             </span>
           </div>
         )}
-        <div className="rule">
-          {t(reachable(c) ? "still reachable" : "ran inline, not reachable")}
-        </div>
+        {!c.foreign && (
+          <div className="rule">
+            {t(reachable(c) ? "still reachable" : "ran inline, not reachable")}
+          </div>
+        )}
       </div>
       <div className="panel">
-        <div className="rule">{t("runs for master — its objective and check-ins live on master")}</div>
+        {/* Ownership must be honest: a foreign crew member answers to its own
+            root, not to master. */}
+        <div className="rule">
+          {c.foreign
+            ? t("on {name}'s team", { name: c.parentName ?? "?" })
+            : t("runs for master — its objective and check-ins live on master")}
+        </div>
       </div>
     </aside>
   );

@@ -91,6 +91,11 @@ export interface GoalInfo {
 export interface RootKid {
   name: string;
   state: "running" | "idle" | "inactive";
+  /** The daemon marked this crew member failed (roster statusLabel). */
+  failed?: boolean;
+  /** Live session id — present while attachable; without it the row is a
+   *  read-only stub (recycled/inline crew has no session to open). */
+  activeSessionId?: string;
 }
 
 /** Another root session on this daemon ("Other" in the Agents column,
@@ -115,11 +120,17 @@ export interface ClaudeSubagent {
   status: "running" | "done";
 }
 
-/** RlmChildAgentSnapshot subset we render. */
+/** RlmChildAgentSnapshot subset we render. Foreign entries (another root's
+ *  crew, promoted from the roster) reuse the shape: id "fk:<activeSessionId>",
+ *  roster words "idle"/"inactive" for status, foreign + parentName set. */
 export interface ChildInfo {
   id: string;
   label: string;
-  status: "queued" | "running" | "done" | "error" | "cancelled";
+  status: "queued" | "running" | "done" | "error" | "cancelled" | "idle" | "inactive";
+  /** Another root's crew member — its root drives it; no stop/remove here. */
+  foreign?: true;
+  /** The root this foreign crew member belongs to. */
+  parentName?: string;
   repliedSinceTask?: boolean;
   activeSessionId?: string;
   sessionName?: string;

@@ -443,6 +443,9 @@ let rosterLive = false;
 /** @type {any[]|null} */ let rosterPending = null;
 let rosterListening = false;
 let rosterEmitScheduled = false;
+/** A subscribe is in flight; a hello arriving now re-runs it once it lands. */
+let rosterSubscribing = false;
+let rosterResubscribe = false;
 
 function displayName(s) {
   return s.sessionName || String(s.firstMessage ?? "").slice(0, 40) || "unnamed";
@@ -466,20 +469,29 @@ function rosterAgents() {
     if (s.runtimeKind !== "subagent") continue;
     const parent = byParentKey.get(s.parentSessionId) ?? byParentKey.get(s.parentActiveSessionId);
     if (!parent) continue;
-    parent.kids.push({ name: displayName(s), state: e.status ?? "inactive" });
+    parent.kids.push({
+      name: displayName(s),
+      state: e.status ?? "inactive",
+      ...(e.statusLabel === "failed" ? { failed: true } : {}),
+      // Live session id makes the row openable/messageable in the renderer;
+      // passivated entries have none and stay read-only stubs.
+      ...(s.activeSessionId ? { activeSessionId: s.activeSessionId } : {}),
+    });
   }
   for (const r of roots) if (r.kids.length === 0) delete r.kids;
   return roots;
 }
 
-/** Coalesce a burst of roster pushes into one SSE frame per microtask. */
+/** Coalesce a burst of roster pushes into one SSE frame. The daemon spreads
+ *  one logical change over a few ticks, so a microtask isn't wide enough —
+ *  a short timer folds them without adding visible latency. */
 function broadcastRoster() {
   if (rosterEmitScheduled) return;
   rosterEmitScheduled = true;
-  queueMicrotask(() => {
+  setTimeout(() => {
     rosterEmitScheduled = false;
     broadcast({ type: "roster", agents: rosterAgents() });
-  });
+  }, 16);
 }
 
 function applyRosterUpdate(m) {
@@ -499,25 +511,44 @@ async function subscribeRoster() {
           applyRosterUpdate(m);
           broadcastRoster();
         }
-      } else if (m?.type === "daemon_hello" && rosterLive) {
+      } else if (m?.type === "daemon_hello") {
         // Transport reconnected under us; the server-side subscription died
-        // with the old connection. Resubscribe on the fresh one.
+        // with the old connection. Resubscribe on the fresh one — also when
+        // the last attempt never landed, or one failed subscribe would strand
+        // the renderer on 30s polling for the rest of the session.
         rosterLive = false;
         subscribeRoster().catch(() => undefined);
       }
     });
   }
-  rosterPending = [];
+  // A hello can land mid-subscribe; queue that retry instead of re-entering
+  // and clobbering the buffer this call is still filling.
+  if (rosterSubscribing) {
+    rosterResubscribe = true;
+    return;
+  }
+  rosterSubscribing = true;
   try {
-    const r = await daemonClient.request({ type: "roster_subscribe" });
-    if (!r?.success) return; // renderer polling stays as the fallback
-    rosterEntries.clear();
-    for (const e of r.data?.roster ?? []) rosterEntries.set(e.agentId, e);
-    for (const m of rosterPending) applyRosterUpdate(m);
-    rosterLive = true;
-    broadcastRoster();
+    do {
+      rosterResubscribe = false;
+      rosterPending = [];
+      try {
+        const r = await daemonClient.request({ type: "roster_subscribe" });
+        if (r?.success) {
+          rosterEntries.clear();
+          for (const e of r.data?.roster ?? []) rosterEntries.set(e.agentId, e);
+          for (const m of rosterPending) applyRosterUpdate(m);
+          rosterLive = true;
+          broadcastRoster();
+        } // else: renderer polling stays as the fallback
+      } catch (e) {
+        console.error("[bridge] roster subscribe failed:", e?.message);
+      } finally {
+        rosterPending = null;
+      }
+    } while (rosterResubscribe);
   } finally {
-    rosterPending = null;
+    rosterSubscribing = false;
   }
 }
 

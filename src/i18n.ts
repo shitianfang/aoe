@@ -130,6 +130,10 @@ const ZH: Record<string, string> = {
   "master runs this workspace.": "master 负责这个工作区。",
   "helpers appear here when it starts them.": "它启动的助手会出现在这里。",
   "{n} inactive": "{n} 个已结束",
+  "{n} running": "{n} 个运行中",
+  "on {name}'s team": "{name} 的队员",
+  "{n} need you": "{n} 个需要你",
+  "{n} failed": "{n} 个失败",
   show: "展开",
   hide: "收起",
 

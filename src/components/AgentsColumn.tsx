@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentState, ChildInfo, RootAgent } from "../types";
-import { chipGlyph, chipHue, helperName, statusWord } from "../helperDisplay";
+import { flavorTag, helperName, statusIcon, statusWord } from "../helperDisplay";
+import { BotAvatar } from "./BotAvatar";
 import { bridgeCmd } from "../runtime/bridge";
 
 const ACTIVE = new Set(["queued", "running", "done"]);
@@ -9,9 +10,10 @@ const ACTIVE = new Set(["queued", "running", "done"]);
 interface Node {
   key: string;
   label: string;
-  chip: { cls: string; glyph: string };
-  stateLabel: string;
-  stateCls: string;
+  avatar: React.ReactNode;
+  /** The agent's own little self-tag ("heads down", "sulking in the lobby"). */
+  tag: string;
+  state: { cls: string; glyph: string; word: string };
   selectable: string | null; // child id when clickable
   draggable: boolean;
 }
@@ -42,6 +44,10 @@ export function AgentsColumn(props: {
   selectedRoot: string | null;
   /** Live run state per attached root; overrides the roster word when known. */
   rootStates: Record<string, AgentState>;
+  /** Runtime "what am I doing" lines — the agents' own self-tags. */
+  working?: string;
+  helperWorking: Record<string, string>;
+  rootWorking: Record<string, string>;
   onSelect: (childId: string | null) => void;
   onSelectRoot: (name: string) => void;
   onRefreshOthers: () => void;
@@ -83,23 +89,25 @@ export function AgentsColumn(props: {
 
   const nodes = useMemo(() => {
     const map = new Map<string, Node>();
+    const masterWord = props.master === "working" ? "running" : "idle";
     map.set("master", {
       key: "master",
       label: "master",
-      chip: { cls: "chip master", glyph: "" },
-      stateLabel: props.master === "working" ? "running" : "idle",
-      stateCls: props.master === "working" ? "st run" : "st",
+      avatar: <span className="chip master" />,
+      tag: flavorTag("master", masterWord, props.working),
+      state: statusIcon(masterWord),
       selectable: null,
       draggable: false, // the commander stays pinned
     });
     visibleChildren.forEach((c) => {
-      const st = statusWord(c);
+      const word = statusWord(c);
+      const name = helperName(c);
       map.set(c.id, {
         key: c.id,
-        label: helperName(c),
-        chip: { cls: `chip ${chipHue(props.children.indexOf(c))}`, glyph: chipGlyph(c) },
-        stateLabel: st.label,
-        stateCls: st.cls,
+        label: name,
+        avatar: <BotAvatar seed={name} />,
+        tag: flavorTag(name, word, props.helperWorking[c.id]),
+        state: statusIcon(word),
         selectable: c.id,
         draggable: true,
       });
@@ -107,19 +115,28 @@ export function AgentsColumn(props: {
     others.forEach((a) => {
       // Live event stream is truth once attached; the roster word otherwise.
       const live = props.rootStates[a.name];
-      const stateLabel = live !== undefined ? (live === "working" ? "running" : "idle") : a.state;
+      const word = live !== undefined ? (live === "working" ? "running" : "idle") : a.state;
       map.set(`root:${a.name}`, {
         key: `root:${a.name}`,
         label: a.name,
-        chip: { cls: "chip ghost", glyph: a.name.slice(0, 1).toUpperCase() },
-        stateLabel,
-        stateCls: stateLabel === "running" ? "st run" : "st",
+        avatar: <BotAvatar seed={a.name} ghost={a.state === "inactive" && live === undefined} />,
+        tag: flavorTag(a.name, word, props.rootWorking[a.name]),
+        state: statusIcon(word),
         selectable: null,
         draggable: true,
       });
     });
     return map;
-  }, [props.master, props.children, visibleChildren, others, props.rootStates]);
+  }, [
+    props.master,
+    props.children,
+    visibleChildren,
+    others,
+    props.rootStates,
+    props.working,
+    props.helperWorking,
+    props.rootWorking,
+  ]);
 
   /** parent of a node in the displayed tree (grouping override, else real family). */
   const parentOf = useCallback(
@@ -198,6 +215,7 @@ export function AgentsColumn(props: {
           onDragLeave={() => setDropOn((d) => (d === n.key ? null : d))}
           onDrop={(e) => {
             e.preventDefault();
+            e.stopPropagation(); // the aside's own onDrop would regroup to __top otherwise
             const key = e.dataTransfer.getData("text/agent-key");
             if (key) drop(key, n.key);
           }}
@@ -209,22 +227,27 @@ export function AgentsColumn(props: {
           role="button"
           tabIndex={0}
         >
-          {kids.length > 0 ? (
-            <button
-              className="fold"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFold(n.key);
-              }}
-            >
-              {isFolded ? "▸" : "▾"}
-            </button>
-          ) : (
-            <span className="fold none" />
-          )}
-          <span className={n.chip.cls}>{n.chip.glyph}</span>
-          <span className="nm">{n.label}</span>
-          <span className={n.stateCls}>{n.stateLabel}</span>
+          {n.avatar}
+          <span className="nmw">
+            <span className="nmr">
+              <span className="nm">{n.label}</span>
+              {kids.length > 0 && (
+                <button
+                  className="fold"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFold(n.key);
+                  }}
+                >
+                  {isFolded ? "▸" : "▾"}
+                </button>
+              )}
+            </span>
+            {n.tag && <span className="tag">{n.tag}</span>}
+          </span>
+          <span className={n.state.cls} title={n.state.word}>
+            {n.state.glyph}
+          </span>
         </div>
         {!isFolded && kids.map((k) => renderNode(k, Math.min(depth + 1, 3)))}
       </div>

@@ -2,6 +2,7 @@ import type { BridgeState, ColumnView } from "../types";
 
 export function Rail(props: {
   column: ColumnView;
+  workspace: string;
   bridge: BridgeState | null;
   onColumn: (v: ColumnView) => void;
   onLogo: () => void;
@@ -9,7 +10,9 @@ export function Rail(props: {
 }) {
   return (
     <nav className="rail">
-      <button className="logo" title="switch workspace" onClick={props.onLogo} />
+      <button className="logo" title={`${props.workspace} · switch workspace`} onClick={props.onLogo}>
+        {props.workspace.slice(0, 1).toUpperCase()}
+      </button>
       <button
         className={props.column === "agents" ? "rbtn on" : "rbtn"}
         title="Agents"

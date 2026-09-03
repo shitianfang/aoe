@@ -20,6 +20,8 @@ npm run app            # Electron shell pointing at the dev server
 
 The bridge needs **Node >= 22.8** and **uv** on PATH (the prime-agent daemon and its Python kernel
 require them), plus a built prime-agent checkout at `PRIME_AGENT_DIR` (default `/workspace/prime-agent`).
+`npm run dev:bridge` runs the bridge against the preview-publish fork at `/workspace/prime-agent-fork`
+(daemon capability `preview_events` — declared previews in the Preview view).
 Without the bridge the app falls back to plain NIM chat ("model only" in the title bar).
 
 The NIM key stays server-side (Vite dev proxy / bridge). Never commit `.env`.

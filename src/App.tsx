@@ -20,6 +20,7 @@ import type {
 import { SettingsPopup, WorkspacePopup } from "./components/Overlays";
 import { Rail } from "./components/Rail";
 import { AgentsColumn } from "./components/AgentsColumn";
+import { BotAvatar } from "./components/BotAvatar";
 import { FilesColumn } from "./components/FilesColumn";
 import { Timeline } from "./components/Timeline";
 import { LearnedView } from "./components/LearnedView";
@@ -167,6 +168,12 @@ export function App() {
   const bridgeRef = useRef(false);
   // Snapshots repeat on bridge reconnect (same workspace) — seed history once.
   const histSeededRef = useRef(false);
+  // Paths declared via preview_published this turn (event path/source, may be
+  // absolute). Dedupes the inferred file_activity fallback against the
+  // declared source within one turn window; cleared at agent_end.
+  const declaredRef = useRef<Set<string>>(new Set());
+  // Declared path waiting to be selected once the preview list re-pull lands.
+  const pendingPreviewRef = useRef<string | null>(null);
   // Last live timeline append; long silences get one dashed time rule.
   const lastAtRef = useRef(Date.now());
   const [setOpen, setSetOpen] = useState(false);
@@ -251,8 +258,32 @@ export function App() {
       pvTimer = setTimeout(async () => {
         pvTimer = null;
         const previewFiles = await fetchPreviewFiles().catch(() => []);
-        setState((s) => ({ ...s, previewFiles }));
+        setState((s) => {
+          // A declared preview selects its entry once the list carries it
+          // (the event path may be absolute; index keys are workspace-relative).
+          const pend = pendingPreviewRef.current;
+          let previewPath = s.previewPath;
+          if (pend) {
+            const base = pend.split(/[\\/]/).pop();
+            const match = previewFiles.find(
+              (f) => f.path === pend || pend.endsWith(`/${f.path}`) || f.name === base,
+            );
+            if (match) {
+              previewPath = match.path;
+              pendingPreviewRef.current = null;
+            }
+          }
+          return { ...s, previewFiles, previewPath };
+        });
       }, 300);
+    };
+
+    /** Was this (possibly relative) path declared via preview.publish this turn? */
+    const declaredThisTurn = (p: string) => {
+      for (const d of declaredRef.current) {
+        if (d === p || d.endsWith(`/${p}`) || p.endsWith(`/${d}`)) return true;
+      }
+      return false;
     };
 
     const mergeChild = (child: ChildInfo) => {
@@ -283,6 +314,7 @@ export function App() {
         setState((s) => ({ ...s, master: "working" }));
       } else if (t === "agent_end") {
         daemonMsgRef.current = null;
+        declaredRef.current.clear(); // turn window for declared-vs-inferred dedupe
         if (pendingRef.current) {
           clearTimeout(pendingRef.current.timer);
           pendingRef.current = null;
@@ -425,6 +457,25 @@ export function App() {
             x.id === toolId && x.kind === "tool" ? { ...x, status: event.isError ? "error" : "done" } : x,
           ),
         }));
+      } else if (t === "preview_published") {
+        // Declared preview (daemon capability preview_events) — the primary
+        // source for the Preview view. The bridge already snapshot the file;
+        // here: one timeline chip, a Files row, and select the preview entry.
+        const p = event.preview as
+          | { source?: string; kind?: string; path?: string; label?: string }
+          | undefined;
+        if (!p) return;
+        const resolved = p.path ?? p.source ?? "";
+        const base = resolved.split(/[\\/]/).pop() || "file";
+        push({ kind: "note", id: id(), text: `published · ${p.label || base}`, rt: clock(), ts: Date.now() });
+        if (resolved) {
+          declaredRef.current.add(resolved);
+          if (p.kind === "file") {
+            pendingPreviewRef.current = resolved;
+            setState((s) => ({ ...s, files: upsertFile(s.files, resolved, "master") }));
+            refreshPreview();
+          }
+        }
       } else if (t === "refine_complete") {
         const result = event.result as LessonResult | undefined;
         if (result?.id) {
@@ -559,12 +610,21 @@ export function App() {
         const ws = m.daemon.workspace ?? null;
         setState((s) => {
           const switched = ws !== null && s.bridge?.workspace != null && ws !== s.bridge.workspace;
-          const bridgeState = { connected: m.daemon.connected, error: m.daemon.error ?? null, workspace: ws };
+          const bridgeState = {
+            connected: m.daemon.connected,
+            error: m.daemon.error ?? null,
+            workspace: ws,
+            // Capability detection: the daemon says whether it emits
+            // preview_published (declared previews); absent = inference only.
+            previewEvents: (m.daemon.capabilities ?? []).includes("preview_events"),
+          };
           if (!switched) return { ...s, bridge: bridgeState };
           // A workspace is its own master, helpers, other roots, files, history.
           daemonMsgRef.current = null;
           historyRef.current = [];
           histSeededRef.current = false;
+          declaredRef.current.clear();
+          pendingPreviewRef.current = null;
           rootMsgRef.current = {};
           for (const p of Object.values(rootPendingRef.current)) clearTimeout(p.timer);
           rootPendingRef.current = {};
@@ -605,7 +665,10 @@ export function App() {
       } else if (m.type === "preview_update") {
         refreshPreview();
       } else if (m.type === "file_activity") {
-        // fs truth from the bridge's per-turn scan (writes happen inside the kernel)
+        // fs truth from the bridge's per-turn scan (writes happen inside the
+        // kernel). A file already declared via preview.publish this turn has
+        // its row — don't double-count the inferred sighting.
+        if (declaredThisTurn(m.file.path)) return;
         setState((s) => ({ ...s, files: upsertFile(s.files, m.file.path, "master") }));
       } else if (m.type === "working_message") {
         setState((s) => ({ ...s, working: m.text || undefined }));
@@ -981,7 +1044,6 @@ export function App() {
       return (
         <HelperView
           child={selectedChild}
-          index={state.children.indexOf(selectedChild)}
           events={state.helperEvents[selectedChild.id] ?? []}
           transcript={state.helperTranscripts[selectedChild.id] ?? []}
           working={state.helperWorking[selectedChild.id] || undefined}
@@ -1013,7 +1075,7 @@ export function App() {
         <div className="view">
           <div className="ahead">
             <div className="r1">
-              <span className="chip ghost">{name.slice(0, 1).toUpperCase()}</span>
+              <BotAvatar seed={name} />
               <span className="nm">{name}</span>
               <span className="rel">root agent · runs on its own</span>
             </div>
@@ -1062,6 +1124,7 @@ export function App() {
       <div className="frame">
         <Rail
           column={state.column}
+          workspace={state.bridge?.workspace || "general"}
           bridge={state.bridge}
           onColumn={setColumn}
           onLogo={() => setWsOpen((v) => !v)}
@@ -1076,6 +1139,9 @@ export function App() {
             selected={state.selectedAgent}
             selectedRoot={state.selectedRoot}
             rootStates={state.rootStates}
+            working={state.working}
+            helperWorking={state.helperWorking}
+            rootWorking={state.rootWorking}
             onSelect={selectAgent}
             onSelectRoot={selectRoot}
             onRefreshOthers={refreshOthers}

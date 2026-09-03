@@ -122,17 +122,25 @@ export interface FileActivity {
   at: string;
 }
 
-/** Preview pipeline (client-inferred, bridge /bridge/preview): one version is
- *  snapshot per file per turn-with-changes; `live` = written this turn. */
+/** Preview pipeline (bridge /bridge/preview): one version is snapshot per file
+ *  per turn-with-changes; `live` = written this turn. Declared entries come
+ *  from preview_published events (daemon capability preview_events) and carry
+ *  the agent's label; inferred entries stay the fallback. */
 export interface PreviewVersion {
   label: string;
   /** ISO timestamp of the snapshot. */
   at: string;
+  /** This version was explicitly published by the agent. */
+  declared?: boolean;
 }
 export interface PreviewFile {
   path: string;
   name: string;
   live: boolean;
+  /** The agent explicitly published this file at least once. */
+  declared?: boolean;
+  /** Publish label (declared entries only). */
+  label?: string;
   versions: PreviewVersion[];
 }
 
@@ -140,6 +148,9 @@ export interface BridgeState {
   connected: boolean;
   error?: string | null;
   workspace?: string | null;
+  /** Daemon emits preview_published events (server capability preview_events);
+   *  false/absent = old daemon, Preview falls back to inference only. */
+  previewEvents?: boolean;
 }
 
 /** AgentCronJob subset we render in Re-entry. */

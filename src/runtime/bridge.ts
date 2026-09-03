@@ -11,6 +11,9 @@ export interface BridgeHello {
   master: { name: string; activeSessionId: string } | null;
   error?: string | null;
   workspace?: string | null;
+  /** Daemon server capabilities from daemon_hello (e.g. "preview_events").
+   *  Absent/empty on older daemons. */
+  capabilities?: string[];
 }
 
 export type BridgeMessage =

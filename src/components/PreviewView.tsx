@@ -43,10 +43,12 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
     return <pre className="vdoc">{text}</pre>;
   };
 
+  // Declared versions were explicitly published by the agent; say so.
+  const vlabel = version ? `${version.label}${version.declared ? " · published" : ""}` : null;
   return (
     <div className="vbox">
       <div className="vh">
-        <b>{version ? (props.current ? `${version.label} · current` : version.label) : "live"}</b>
+        <b>{vlabel ? (props.current ? `${vlabel} · current` : vlabel) : "live"}</b>
         <span>{version ? fmtTime(version.at) : "unsaved this turn"}</span>
       </div>
       {body()}
@@ -106,13 +108,16 @@ export function PreviewView(props: {
                 title={f.path}
                 onClick={() => props.onSelect(f.path)}
               >
-                {f.name}
+                {f.label ?? f.name}
               </button>
             ))}
           </div>
         )}
         <div className="ph">
-          <span className="fn">{file.name}</span>
+          <span className="fn" title={file.path}>
+            {file.label ?? file.name}
+          </span>
+          {file.label && file.label !== file.name && <span className="sub">{file.name}</span>}
           {file.live && <span className="live">● live</span>}
         </div>
         <div className={shown.length === 2 ? "vgrid" : "vgrid overlay"}>

@@ -9,7 +9,8 @@ import type {
   HeartbeatInfo,
   RootAgent,
 } from "../types";
-import { chipGlyph, chipHue, helperName } from "../helperDisplay";
+import { helperName } from "../helperDisplay";
+import { BotAvatar } from "./BotAvatar";
 
 function popupStatus(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return "running";
@@ -169,9 +170,9 @@ export function Composer(props: {
                 <span className="chip master sm" />
                 master
               </button>
-              {props.children.map((c, i) => (
+              {props.children.map((c) => (
                 <button className="tr sub" key={c.id} onClick={() => pick({ kind: "helper", childId: c.id })}>
-                  <span className={`chip ${chipHue(i)} sm`}>{chipGlyph(c)}</span>
+                  <BotAvatar seed={helperName(c)} sm />
                   {helperName(c)}
                   <span className="st">{popupStatus(c)}</span>
                 </button>
@@ -179,7 +180,7 @@ export function Composer(props: {
               {props.others.length > 0 && <div className="h">other agents</div>}
               {props.others.map((a) => (
                 <button className="tr" key={a.name} onClick={() => pick({ kind: "root", name: a.name })}>
-                  <span className="chip ghost sm">{a.name.slice(0, 1).toUpperCase()}</span>
+                  <BotAvatar seed={a.name} ghost={a.state === "inactive"} sm />
                   {a.name}
                   <span className="st">{a.state}</span>
                 </button>

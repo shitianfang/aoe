@@ -7,6 +7,7 @@
   --hair: rgba(22, 27, 36, .11); --hair-hi: rgba(22, 27, 36, .22);
   --t1: #1b1e23; --t2: #4e565f; --t3: #8a9199;
   --cyan: #4accdf; --violet: #a78bfa; --amber: #e5b563;
+  --blue: #7ea6e8; --rose: #e59ab8;
   --cyan-bg: #e2f5f8; --cyan-bd: #9fd9e4; --cyan-tx: #0b7c8d;
   --amber-bg: #faf2df; --amber-bd: #e3cd97; --amber-tx: #8f6c14;
   --violet-bg: #f0ebfc; --violet-bd: #cdbcf2; --violet-tx: #6a48c8;
@@ -22,6 +23,7 @@
   --hair: rgba(255, 255, 255, .08); --hair-hi: rgba(255, 255, 255, .17);
   --t1: #f4f5f6; --t2: #a3a9b1; --t3: #697077;
   --cyan: #56d8e8; --violet: #b39df7; --amber: #e8bc6d;
+  --blue: #8fb4f2; --rose: #eca8c4;
   --cyan-bg: #152f36; --cyan-bd: #275964; --cyan-tx: #8fe2ee;
   --amber-bg: #322a18; --amber-bd: #5f4e23; --amber-tx: #eecb8b;
   --violet-bg: #272138; --violet-bd: #4c3f75; --violet-tx: #c9b8f9;
@@ -126,12 +128,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---- icon rail ---- */
 .rail { width: 46px; border-right: 1px solid var(--hair); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 2px; flex-shrink: 0; }
-.logo { width: 26px; height: 26px; background: var(--hi-bg); color: var(--hi-fg); display: grid; place-items: center; cursor: pointer; margin-bottom: 10px; }
-.logo::before {
-  content: ""; width: 15px; height: 9px; border: 2px solid currentColor;
-  background:
-    radial-gradient(circle 1.7px at 4.5px 4.5px, currentColor 1.7px, transparent 1.8px),
-    radial-gradient(circle 1.7px at 10.5px 4.5px, currentColor 1.7px, transparent 1.8px);
+.logo {
+  width: 26px; height: 26px; background: var(--hi-bg); color: var(--hi-fg);
+  display: grid; place-items: center; cursor: pointer; margin-bottom: 10px;
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
 }
 .rbtn { width: 38px; height: 38px; display: grid; place-items: center; color: var(--t3); }
 .rbtn:hover { color: var(--t2); }
@@ -161,13 +161,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .chip.cyan { background: var(--cyan); }
 .chip.amber { background: var(--amber); }
 .chip.violet { background: var(--violet); }
+.chip.blue { background: var(--blue); }
+.chip.rose { background: var(--rose); }
 .chip.sm { width: 18px; height: 18px; font-size: 8px; }
+/* generative bot faces — SVG inherits the chip's ink color */
+.chip.bot svg { width: 22px; height: 22px; display: block; }
+.chip.bot.sm svg { width: 16px; height: 16px; }
+.chip.bot.ghost { color: var(--t3); }
 .a { display: flex; align-items: center; gap: 9px; padding: 6px 8px; cursor: pointer; margin-bottom: 3px; border: 1px solid transparent; width: 100%; text-align: left; }
-.a.tree { gap: 6px; }
+.a.tree { gap: 8px; padding: 5px 8px; }
 .a.droptgt { border-color: var(--t3); background: var(--soft); }
-.fold { width: 12px; flex-shrink: 0; font-size: 8px; color: var(--t3); padding: 0; }
+.a .nmw { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.a .nmr { display: flex; align-items: center; min-width: 0; }
+.a .tag { font-family: var(--mono); font-size: 8px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.fold { flex-shrink: 0; font-size: 8px; color: var(--t3); padding: 0 2px; margin-left: 4px; }
 .fold:hover { color: var(--t1); }
-.fold.none { display: inline-block; }
 .a:hover { background: var(--soft); }
 .a.sel { background: var(--soft); border-color: var(--hair); }
 .a.indent { margin-left: 14px; width: calc(100% - 14px); }
@@ -175,6 +183,19 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .a .st { margin-left: auto; font-family: var(--mono); font-size: 8.5px; color: var(--t3); flex-shrink: 0; }
 .a .st.run { color: var(--green); }
 .a .st.need { color: var(--red); }
+/* square-language status icons (word lives in the tooltip) */
+.sti { margin-left: auto; flex-shrink: 0; width: 7px; height: 7px; }
+.sti.run { background: var(--green); animation: stpulse 1.6s ease-in-out infinite; }
+.sti.need { background: var(--red); }
+.sti.idle { border: 1px solid var(--t3); }
+.sti.off { border: 1px solid var(--t3); opacity: .4; }
+.sti.halt { background: var(--t3); opacity: .5; }
+.sti.ok, .sti.bad {
+  width: auto; height: auto; font-family: var(--mono); font-size: 9px; line-height: 1;
+  color: var(--t3);
+}
+.sti.bad { color: var(--red); }
+@keyframes stpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 .more { padding: 10px 8px 0; font-family: var(--mono); font-size: 9px; color: var(--t3); cursor: pointer; text-align: left; }
 .more:hover { color: var(--t2); }
 .sec.sub { padding-top: 16px; }
@@ -192,10 +213,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---- center ---- */
 .center { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px dashed var(--hair); }
-.tabs { display: flex; align-items: stretch; min-height: 34px; border-bottom: 1px solid var(--hair); flex-shrink: 0; }
-.tab { display: flex; align-items: center; gap: 7px; padding: 0 14px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); border-right: 1px solid var(--hair); }
-.tab.on { color: var(--t1); box-shadow: inset 0 -2px 0 var(--t1); }
+/* Tab bar separates by surface color, not lines (VSCode-style): the strip is
+   recessed, the active tab takes the content surface and fuses with the panel
+   below — no underline, no border across the bar, no per-tab separators. */
+.tabs { display: flex; align-items: stretch; min-height: 34px; background: var(--soft); flex-shrink: 0; }
+.tab { display: flex; align-items: center; gap: 7px; padding: 0 14px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
+.tab.on { color: var(--t1); background: var(--win); }
 .tab:hover { color: var(--t2); }
+.tab.on:hover { color: var(--t1); }
 
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
@@ -286,6 +311,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .prev { flex: 1; overflow-y: auto; padding: 18px; }
 .ph { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; }
 .ph .fn { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.ph .sub { font-family: var(--mono); font-size: 11px; color: var(--t3); }
 .ph .live { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--green); }
 .ph .mode { margin-left: auto; display: flex; gap: 8px; }
 .ph .mode .btn.off { color: var(--t3); }

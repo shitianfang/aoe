@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
-import { chipGlyph, chipHue, helperName, reachable } from "../helperDisplay";
+import { helperName, reachable } from "../helperDisplay";
+import { BotAvatar } from "./BotAvatar";
 
 function hhmm(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -49,7 +50,6 @@ function stripLine(c: ChildInfo): string {
 
 export function HelperView(props: {
   child: ChildInfo;
-  index: number;
   events: HelperEvent[];
   /** Thinned rows from the helper's live session (watch_helper feed). */
   transcript: HelperTranscriptRow[];
@@ -77,7 +77,7 @@ export function HelperView(props: {
     <div className="view">
       <div className="ahead">
         <div className="r1">
-          <span className={`chip ${chipHue(props.index)}`}>{chipGlyph(c)}</span>
+          <BotAvatar seed={name} />
           <span className="nm">{name}</span>
           <span className="rel">helper of master</span>
           <span className="act">
@@ -112,7 +112,7 @@ export function HelperView(props: {
               </div>
             ) : row.role === "assistant" ? (
               <div className="msg" key={`tr${i}`}>
-                <span className={`chip ${chipHue(props.index)}`}>{chipGlyph(c)}</span>
+                <BotAvatar seed={name} />
                 <span className="body">
                   {row.text}
                   {row.at ? <span className="when">{hhmm(row.at)}</span> : null}

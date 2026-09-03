@@ -12,7 +12,7 @@
  *                               |"watch_root"|"unwatch_root"|"root_prompt"
  *                               |"root_steer"|"root_follow_up"|"root_abort",
  *                             text?, target? }
- *   GET  /bridge/health   { connected, master }
+ *   GET  /bridge/health   { connected, master, capabilities }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
  * The renderer never touches the daemon socket directly.
@@ -41,7 +41,16 @@ const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
 
 /** @type {Set<import("node:http").ServerResponse>} */
 const sseClients = new Set();
-let daemon = { connected: false, master: null, error: null, workspace: currentWorkspace };
+/** Server capabilities from daemon_hello (e.g. "preview_events" — the daemon
+ *  emits preview_published session events). Empty on older daemons. */
+/** @type {string[]} */ let serverCaps = [];
+let daemon = {
+  connected: false,
+  master: null,
+  error: null,
+  workspace: currentWorkspace,
+  capabilities: serverCaps,
+};
 /** @type {any} */ let masterConn = null;
 /** @type {any} */ let daemonClient = null;
 /** Live child-session attaches for the helper view, keyed by activeSessionId.
@@ -238,6 +247,14 @@ async function connectDaemon() {
   await client.connect();
   daemonClient = client;
   sdkRef = sdk;
+  // daemon_hello carries the server capability list; older daemons/SDKs may
+  // lack the accessor or the field — both degrade to "no capabilities".
+  try {
+    const hello = client.hello ?? (await client.waitForHello?.(3000));
+    serverCaps = Array.isArray(hello?.serverCapabilities) ? [...hello.serverCapabilities] : [];
+  } catch {
+    serverCaps = [];
+  }
   await attachMaster();
 }
 
@@ -302,6 +319,10 @@ async function attachMaster() {
         broadcast({ type: "event", event: { type: "agent_end" } });
         return;
       }
+      // Declared preview (capability preview_events): snapshot right away,
+      // tagged declared with its label. The agent_end scan seeing the same
+      // file later is a no-op — snapshots dedupe by path + content hash.
+      if (inner?.type === "preview_published") preview.declare(inner.preview);
       preview.observe(inner);
       broadcast({ type: "event", event: inner });
     } else if (event?.type === "extension_ui_request") {
@@ -325,6 +346,7 @@ async function attachMaster() {
     master: { name: "master", activeSessionId },
     error: null,
     workspace: currentWorkspace,
+    capabilities: serverCaps,
   };
   resetManifest();
   lastSnapshot = {
@@ -362,7 +384,7 @@ async function switchWorkspace(name) {
   WORKSPACE_DIR = path.join(WORKSPACE_ROOT, name);
   sessionDir = null;
   masterSessionId = null;
-  daemon = { connected: false, master: null, error: null, workspace: name };
+  daemon = { connected: false, master: null, error: null, workspace: name, capabilities: serverCaps };
   preview = createPreviewStore({
     workspaceDir: WORKSPACE_DIR,
     onUpdate: () => broadcast({ type: "preview_update" }),
@@ -850,7 +872,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`[bridge] listening on 127.0.0.1:${PORT}`);
   connectDaemon().catch((e) => {
-    daemon = { connected: false, master: null, error: e?.message || String(e) };
+    daemon = { connected: false, master: null, error: e?.message || String(e), capabilities: [] };
     console.error("[bridge] daemon connect failed:", daemon.error);
     broadcast({ type: "hello", daemon });
   });

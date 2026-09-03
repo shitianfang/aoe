@@ -77,18 +77,31 @@ export function Composer(props: {
     props.fixedRoot ?? (props.target.kind === "root" ? props.target.name : undefined);
   const noModel = !props.fixedRoot && props.target.kind === "helper";
   useEffect(() => {
-    if (!connected || noModel) {
-      setDaemonModels(null);
-      return;
-    }
+    setDaemonModels(null); // never show the previous subject's model under this name
+    if (!connected || noModel) return;
     let live = true;
-    fetchModels(modelRoot)
-      .then((v) => {
-        if (live) setDaemonModels(v);
-      })
-      .catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    /* A root answers for itself only once its watch attach has landed, and that
+       attach is a separate round trip that routinely finishes after this one —
+       so an empty catalog for a root means "not yet", not "no models", and
+       settling for it leaves a freshly opened agent with no picker at all.
+       Ask again a few times before believing it. Master is attached already. */
+    const load = (left: number) => {
+      fetchModels(modelRoot)
+        .then((v) => {
+          if (!live) return;
+          if (modelRoot && v.models.length === 0 && left > 0) {
+            timer = setTimeout(() => load(left - 1), 600);
+            return;
+          }
+          setDaemonModels(v);
+        })
+        .catch(() => undefined);
+    };
+    load(modelRoot ? 8 : 0);
     return () => {
       live = false;
+      if (timer) clearTimeout(timer);
     };
   }, [connected, workspace, modelRoot, noModel]);
   const inputRef = useRef<HTMLInputElement>(null);

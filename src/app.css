@@ -231,7 +231,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lauto { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px; font-family: var(--mono); font-size: 9px; color: var(--t2); cursor: pointer; }
 .lauto input { margin: 0; width: 11px; height: 11px; accent-color: var(--t2); flex-shrink: 0; }
 .lauto input:disabled { cursor: default; }
-.insp .lauto { padding: 0 0 8px; }
+.insp .lauto { padding: 0; }
+/* Self-evolution: the auto switch and the one-off run share a row — setting
+   left, action right; the row collapses to whichever half is present. */
+/* Self-evolution: the auto switch and the one-off run share a row — setting
+   left, action right; the row collapses to whichever half is present. The 6px
+   plus the following .rule's own 2px keeps the panel on the same 8px rhythm
+   .phead sets, instead of stacking two paddings into a 16px hole. */
+.insp .selfrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }
@@ -517,6 +524,11 @@ html[lang="zh-CN"] .lesson .lf .note {
 html[lang="zh-CN"] .learn .btn,
 html[lang="zh-CN"] .lesson .btn {
   font-family: var(--sans); font-size: 10px; letter-spacing: 0; text-transform: none;
+}
+/* Same reason, one row over: this button sits next to .lauto, so it takes
+   .lauto's size rather than the mono action scale. */
+html[lang="zh-CN"] .insp .selfev .btn {
+  font-family: var(--sans); font-size: 11px; letter-spacing: 0; text-transform: none;
 }
 
 .send:focus-visible, .a:focus-visible, .theme:focus-visible, .btn:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 2px; }

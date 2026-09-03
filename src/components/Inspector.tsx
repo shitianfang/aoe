@@ -411,17 +411,21 @@ export function Inspector(props: {
               ? hhmmEpoch(ar.lastReviewAt + ar.cooldownMs)
               : null;
           return (
-            <div className="panel">
+            <div className="panel selfev">
               <div className="phead">
                 <span>{t("Self-evolution")}</span>
               </div>
-              {/* The auto side. One global setting, so the box reads master's
+              {/* The auto switch and the manual run are the two halves of one
+                  mechanism, so they share a row: the setting on the left, the
+                  one-off on the right. The focus input, when open, drops below
+                  the row rather than displacing the switch.
+                  The switch is one global setting, so the box reads master's
                   block even when the panel is bound to a root — a root's own
                   copy lands later (or never, for a root with no live session)
                   and would make this box disagree with the ⚡ column's.
                   Hidden, never faked, when the daemon predates the block. */}
-              {props.autoRefine !== null && (
-                <>
+              <div className="selfrow">
+                {props.autoRefine !== null && (
                   <label className="lauto">
                     <input
                       type="checkbox"
@@ -440,9 +444,14 @@ export function Inspector(props: {
                     />
                     <span>{t("let agents learn on their own")}</span>
                   </label>
-                  {autoLearnErr && <div className="ierr">{autoLearnErr}</div>}
-                </>
-              )}
+                )}
+                {!busy && !learnOpen && (
+                  <button className="btn" onClick={() => setLearnOpen(true)}>
+                    {t("learn now")}
+                  </button>
+                )}
+              </div>
+              {autoLearnErr && <div className="ierr">{autoLearnErr}</div>}
               {busy ? (
                 <div className="rule">{t("learning… this can take a few minutes.")}</div>
               ) : learnOpen ? (
@@ -460,15 +469,9 @@ export function Inspector(props: {
                     {t("start learning")}
                   </button>
                 </div>
-              ) : (
-                <div className="brow" style={{ marginTop: 0 }}>
-                  <button className="btn" onClick={() => setLearnOpen(true)}>
-                    {t("learn now")}
-                  </button>
-                </div>
-              )}
+              ) : null}
               {last !== null && (
-                <div className="rule" style={{ paddingTop: 8 }}>
+                <div className="rule">
                   {t("last auto review {at}", { at: last })}
                   {next !== null
                     ? ` · ${t("next auto learn no earlier than {at}", { at: next })}`

@@ -1407,7 +1407,8 @@ export function App() {
     if (sel) setState((s) => popPane(s, { kind: "learned" }));
   }, []);
 
-  /** The ⚡ column's one checkbox: the GLOBAL auto-refine setting
+  /** The one auto-learn checkbox (⚡ column and the Inspector's
+   *  self-evolution panel show the same value): the GLOBAL auto-refine setting
    *  (settings.json autoRefine.enabled). The bridge writes the file and
    *  reloads every live root worker — the response carries the value read
    *  back from master's connection state, which is what we keep. */
@@ -2227,6 +2228,7 @@ export function App() {
           }
           refreshKey={inspectorKey}
           onRootRefresh={refreshRootStatus}
+          onToggleAuto={toggleAutoRefine}
         />
       </div>
     </div>

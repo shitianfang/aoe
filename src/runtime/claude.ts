@@ -4,7 +4,8 @@
  * tools enabled — there is no key handling in this bundle. The bridge returns
  * a session id; sending it back resumes the same conversation
  * (`claude --resume`), so no history array. Tool activity arrives as frames
- * and surfaces through onTool (e.g. "Bash · npm test").
+ * and surfaces through onTool (e.g. "Bash · npm test"). `model` is the id the
+ * composer picked; the bridge passes it to the CLI's --model flag.
  */
 
 import { bridgeUrl } from "./bridge";
@@ -19,11 +20,12 @@ export async function streamClaudeTurn(
   onTool?: (label: string) => void,
   onSubagent?: (sa: ClaudeSubagent) => void,
   signal?: AbortSignal,
+  model?: string,
 ): Promise<string> {
   const res = await fetch(bridgeUrl("/bridge/claude"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, sessionId: sessionId ?? undefined, system }),
+    body: JSON.stringify({ text, sessionId: sessionId ?? undefined, system, model }),
     signal,
   });
   if (!res.ok || !res.body) {

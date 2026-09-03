@@ -12,7 +12,7 @@ import type {
 import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
-import { MODEL_PICKS, setModelPick, useModelPick } from "../runtime/providers";
+import { MODEL_PICKS, isClaudePick, setModelPick, useModelPick } from "../runtime/providers";
 import { fetchModels, setDaemonModel, type DaemonModel } from "../runtime/bridge";
 
 function popupStatus(c: ChildInfo): string {
@@ -61,7 +61,7 @@ export function Composer(props: {
   const t = useT();
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
-  const modelPick = useModelPick();
+  const offlinePick = useModelPick();
   // Runtime model (daemon connected): current + switchable catalog. The same
   // picker spot as the offline one — connected it drives the daemon instead.
   const [daemonModels, setDaemonModels] = useState<{
@@ -70,13 +70,19 @@ export function Composer(props: {
   } | null>(null);
   const connected = Boolean(props.bridge?.connected);
   const workspace = props.bridge?.workspace;
+  // Whose model the picker drives — the agent this composer sends to. Roots
+  // are full sessions and carry their own; helpers do not (their model is
+  // fixed when master spawns them), so they get no picker at all.
+  const modelRoot =
+    props.fixedRoot ?? (props.target.kind === "root" ? props.target.name : undefined);
+  const noModel = !props.fixedRoot && props.target.kind === "helper";
   useEffect(() => {
-    if (!connected) {
+    if (!connected || noModel) {
       setDaemonModels(null);
       return;
     }
     let live = true;
-    fetchModels()
+    fetchModels(modelRoot)
       .then((v) => {
         if (live) setDaemonModels(v);
       })
@@ -84,7 +90,7 @@ export function Composer(props: {
     return () => {
       live = false;
     };
-  }, [connected, workspace]);
+  }, [connected, workspace, modelRoot, noModel]);
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -115,16 +121,83 @@ export function Composer(props: {
     props.onSend(msg);
   };
 
+  /** One picker spot, two backends: offline it picks the model-only fallback
+   *  (claude -p vs NIM); connected it switches the runtime's own model through
+   *  the daemon. It sits on the strip above the box; a pane composer omits it
+   *  (the model is the runtime's, one setting, shown once). */
+  const modelPick = () => {
+    if (noModel) return null;
+    if (!connected) {
+      // The model-only fallback backs master alone — there are no root
+      // sessions without the runtime.
+      if (modelRoot) return null;
+      const label = MODEL_PICKS.find((p) => p.id === offlinePick)?.label ?? offlinePick;
+      return (
+        <select
+          className="mpick"
+          value={offlinePick}
+          onChange={(e) => setModelPick(e.target.value)}
+          aria-label={t("model")}
+          title={label}
+        >
+          {/* Two backends in one list: name the groups so a Claude Code model
+              is never mistaken for a cloud one. */}
+          <optgroup label="Claude Code">
+            {MODEL_PICKS.filter((p) => isClaudePick(p.id)).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="NIM">
+            {MODEL_PICKS.filter((p) => !isClaudePick(p.id)).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+      );
+    }
+    if (!daemonModels || daemonModels.models.length === 0) return null;
+    const cur = daemonModels.current;
+    return (
+      <select
+        className="mpick"
+        value={cur ? `${cur.provider}::${cur.id}` : ""}
+        aria-label={t("model")}
+        title={cur?.name ?? ""}
+        onChange={(e) => {
+          const m = daemonModels.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
+          if (!m) return;
+          setDaemonModels((st) => (st ? { ...st, current: m } : st));
+          setDaemonModel(m, modelRoot).catch(() =>
+            // Rejected (e.g. mid-run) — re-pull the truth.
+            fetchModels(modelRoot).then(setDaemonModels).catch(() => undefined),
+          );
+        }}
+      >
+        {cur &&
+          !daemonModels.models.some((x) => x.provider === cur.provider && x.id === cur.id) && (
+            <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>
+          )}
+        {daemonModels.models.map((m) => (
+          <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
+            {m.name}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
+  // The strip above the box: the model pick, then only what is actually
+  // happening. The old "<name> idle / running" readout lived here and said
+  // nothing the panes do not already show — the picker took its place.
   const strip = () => {
     if (props.error) return <span className="err">{props.error}</span>;
     if (props.viewRoot) {
-      // Viewing another root: its state where known, nothing invented.
-      const segs: string[] = [
-        t("{name} {state}", {
-          name: props.viewRoot.name,
-          state: t(props.viewRoot.state === "working" ? "running" : "idle"),
-        }),
-      ];
+      // Viewing another root: what it is doing, where known — nothing invented.
+      const segs: string[] = [];
       if (props.viewRoot.state === "working" && props.viewRoot.working) {
         segs.push(props.viewRoot.working.toLowerCase());
       }
@@ -154,7 +227,6 @@ export function Composer(props: {
     const helpersRunning = props.children.some((c) => c.status === "running" || c.status === "queued");
     if (masterBusy && props.working) segs.push(props.working.toLowerCase());
     else if (!masterBusy && helpersRunning) segs.push(t("waiting on helpers"));
-    if (segs.length === 0) segs.push(t(masterBusy ? "master running" : "master idle"));
     return (
       <>
         {segs.map((s, i) => (
@@ -175,7 +247,12 @@ export function Composer(props: {
 
   return (
     <>
-      <div className="strip">{strip()}</div>
+      <div className="strip">
+        {modelPick()}
+        <span className="segs" title={props.error}>
+          {strip()}
+        </span>
+      </div>
       <div className="composer">
         <div className="cbox">
           <input
@@ -186,60 +263,6 @@ export function Composer(props: {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
-            {/* One picker spot, two backends: offline it picks the model-only
-                fallback (claude -p vs NIM); connected it switches the
-                runtime's own model through the daemon. */}
-            {!props.fixedRoot &&
-              (connected
-                ? daemonModels &&
-                  daemonModels.models.length > 0 && (
-                    <select
-                      className="mpick"
-                      value={daemonModels.current ? `${daemonModels.current.provider}::${daemonModels.current.id}` : ""}
-                      aria-label={t("model")}
-                      title={daemonModels.current?.name ?? ""}
-                      onChange={(e) => {
-                        const m = daemonModels.models.find(
-                          (x) => `${x.provider}::${x.id}` === e.target.value,
-                        );
-                        if (!m) return;
-                        setDaemonModels((s) => (s ? { ...s, current: m } : s));
-                        setDaemonModel(m).catch(() =>
-                          // Rejected (e.g. mid-run) — re-pull the truth.
-                          fetchModels().then(setDaemonModels).catch(() => undefined),
-                        );
-                      }}
-                    >
-                      {daemonModels.current &&
-                        !daemonModels.models.some(
-                          (x) => x.provider === daemonModels.current?.provider && x.id === daemonModels.current?.id,
-                        ) && (
-                          <option value={`${daemonModels.current.provider}::${daemonModels.current.id}`}>
-                            {daemonModels.current.name}
-                          </option>
-                        )}
-                      {daemonModels.models.map((m) => (
-                        <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                : (
-                    <select
-                      className="mpick"
-                      value={modelPick}
-                      onChange={(e) => setModelPick(e.target.value)}
-                      aria-label={t("model")}
-                      title={modelPick}
-                    >
-                      {MODEL_PICKS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                  ))}
             {!props.fixedRoot && props.target.kind === "helper" ? (
               <div className="dmode">
                 <span className="static">{t("delivered now")}</span>

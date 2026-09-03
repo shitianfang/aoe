@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { LessonResult, TimelineItem } from "../types";
 import { LessonCard } from "./LessonCard";
 import { BotAvatar } from "./BotAvatar";
+import { Markdown } from "../markdown";
 import { useT } from "../i18n";
 
 /** "lesson kept · summary · [view]" — view expands the full card inline. */
@@ -103,10 +104,10 @@ export function Timeline(props: {
       return (
         <div className="msg" key={item.id}>
           <BotAvatar seed={item.from} />
-          <span className="body">
+          <div className="body">
             <span className="afrom">{item.from}</span>
-            {item.text}
-          </span>
+            <Markdown text={item.text} />
+          </div>
           <span className="when">{item.at}</span>
         </div>
       );
@@ -123,10 +124,9 @@ export function Timeline(props: {
     return (
       <div className="msg" key={item.id}>
         {props.botSeed ? <BotAvatar seed={props.botSeed} /> : <span className="chip master" />}
-        <span className="body">
-          {item.text}
-          {item.streaming ? <span className="cursor" /> : null}
-        </span>
+        <div className="body">
+          <Markdown text={item.text} trailing={item.streaming ? <span className="cursor" /> : undefined} />
+        </div>
         <span className="when">{item.streaming ? "" : item.at}</span>
       </div>
     );

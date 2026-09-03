@@ -190,7 +190,7 @@ const ZH: Record<string, string> = {
   "nothing learned yet.": "还没有自进化的记录。",
   "agents keep small improvements as they work — they appear here on their own.":
     "agent 干活时会自己记下小改进,自动出现在这里。",
-  "let agents learn on their own": "允许 agent 自动积累经验",
+  "let agents learn on their own": "开启自主学习",
   "about every {n} turns, or when it tidies its context — at most once per {m} minutes.":
     "大约每 {n} 轮、或整理上下文时自动学一次;两次至少间隔 {m} 分钟。",
   "for one agent": "只属于某个 agent",
@@ -242,9 +242,6 @@ const ZH: Record<string, string> = {
   "next check-in {at}": "下次跟进 {at}",
   "runtime offline · model only": "后台服务离线 · 仅模型",
   "waiting on helpers": "等待助手",
-  "master running": "master 运行中",
-  "master idle": "master 空闲",
-  "{name} {state}": "{name} {state}",
   "stop failed": "停止失败",
   "remove failed": "移除失败",
   "message failed": "发送失败",
@@ -398,7 +395,8 @@ const ZH: Record<string, string> = {
   /* inspector · subject binding */
   Task: "任务",
   "billed to master": "计入 master",
-  "runs for master — its objective and check-ins live on master":
-    "为 master 工作 —— 目标与定时跟进都在 master 身上",
+  Model: "模型",
+  "runs for master — its objective, check-ins and model live on master":
+    "为 master 工作 —— 目标、定时跟进和模型都在 master 身上",
   "loading state…": "状态载入中…",
 };

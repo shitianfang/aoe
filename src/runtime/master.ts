@@ -1,16 +1,17 @@
 import { streamChat, type ChatMessage } from "./nim";
 import { streamClaudeTurn } from "./claude";
-import { getActiveProvider } from "./providers";
+import { getActiveProvider, getClaudeModel } from "./providers";
 import type { ClaudeSubagent } from "../types";
 
 /**
  * The resident commander of a workspace. For now it is a plain conversation
- * with whichever model the composer's picker selects (Claude Code or NIM);
- * the daemon-backed prime-agent runtime slots in behind the same surface later.
+ * with whichever model the composer's picker selects (a Claude Code model or
+ * a NIM one); the daemon-backed prime-agent runtime slots in behind the same
+ * surface later.
  */
 
 const SYSTEM_PROMPT = [
-  "You are master, the resident agent of this workspace in Prime Agent.",
+  "You are master, the resident agent of this workspace in AOE.",
   "You work for a knowledge worker. Be concise and concrete; plain prose, no markdown headers.",
   "When a task is long-running, say what you are doing first in one short line.",
 ].join(" ");
@@ -29,7 +30,15 @@ export async function runMasterTurn(
 ): Promise<string> {
   if (getActiveProvider() === "claude") {
     const lastUser = [...history].reverse().find((m) => m.role === "user");
-    return streamClaudeTurn(lastUser?.content ?? "", SYSTEM_PROMPT, onDelta, onTool, onSubagent, signal);
+    return streamClaudeTurn(
+      lastUser?.content ?? "",
+      SYSTEM_PROMPT,
+      onDelta,
+      onTool,
+      onSubagent,
+      signal,
+      getClaudeModel(),
+    );
   }
   return streamChat([{ role: "system", content: SYSTEM_PROMPT }, ...history], onDelta, signal);
 }

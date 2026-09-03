@@ -1,4 +1,4 @@
-/* Prime Agent desktop — design tokens and shell styles.
+/* AOE desktop — design tokens and shell styles.
    Ported from the approved mockup (prime-agent-client-handoff/ui/mockup-preview.html).
    Manual theme toggle only; default light. Square corners throughout. */
 
@@ -228,6 +228,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lauto { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px; font-family: var(--mono); font-size: 9px; color: var(--t2); cursor: pointer; }
 .lauto input { margin: 0; width: 11px; height: 11px; accent-color: var(--t2); flex-shrink: 0; }
 .lauto input:disabled { cursor: default; }
+.insp .lauto { padding: 0 0 8px; }
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }
@@ -302,6 +303,38 @@ body.resizing iframe { pointer-events: none; }
 .msg .body .afrom { display: block; font-family: var(--mono); font-size: 9px; color: var(--t3); margin-bottom: 2px; }
 .msg .when { margin-left: 8px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .msg.user .body { display: inline-block; justify-self: start; padding: 7px 11px; background: var(--bubble); border: 1px solid var(--hair); color: var(--t1); }
+
+/* ---- markdown in agent replies ----
+   Agents write Markdown; the transcript renders it, but quietly: one small
+   heading step, hairline table rules, code on the soft surface. No syntax
+   colors, no bigger type — a reply must still read as a message. */
+.msg .body .md { white-space: normal; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 8px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 12px 0 5px; font-weight: 500; color: var(--t1); line-height: 1.35; }
+.md h1 { font-size: 14.5px; }
+.md h2 { font-size: 13.5px; }
+.md h3 { font-size: 13px; }
+.md h4, .md h5, .md h6 { font-size: 12.5px; color: var(--t2); }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 17px; }
+.md li { margin: 2px 0; }
+.md li > p { margin: 0; }
+.md li > p + p { margin-top: 6px; }
+.md li > ul, .md li > ol { margin: 2px 0 0; }
+.md code { font-family: var(--mono); font-size: .88em; padding: 1px 4px; background: var(--bubble); color: var(--t1); }
+.md pre { margin: 0 0 8px; padding: 9px 11px; background: var(--soft2); border: 1px solid var(--hair); overflow-x: auto; }
+.md pre code { padding: 0; background: none; font-size: 11.5px; line-height: 1.5; white-space: pre; color: var(--t2); }
+.md blockquote { margin: 0 0 8px; padding-left: 10px; border-left: 2px solid var(--hair-hi); color: var(--t3); }
+.md hr { margin: 10px 0; border: 0; border-top: 1px solid var(--hair); }
+.md a { color: var(--cyan-tx); text-decoration: none; border-bottom: 1px solid var(--hair-hi); }
+.md a:hover { color: var(--t1); }
+.md em { font-style: italic; }
+.md s { color: var(--t3); }
+.md .mdtw { margin: 0 0 8px; overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 12px; }
+.md th, .md td { border: 1px solid var(--hair); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md th { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); font-weight: 500; background: var(--soft); }
 .cursor { display: inline-block; width: 6px; height: 12px; margin-left: 4px; vertical-align: -1px; background: var(--hi-bg); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cursor { animation: none; opacity: .7; } }
@@ -333,7 +366,8 @@ body.resizing iframe { pointer-events: none; }
 .transcript.hevents .ev { margin-left: 0; }
 
 /* ---- composer (centered, self-contained box; input on top, controls below) ---- */
-.strip { align-self: center; width: 100%; max-width: 620px; padding: 10px 18px 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
+.strip { align-self: center; width: 100%; max-width: 620px; min-height: 23px; padding: 10px 18px 0; display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
+.strip .segs { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .strip b { color: var(--green); font-weight: 500; }
 .strip .err { color: var(--red); text-transform: none; letter-spacing: 0; }
 .composer { display: flex; justify-content: center; padding: 10px 16px 16px; flex-shrink: 0; }
@@ -351,9 +385,10 @@ body.resizing iframe { pointer-events: none; }
 .crow { display: flex; align-items: center; gap: 12px; padding: 0 8px 8px 12px; }
 .crow .to { margin-left: auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); cursor: pointer; }
 .crow .to:hover { color: var(--t2); }
-/* model pick (model-only mode): which backend answers — claude -p or a NIM model */
-.crow .mpick { border: 0; background: none; padding: 0; max-width: 160px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
-.crow .mpick:hover, .crow .mpick:focus { color: var(--t2); }
+/* model pick — sits on the strip above the box (offline: which backend
+   answers; connected: the runtime's own model) */
+.mpick { flex-shrink: 0; border: 0; background: none; padding: 0; max-width: 200px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
+.mpick:hover, .mpick:focus { color: var(--t2); }
 .dmode { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .dmode span.static { cursor: default; color: var(--t3); }
 /* Long-running switch: same quiet mono register as the delivery note it sits

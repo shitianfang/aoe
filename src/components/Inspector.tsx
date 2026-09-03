@@ -103,6 +103,16 @@ function HelperInspector(props: { child: ChildInfo }) {
             <span className="v faint">{hhmmEpoch(c.completedAt)}</span>
           </div>
         )}
+        {c.model && (
+          <div className="kv">
+            <span className="k">{t("Model")}</span>
+            {/* Read-only on purpose: a helper's model is chosen when it is
+                spawned and cannot be switched mid-run. */}
+            <span className="v faint" title={c.model}>
+              {c.model.split("/").pop()}
+            </span>
+          </div>
+        )}
         {typeof c.tokenCount === "number" && c.tokenCount > 0 && (
           <div className="kv">
             <span className="k">{t("Tokens")}</span>
@@ -123,7 +133,7 @@ function HelperInspector(props: { child: ChildInfo }) {
         <div className="rule">
           {c.foreign
             ? t("on {name}'s team", { name: c.parentName ?? "?" })
-            : t("runs for master — its objective and check-ins live on master")}
+            : t("runs for master — its objective, check-ins and model live on master")}
         </div>
       </div>
     </aside>
@@ -154,6 +164,10 @@ export function Inspector(props: {
   refreshKey?: number;
   /** Ask App to re-pull the selected root's status blocks (after a write). */
   onRootRefresh: (name: string) => void;
+  /** Writes the GLOBAL auto-refine setting (settings.json autoRefine.enabled)
+   *  — the same switch the ⚡ column carries, repeated here because this is
+   *  where self-evolution is read. */
+  onToggleAuto: (enabled: boolean) => Promise<void>;
 }) {
   const t = useT();
   // Subject of every panel below: a helper (honest short panel), a root
@@ -192,6 +206,8 @@ export function Inspector(props: {
   const [learnText, setLearnText] = useState("");
   const [learnErr, setLearnErr] = useState<string | null>(null);
   const [learnBusy, setLearnBusy] = useState<Record<string, boolean>>({});
+  const [autoPending, setAutoPending] = useState(false);
+  const [autoLearnErr, setAutoLearnErr] = useState<string | null>(null);
   const [crons, setCrons] = useState<CronInfo[]>([]);
   // Elapsed unattended time is derived from startedAt; re-render it on the minute.
   const [, setTick] = useState(0);
@@ -224,6 +240,7 @@ export function Inspector(props: {
     setLearnErr(null);
     setLearnText("");
     setLearnOpen(false);
+    setAutoLearnErr(null);
   }, [child?.id, root]);
 
   const startedAt = auto?.enabled ? auto.startedAt : undefined;
@@ -398,6 +415,34 @@ export function Inspector(props: {
               <div className="phead">
                 <span>{t("Self-evolution")}</span>
               </div>
+              {/* The auto side. One global setting, so the box reads master's
+                  block even when the panel is bound to a root — a root's own
+                  copy lands later (or never, for a root with no live session)
+                  and would make this box disagree with the ⚡ column's.
+                  Hidden, never faked, when the daemon predates the block. */}
+              {props.autoRefine !== null && (
+                <>
+                  <label className="lauto">
+                    <input
+                      type="checkbox"
+                      checked={props.autoRefine.enabled}
+                      disabled={autoPending}
+                      onChange={(e) => {
+                        setAutoPending(true);
+                        setAutoLearnErr(null);
+                        props
+                          .onToggleAuto(e.target.checked)
+                          .catch((err) =>
+                            setAutoLearnErr(err instanceof Error ? err.message : t("failed")),
+                          )
+                          .finally(() => setAutoPending(false));
+                      }}
+                    />
+                    <span>{t("let agents learn on their own")}</span>
+                  </label>
+                  {autoLearnErr && <div className="ierr">{autoLearnErr}</div>}
+                </>
+              )}
               {busy ? (
                 <div className="rule">{t("learning… this can take a few minutes.")}</div>
               ) : learnOpen ? (

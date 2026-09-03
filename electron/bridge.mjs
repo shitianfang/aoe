@@ -13,7 +13,7 @@
  *                               |"root_steer"|"root_follow_up"|"root_abort"
  *                               |"root_heartbeat_set"|"root_heartbeat_update"
  *                               |"root_refine"|"root_refine_rollback"
- *                               |"set_auto_refine",
+ *                               |"root_set_model"|"set_auto_refine",
  *                             text?, target? }
  *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
  *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
@@ -22,11 +22,12 @@
  *   GET  /bridge/root-status?name= { attached, goal, autonomous, autoRefine } —
  *                         same read-only pull for a watched root session
  *   GET  /bridge/model    { current, models } — master's model + switchable catalog
- *                         (cmd op "set_model" { text: modelId, provider } switches)
+ *                         (cmd op "set_model" { text: modelId, provider } switches;
+ *                          ?root=<name> reads a root's, "root_set_model" switches it)
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
- *   POST /bridge/claude   { text, sessionId?, system? } → SSE
+ *   POST /bridge/claude   { text, sessionId?, system?, model? } → SSE
  *                         {type:"delta"|"tool"|"subagent"|"done"|"error"}
  *                         — runs the local `claude -p` CLI (user's own login) as a
  *                         real agent: tools enabled in the workspace directory
@@ -108,7 +109,7 @@ async function statusPayload() {
   if (!r?.success) return { autonomous: null, autoRefine: null };
   return {
     autonomous: r.data?.autonomous ?? null,
-    autoRefine: r.data?.autoRefine ?? null,
+    autoRefine: r.data?.autoRefine ?? autoRefineSetting(),
   };
 }
 
@@ -128,7 +129,7 @@ async function rootStatusPayload(name) {
     attached: true,
     goal: r.data?.goal ?? null,
     autonomous: r.data?.autonomous ?? null,
-    autoRefine: r.data?.autoRefine ?? null,
+    autoRefine: r.data?.autoRefine ?? autoRefineSetting(),
   };
 }
 
@@ -168,6 +169,21 @@ function readJsonFile(file) {
   } catch {
     return null;
   }
+}
+
+/** The auto-refine block the renderer's self-evolution switch binds to.
+ *  A daemon that predates schema 27 reports nothing for it in its connection
+ *  state, but the setting is a file this bridge already writes — read it back
+ *  so the switch appears and tells the truth (core default: on) instead of
+ *  being hidden on every older daemon. A session-reported block always wins. */
+function autoRefineSetting() {
+  const cur = readJsonFile(path.join(AGENT_HOME, "settings.json")) ?? {};
+  const ar = cur.autoRefine && typeof cur.autoRefine === "object" ? cur.autoRefine : {};
+  return {
+    enabled: ar.enabled !== false,
+    ...(typeof ar.turnInterval === "number" ? { turnInterval: ar.turnInterval } : {}),
+    ...(typeof ar.cooldownMs === "number" ? { cooldownMs: ar.cooldownMs } : {}),
+  };
 }
 
 /** Global agent settings (~/.prime/agent/settings.json); {} when absent. */
@@ -712,7 +728,7 @@ async function attachMaster() {
       sessionDir: snapshot.state?.sessionDir ?? null,
       // schema 27 status blocks; null on older daemons (renderer omits).
       autonomous: snapshot.state?.autonomous ?? null,
-      autoRefine: snapshot.state?.autoRefine ?? null,
+      autoRefine: snapshot.state?.autoRefine ?? autoRefineSetting(),
     },
     children: snapshot.children ?? [],
     messages: slimHistory(snapshot.messages),
@@ -750,16 +766,23 @@ async function switchWorkspace(name) {
   await attachMaster();
 }
 
-/** GET /bridge/model — master's current model plus the switchable catalog,
- *  filtered to providers that are actually configured (have credentials). */
-async function modelPayload() {
-  if (!daemonClient || !masterSessionId || !masterConn) return { current: null, models: [] };
+/** GET /bridge/model[?root=<name>] — the subject's current model plus the
+ *  switchable catalog, filtered to providers that are actually configured
+ *  (have credentials). The subject is master, or a root session by name:
+ *  roots are full sessions and carry their own model, so each one answers for
+ *  itself. An unwatched root has no connection here — empty catalog, and the
+ *  renderer shows no picker rather than master's model under its name. */
+async function modelPayload(rootName = null) {
+  const entry = rootName ? rootConns.get(rootName) : null;
+  const sessionId = rootName ? entry?.activeSessionId : masterSessionId;
+  const conn = rootName ? entry?.conn : masterConn;
+  if (!daemonClient || !sessionId || !conn) return { current: null, models: [] };
   const slim = (m) => ({ id: m.id, name: m.name || m.id, provider: m.provider });
   const [stateR, catalog] = await Promise.all([
     daemonClient
-      .request({ type: "get_connection_state", activeSessionId: masterSessionId })
+      .request({ type: "get_connection_state", activeSessionId: sessionId })
       .catch(() => null),
-    masterConn.getModelCatalog().catch(() => null),
+    conn.getModelCatalog().catch(() => null),
   ]);
   const current = stateR?.success && stateR.data?.model ? slim(stateR.data.model) : null;
   const configured = new Set(catalog?.configuredProviders ?? []);
@@ -974,7 +997,7 @@ async function ensureRootConn(name) {
       ? {
           goal: s.goal ?? null,
           autonomous: s.autonomous ?? null,
-          autoRefine: s.autoRefine ?? null,
+          autoRefine: s.autoRefine ?? autoRefineSetting(),
         }
       : undefined;
   const resync = (messages, { partial = false, running, state } = {}) =>
@@ -1186,6 +1209,15 @@ async function handleCmd(body) {
       const { conn } = await ensureRootConn(String(body.target ?? ""));
       return { job: (await conn.updateHeartbeat(String(body.action ?? ""))) ?? null };
     }
+    case "root_set_model": {
+      // A root is a full session with its own model — same runtime call as
+      // master's set_model, aimed at that session's connection. (The runtime
+      // also writes the switched-to model as the default for sessions created
+      // afterwards; that is its own behaviour, not something done here.)
+      const { conn } = await ensureRootConn(String(body.target ?? ""));
+      const model = await conn.setModel(String(body.provider ?? ""), String(body.text ?? ""));
+      return { model: { id: model.id, name: model.name || model.id, provider: model.provider } };
+    }
     case "root_refine": {
       // Learn-now for another root: a real /refine on the root's own session
       // and harness (empty instructions = plain refine). Mirrors master's
@@ -1261,6 +1293,13 @@ function handleClaude(body, req, res, cors) {
   const text = String(body.text ?? "");
   const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
   const system = typeof body.system === "string" && body.system ? body.system : null;
+  // The composer's Claude pick. Shape-checked before it reaches argv: only a
+  // model name, never a flag or a path. An unusable value is dropped and the
+  // CLI keeps its own configured default.
+  const model =
+    typeof body.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(body.model)
+      ? body.model
+      : null;
 
   res.writeHead(200, {
     ...cors,
@@ -1282,6 +1321,7 @@ function handleClaude(body, req, res, cors) {
   // -p mode, and the system prompt states the boundary outright.
   const bounded = `${system ? `${system} ` : ""}Your workspace is ${cwd}. Work only inside this folder; never read or modify anything outside it.`;
   args.push("--append-system-prompt", bounded);
+  if (model) args.push("--model", model);
   if (sessionId) args.push("--resume", sessionId);
   const child = spawn("claude", args, { cwd, env: process.env });
 
@@ -1486,8 +1526,8 @@ const server = http.createServer(async (req, res) => {
       });
     return;
   }
-  if (req.url === "/bridge/model") {
-    modelPayload()
+  if (req.url && req.url.split("?")[0] === "/bridge/model") {
+    modelPayload(new URL(req.url, "http://localhost").searchParams.get("root"))
       .then((p) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify(p));

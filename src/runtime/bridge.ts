@@ -117,17 +117,24 @@ export interface DaemonModel {
   provider: string;
 }
 
-/** Master's current model + the catalog of switchable ones (configured
- *  providers only). Empty models = daemon detached or catalog unavailable. */
-export async function fetchModels(): Promise<{ current: DaemonModel | null; models: DaemonModel[] }> {
-  const r = await fetch(`${BRIDGE_BASE}/bridge/model`);
+/** The subject's current model + the catalog of switchable ones (configured
+ *  providers only). `root` names another root session — it answers for its own
+ *  model, master answers for its own. Empty models = daemon detached, the root
+ *  is not watched, or the catalog is unavailable. */
+export async function fetchModels(
+  root?: string,
+): Promise<{ current: DaemonModel | null; models: DaemonModel[] }> {
+  const q = root ? `?root=${encodeURIComponent(root)}` : "";
+  const r = await fetch(`${BRIDGE_BASE}/bridge/model${q}`);
   if (!r.ok) throw new Error(`model catalog failed (${r.status})`);
   const data = (await r.json()) as { current?: DaemonModel | null; models?: DaemonModel[] };
   return { current: data.current ?? null, models: data.models ?? [] };
 }
 
-export function setDaemonModel(m: DaemonModel): Promise<Record<string, unknown>> {
-  return bridgeCmd("set_model", m.id, { provider: m.provider });
+export function setDaemonModel(m: DaemonModel, root?: string): Promise<Record<string, unknown>> {
+  return root
+    ? bridgeCmd("root_set_model", m.id, { provider: m.provider, target: root })
+    : bridgeCmd("set_model", m.id, { provider: m.provider });
 }
 
 export interface WorkspaceInfo {

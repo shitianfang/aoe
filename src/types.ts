@@ -142,6 +142,9 @@ export interface ChildInfo {
   completedAt?: number;
   /** Tokens this helper used, billed to master (context tree). */
   tokenCount?: number;
+  /** "provider/id" of the model master spawned it with — a helper's model is
+   *  fixed at spawn, so this is shown, never switched. */
+  model?: string;
 }
 
 /** One line in a helper's observed-events list (from master's timeline + child updates). */

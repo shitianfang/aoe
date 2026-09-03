@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
 import { helperName, hhmmEpoch, reachable } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
+import { Markdown } from "../markdown";
 import { t, useT } from "../i18n";
 
 function hhmm(iso: string | null | undefined): string {
@@ -147,10 +148,10 @@ export function HelperView(props: {
             {c.answerPreview ? (
               <div className="msg">
                 <BotAvatar seed={name} />
-                <span className="body">
+                <div className="body">
                   <span className="afrom">{name}</span>
-                  {c.answerPreview}
-                </span>
+                  <Markdown text={c.answerPreview} />
+                </div>
               </div>
             ) : null}
           </>
@@ -167,10 +168,10 @@ export function HelperView(props: {
             ) : row.role === "assistant" ? (
               <div className="msg" key={`tr${i}`}>
                 <BotAvatar seed={name} />
-                <span className="body">
-                  {row.text}
+                <div className="body">
+                  <Markdown text={row.text} />
                   {row.at ? <span className="when">{hhmm(row.at)}</span> : null}
-                </span>
+                </div>
               </div>
             ) : (
               // user rows are the task/steer text sent into the helper;

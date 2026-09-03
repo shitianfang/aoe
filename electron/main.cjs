@@ -1,10 +1,10 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const https = require("node:https");
 
-const DEV_URL = process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
+const DEV_URL = process.env.AOE_DEV_URL || process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
 const NIM_UPSTREAM = "https://integrate.api.nvidia.com/v1";
 
 /** Key and model come from the environment or <userData>/config.json — never from the bundle. */
@@ -13,6 +13,20 @@ function loadNimConfig() {
   let model = process.env.NIM_MODEL || "deepseek-ai/deepseek-v4-flash-0731";
   try {
     const p = path.join(app.getPath("userData"), "config.json");
+    // Renaming the app to AOE moved userData; an install that predates the
+    // rename keeps its key in the old folder. Copy it across once, so nobody
+    // has to re-enter a key an upgrade quietly hid.
+    if (!fs.existsSync(p)) {
+      const appData = app.getPath("appData");
+      for (const old of ["Prime Agent", "prime-desktop"]) {
+        const legacy = path.join(appData, old, "config.json");
+        if (fs.existsSync(legacy)) {
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.copyFileSync(legacy, p);
+          break;
+        }
+      }
+    }
     if (fs.existsSync(p)) {
       const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
       key = cfg.nimApiKey || key;
@@ -104,6 +118,21 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
     },
+  });
+  // Markdown in agent replies can carry links: they open in the OS browser,
+  // never as a second app window and never in place of the app itself.
+  const external = (url) => {
+    if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
+  };
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    external(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, url) => {
+    if (url !== win.webContents.getURL()) {
+      e.preventDefault();
+      external(url);
+    }
   });
   if (app.isPackaged) {
     const port = await startBridge();

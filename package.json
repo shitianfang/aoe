@@ -2,7 +2,7 @@
   "name": "aoe",
   "version": "0.4.1",
   "private": true,
-  "description": "AOE — a calm desktop workspace for proactive, self-improving, multi-agent work",
+  "description": "A desktop workspace for work you hand to a crew of agents and then walk away from",
   "author": "shitianfang",
   "type": "module",
   "main": "electron/main.cjs",

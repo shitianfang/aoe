@@ -86,6 +86,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    smudge. Sans, and big enough to read. */
 .wsrow.demo .n { font-family: var(--sans); font-size: 12px; }
 .wsrow.demo .m { font-family: var(--sans); font-size: 10.5px; }
+/* Delete a workspace: hidden until the row is hovered — it takes the folder
+   and everything in it, so it must not invite a stray click. */
+.wsrow .del { flex-shrink: 0; margin-left: 8px; font-family: var(--mono); font-size: 9px; color: var(--t3); padding: 0 3px; opacity: 0; cursor: pointer; }
+.wsrow:hover .del { opacity: 1; }
+.wsrow .del:hover { color: var(--t1); }
+.wsrow .del.on { opacity: 1; color: var(--red); font-family: var(--sans); font-size: 10px; }
 .wsnew { padding: 6px 6px 4px; border-top: 1px dashed var(--hair); margin-top: 4px; }
 .wsnew input { width: 100%; height: 28px; padding: 0 10px; border: 1px solid var(--hair); background: var(--soft); color: var(--t1); font-family: var(--mono); font-size: 10.5px; outline: none; }
 .wsnew input::placeholder { color: var(--t3); }
@@ -477,7 +483,8 @@ body.resizing iframe { pointer-events: none; }
 .vbox .vempty { padding: 14px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .pfiles { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
 .vbox .vdoc { margin: 0; padding: 12px; font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
-.vbox .vframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
+.vbox .vshell { position: relative; overflow: hidden; background: #fff; }
+.vbox .vframe { display: block; border: 0; background: #fff; transform-origin: top left; }
 .vbox .vimg { display: block; max-width: 100%; }
 .between { padding-top: 16px; }
 .between .bh { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); padding-bottom: 8px; }

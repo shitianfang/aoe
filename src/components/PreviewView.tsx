@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PreviewFile, PreviewVersion, TimelineItem } from "../types";
 import { fetchPreviewText, previewFileUrl } from "../runtime/preview";
 import { useT } from "../i18n";
@@ -17,6 +17,13 @@ function kindOf(name: string): "html" | "md" | "png" | "pdf" | null {
   return null;
 }
 
+/** A page written for a desktop window, shown in a column a fraction of that
+ *  width: render it at this logical viewport and project it down, instead of
+ *  handing it a 300px viewport it was never laid out for. */
+const PAGE_W = 1100;
+const BOX_H = 420;
+const MIN_SCALE = 0.3;
+
 /** One version pane: md as plain text, html in a sandboxed iframe, png/pdf raw. */
 function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null; current: boolean }) {
   const t = useT();
@@ -24,6 +31,23 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
   const kind = kindOf(file.name);
   const v = version?.label;
   const [text, setText] = useState<string | null>(null);
+  // Projection scale for html: the box measures itself, the page keeps its
+  // desktop width. 1 when the column is already wide enough.
+  const [scale, setScale] = useState(MIN_SCALE);
+  const box = useRef<HTMLDivElement | null>(null);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    box.current = el;
+    if (el) setScale(Math.min(1, Math.max(MIN_SCALE, el.clientWidth / PAGE_W)));
+  }, []);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || kind !== "html") return;
+    const ro = new ResizeObserver(() => {
+      setScale(Math.min(1, Math.max(MIN_SCALE, el.clientWidth / PAGE_W)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [kind, text]);
 
   useEffect(() => {
     setText(null);
@@ -41,17 +65,34 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
     if (kind === "png") return <img className="vimg" src={previewFileUrl(file.path, v)} alt={file.name} />;
     if (kind === "pdf") return <embed className="vframe" src={previewFileUrl(file.path, v)} type="application/pdf" />;
     if (text === null) return <div className="vempty">{t("loading…")}</div>;
-    if (kind === "html") return <iframe className="vframe" sandbox="" srcDoc={text} title={`${file.name} ${v ?? "live"}`} />;
+    if (kind === "html")
+      return (
+        <div className="vshell" ref={measure} style={{ height: BOX_H }}>
+          <iframe
+            className="vframe"
+            sandbox=""
+            srcDoc={text}
+            title={`${file.name} ${v ?? "live"}`}
+            style={{ width: PAGE_W, height: Math.round(BOX_H / scale), transform: `scale(${scale})` }}
+          />
+        </div>
+      );
     return <pre className="vdoc">{text}</pre>;
   };
 
   // Declared versions were explicitly published by the agent; say so.
   const vlabel = version ? `${version.label}${version.declared ? ` · ${t("published")}` : ""}` : null;
+  // The zoom is stated, not silent: a page at 34% is a projection, and the
+  // user should know that before judging its type sizes.
+  const zoom = kind === "html" && scale < 1 ? `${Math.round(scale * 100)}% · ` : "";
   return (
     <div className="vbox">
       <div className="vh">
         <b>{vlabel ? (props.current ? `${vlabel} · ${t("current")}` : vlabel) : t("live")}</b>
-        <span>{version ? fmtTime(version.at) : t("unsaved this turn")}</span>
+        <span>
+          {zoom}
+          {version ? fmtTime(version.at) : t("unsaved this turn")}
+        </span>
       </div>
       {body()}
     </div>

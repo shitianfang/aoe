@@ -1,6 +1,10 @@
 ---
 name: aoe-way
-description: How work is delivered in the AOE client — align with three real variants before building, keep the preview live, blind-review the finalists with subagent judges, and report what the user can check. Read this before producing any deliverable: a page, document, design, layout, plan or report.
+description: >-
+  How work is delivered in the AOE client. Align with three real variants
+  before building, keep the preview live, blind-review the finalists with
+  subagent judges, and report what the user can check. Read this before
+  producing any deliverable — a page, document, design, layout, plan or report.
 ---
 
 # The AOE way

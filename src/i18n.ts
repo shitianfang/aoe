@@ -96,6 +96,7 @@ const ZH: Record<string, string> = {
   pinned: "已固定",
   "loading…": "加载中…",
   "new workspace…": "新建工作区…",
+  "delete workspace": "删除工作区",
   "see what it can do": "看看它能做什么",
   "a fresh workspace with examples": "开一个带示例的新工作区",
   "not open": "未打开",

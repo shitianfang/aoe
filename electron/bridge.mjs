@@ -107,15 +107,16 @@ const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
  *  which is the wrong answer in a window that previews the file itself. */
 const CLIENT_PROMPT = `You are attached to AOE, a desktop client for this agent.
 
-The client watches this workspace. Every .html, .md, .png and .pdf file you write here is snapshotted and rendered in its Preview pane, which opens itself in a split beside the conversation the moment your turn ends, with the last two versions of a file side by side. The user watches the work move; they do not read a description of it.
+The client watches your working directory. Every .html, .md, .png and .pdf file you write there is snapshotted and rendered in its Preview pane, which opens itself in a split beside the conversation the moment your turn ends, with the last two versions of a file side by side. The user watches the work move; they do not read a description of it.
 
 How work goes here:
 
-1. Align before building. For anything with a shape — a page, a layout, a document, a plan — write three genuinely different variants as files in the first turn and let the user pick from the rendered result. Do not ask which style they prefer when you can show three answers.
-2. Show progress as it happens: write files as you go, so every turn end updates Preview. Never start a web server, and never ask the user to open a browser or a file manager to see your work — writing the file is what shows it.
-3. Publish a finished deliverable: \`await preview.publish("path/to/file.html", label="Short title")\`.
-4. Before producing any deliverable, read the \`aoe-way\` skill and work by it: the variant rules, the blind subagent review protocol, and what to report so the user can check you instead of trusting you.
-5. End each turn with what changed, what you would do next, and anything you added that was not asked for but is needed.`;
+1. Write inside your working directory. A file you leave elsewhere is invisible to the client unless you publish it by absolute path, so the workspace is the default and anywhere else needs a reason.
+2. Align before building. For anything with a shape — a page, a layout, a document, a plan — your first turn writes three genuinely different variants as separate files (\`thing-v1.html\`, \`-v2\`, \`-v3\`), one line each on what it trades away, and stops there for the user to pick. Do not ask which style they prefer when you can show three answers. Skip the variants only when the request already pins the shape down, and say in one line that you skipped them.
+3. Show progress as it happens: write files as you go, so every turn end updates Preview. Never start a web server, and never ask the user to open a browser or a file manager to see your work — writing the file is what shows it.
+4. Publish a finished deliverable: \`await preview.publish("file.html", label="Short title")\`.
+5. Before your first file write, read the \`aoe-way\` skill and work by it: the variant rules, the blind subagent review protocol, and what to report so the user can check you instead of trusting you.
+6. End each turn with what changed, what you would do next, and anything you added that was not asked for but is needed.`;
 
 /** Skills the app itself ships (repo `skills/`, next to `electron/`). They are
  *  handed to each session on top of the runtime's own, so the method lives with
@@ -1305,6 +1306,42 @@ async function handleCmd(body) {
         });
         if (!gone.success) throw new Error(gone.error || "delete failed");
       }
+      return { deleted: name };
+    }
+    case "delete_workspace": {
+      // A workspace IS its directory, so removing it from the list means
+      // removing the folder and everything an agent wrote in it. Its resident
+      // master goes too — leaving the session behind would put the workspace
+      // back in the roster the next time anything listed it.
+      const name = String(body.text ?? "").trim();
+      if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
+      // general is recreated on demand, so deleting it only looks like it worked.
+      if (name === "general") throw new Error("the default workspace stays");
+      if (name === currentWorkspace) throw new Error("open another workspace first");
+      const listed = await daemonClient.request({ type: "list", all: true });
+      if (!listed.success) throw new Error(listed.error || "list failed");
+      const s = (listed.data.sessions || []).find(
+        (x) => x.sessionName === masterNameFor(name) && (x.rlmDepth ?? 0) === 0,
+      );
+      if (s?.activeSessionId) {
+        const killed = await daemonClient.request({
+          type: "kill",
+          activeSessionId: s.activeSessionId,
+        });
+        if (!killed.success) throw new Error(killed.error || "could not stop its master");
+      }
+      if (s?.sessionFile) {
+        const gone = await daemonClient.request({
+          type: "delete_saved_session",
+          sessionPath: s.sessionFile,
+        });
+        if (!gone.success) throw new Error(gone.error || "delete failed");
+      }
+      // Resolve and fence the path: only ever a direct child of the root, so a
+      // crafted name can never point rm at somewhere else.
+      const dir = path.resolve(WORKSPACE_ROOT, name);
+      if (path.dirname(dir) !== path.resolve(WORKSPACE_ROOT)) throw new Error("invalid workspace name");
+      fs.rmSync(dir, { recursive: true, force: true });
       return { deleted: name };
     }
     case "stop_helper":

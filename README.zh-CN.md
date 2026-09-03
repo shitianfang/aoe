@@ -93,8 +93,9 @@ npm run app            # Electron 外壳
 | 3117 端口 `EADDRINUSE` | 有个旧 bridge 还活着：`pkill -f "electron/bridge[.]mjs"` |
 | 输入框上没有模型选择器 | `~/.prime/agent/` 里还没配任何供应商 |
 
-也可以先完全不碰运行时，进去逛一圈：不起 bridge 时，应用就是一个走你自己 Claude Code 登录
-或 NVIDIA NIM key 的纯模型对话（见[模型](#模型)）——下面三节讲的东西那时一样都没有。
+也可以先完全不碰运行时，进去逛一圈：不起 bridge 时，应用就是一个纯模型对话，走你自己的
+Claude Code 登录，或者一个 NVIDIA NIM key（`cp .env.example .env`，见[模型](#模型)）——
+下面三节讲的东西那时一样都没有。
 
 ## Agents · 一队人，不是一个聊天框
 
@@ -238,6 +239,19 @@ bridge 存在有两个理由。渲染层开不了 unix socket；而守护进程�
 
 `.env` 放 NIM key，已经在 gitignore 里。
 
+## 现在到哪一步了
+
+- **上面每一项能力都是对着一个活的守护进程跑出来的**，不是 mockup。助手队伍、经验与回滚、
+  预览、三种长程驱动，都完整走过一遍：那次会话写在
+  [docs/e2e-walkthrough-1.md](docs/e2e-walkthrough-1.md)，它们背后的运行时行为写在另外两份
+  findings 文档里。
+- **没有发布二进制**，请自行从源码构建。
+- **Windows 的 zip 能构建，但还没在真实 Windows 机器上验证过。** 开发主场是 Linux 和 macOS。
+- **fork 的改动已向上游提出**，客户端在没有它们时也已经干净降级。
+- **没有做的事**：钱的账（只算 token）、kernel 外面的任何沙箱、以及对「这条经验到底让智能体
+  变好了没有」的度量——复盘者说它预期会改变什么，系统不验证。
+- 没有账号体系，没有任何埋点。一个用户，一台机器。
+
 ## 打包
 
 ```sh
@@ -270,26 +284,21 @@ schema-27 的路径都是降级、不是报错：
 `npm run core:pull` 把 fork 往前拉。等这些改动进了上游，`core/` 就可以直接跟上游。
 [NOTICE](NOTICE) 记着 vendored 的是哪个 commit、fork 一共带了哪些改动。
 
-## 现在到哪一步了
-
-按这个项目一贯的规矩，如实说：
-
-- **上面每一项能力都是对着真实守护进程跑出来的**，不是 mockup。助手队伍、经验与回滚、预览、
-  三种长程驱动，都完整走过一遍，结论写进了 docs/。
-- **Windows 的 zip 能构建、能发，但还没在真实 Windows 机器上端到端验证过。** 开发主场是
-  Linux 和 macOS。
-- **fork 的改动已向上游提出**，客户端在没有它们时也已经干净降级。
-- 没有账号体系，没有任何埋点。一个用户，一台机器。
-
 ## 文档
 
+- [docs/e2e-walkthrough-1.md](docs/e2e-walkthrough-1.md) — 一次完整会话的端到端走查
 - [docs/daemon-integration.md](docs/daemon-integration.md) — 守护进程到底怎么驱动：拓扑、
   envelope、每种机制的读写面、以及风险清单
-- [docs/helper-runtime-findings.md](docs/helper-runtime-findings.md) — RLM 助手的实测行为：
-  事件形状、多 attach、kernel 的硬性依赖
-- [docs/e2e-walkthrough-1.md](docs/e2e-walkthrough-1.md) — 一次完整会话的端到端走查
+- [docs/helper-runtime-findings.md](docs/helper-runtime-findings.md) — RLM（递归语言模型）
+  助手的实测行为：事件形状、多 attach、kernel 的硬性依赖
 - [prime-agent-client-handoff](https://github.com/shitianfang/prime-agent-client-handoff) —
   这套交互设计背后的 handoff
+
+## 参与
+
+欢迎提 issue 和 PR。运行时本身的改动请提到
+[prime-agent](https://github.com/PrimeIntellect-ai/prime-agent) 上游去——`core/` 现在装的是
+一份等着进上游的 fork，不是用来在上面盖房子的地方。
 
 ## 署名与许可
 

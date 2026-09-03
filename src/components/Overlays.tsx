@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AgentState, BridgeState, Theme } from "../types";
-import { fetchWorkspaces, switchWorkspace, type WorkspaceInfo } from "../runtime/bridge";
+import { bridgeCmd, fetchWorkspaces, switchWorkspace, type WorkspaceInfo } from "../runtime/bridge";
 import { LANGS, getLang, setLang, useT } from "../i18n";
 
 /** Workspace switcher, anchored by the rail logo / column label. */
@@ -58,6 +58,25 @@ export function WorkspacePopup(props: {
     void go(name);
   };
 
+  /* Deleting a workspace takes its folder and everything an agent wrote in it,
+     so the row asks in place first — same two-step the Agents column uses. */
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const remove = async (name: string) => {
+    setConfirmDel(null);
+    setDelErr(null);
+    setBusy(true);
+    try {
+      await bridgeCmd("delete_workspace", name);
+      const r = await fetchWorkspaces();
+      setList(r.workspaces);
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : t("delete failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const stateWord = (w: WorkspaceInfo) =>
     w.name === workspace
       ? `${t("master {state}", { state: t(props.master === "working" ? "running" : "idle") })}${
@@ -73,13 +92,37 @@ export function WorkspacePopup(props: {
       <div className="wspop">
         <div className="h">{t("Workspaces")}</div>
         {(list ?? []).map((w) => (
-          <button className="wsrow" key={w.name} onClick={() => void go(w.name)} disabled={busy}>
+          <button
+            className="wsrow"
+            key={w.name}
+            onClick={() => (confirmDel !== null ? setConfirmDel(null) : void go(w.name))}
+            disabled={busy}
+          >
             <span className="n">
               {w.name}
               {w.name === workspace ? " ✓" : ""}
             </span>
             {w.pinned && <span className="pin">{t("pinned")}</span>}
             <span className="m">{busy ? "…" : stateWord(w)}</span>
+            {/* The open one and the pinned default are not deletable: general
+                is recreated on demand, and deleting the folder you are working
+                in would pull the ground out from under the session. */}
+            {!w.pinned && w.name !== workspace && (
+              <span
+                className={confirmDel === w.name ? "del on" : "del"}
+                title={t("delete workspace")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirmDel === w.name) void remove(w.name);
+                  else {
+                    setConfirmDel(w.name);
+                    setDelErr(null);
+                  }
+                }}
+              >
+                {confirmDel === w.name ? t("delete") : "✕"}
+              </span>
+            )}
           </button>
         ))}
         {list === null && (
@@ -87,6 +130,7 @@ export function WorkspacePopup(props: {
             <span className="m">{t("loading…")}</span>
           </div>
         )}
+        {delErr !== null && <div className="ierr">{delErr}</div>}
         <div className="wsnew">
           <input
             value={draft}

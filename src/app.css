@@ -125,6 +125,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .a .st.need { color: var(--red); }
 .more { padding: 10px 8px 0; font-family: var(--mono); font-size: 9px; color: var(--t3); cursor: pointer; text-align: left; }
 .more:hover { color: var(--t2); }
+.sec.sub { padding-top: 16px; }
+.a.ro { cursor: default; }
+.a.ro:hover { background: none; }
 /* files */
 .f { padding: 7px 8px; cursor: pointer; border: 1px solid transparent; margin-bottom: 2px; width: 100%; text-align: left; }
 .f:hover { background: var(--soft); }
@@ -170,6 +173,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 @media (prefers-reduced-motion: reduce) { .cursor { animation: none; opacity: .7; } }
 .div { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
 .div::before, .div::after { content: ""; flex: 1; border-top: 1px dashed var(--hair); }
+.div.click { cursor: pointer; }
+.div.click:hover { color: var(--t2); }
 
 /* event chips (tool executions etc.) */
 .ev { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 9px; margin-left: 34px; padding: 8px 11px; border: 1px solid var(--hair); font-family: var(--mono); font-size: 10.5px; color: var(--t3); background: var(--soft); }

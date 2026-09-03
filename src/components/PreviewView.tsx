@@ -85,7 +85,7 @@ export function PreviewView(props: {
   // tool/lesson rows only; items without a real timestamp are left out).
   const between =
     from && to
-      ? props.timeline.filter((x) => {
+      ? props.timeline.filter((x): x is Extract<TimelineItem, { kind: "tool" | "divider" }> => {
           const ts = (x.kind === "tool" || x.kind === "divider") && x.ts !== undefined ? x.ts : null;
           if (ts === null) return false;
           if (x.kind === "divider" && !x.text.startsWith("lesson kept")) return false;

@@ -10,6 +10,7 @@ import type {
   GoalInfo,
   HeartbeatInfo,
   HelperEvent,
+  HistoryMessage,
   Theme,
   TimelineItem,
 } from "./types";
@@ -53,6 +54,34 @@ function upsertFile(files: FileActivity[], path: string, who: string): FileActiv
   const name = path.split(/[\\/]/).pop() ?? path;
   const row: FileActivity = { path, name, who, at: clock() };
   return [row, ...files.filter((f) => f.path !== path)];
+}
+
+function hhmm(at?: number): string {
+  if (at === undefined) return "";
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Snapshot history → timeline rows: user/assistant as normal rows (never
+ *  streaming), agent messages as the same divider live ones get. */
+function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
+  return messages.map((m) => {
+    if (m.role === "user") return { kind: "user", id: id(), text: m.text, at: hhmm(m.at) };
+    if (m.role === "assistant") return { kind: "master", id: id(), text: m.text, at: hhmm(m.at) };
+    const when = m.at !== undefined ? ` · ${hhmm(m.at)}` : "";
+    return { kind: "divider", id: id(), text: `msg ← ${m.from ?? "agent"}${when}` };
+  });
+}
+
+/** Long histories open on the recent tail; the rest folds into one divider. */
+const HISTORY_OPEN = 30;
+function foldHistory(items: TimelineItem[]): TimelineItem[] {
+  if (items.length <= HISTORY_OPEN) return items;
+  const older = items.slice(0, items.length - HISTORY_OPEN);
+  return [
+    { kind: "collapsed", id: id(), count: older.length, items: older },
+    ...items.slice(-HISTORY_OPEN),
+  ];
 }
 
 /** Append the helper events implied by a child snapshot transition.
@@ -111,6 +140,8 @@ export function App() {
   // One turn can push ~90 message_update events — coalesce them to ~50ms flushes.
   const pendingRef = useRef<{ itemId: string; text: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   const bridgeRef = useRef(false);
+  // Snapshots repeat on bridge reconnect (same workspace) — seed history once.
+  const histSeededRef = useRef(false);
 
   const toggleTheme = useCallback(() => {
     setState((s) => {
@@ -348,6 +379,7 @@ export function App() {
           // A workspace is its own master, helpers, files, and history.
           daemonMsgRef.current = null;
           historyRef.current = [];
+          histSeededRef.current = false;
           return {
             ...s,
             bridge: bridgeState,
@@ -386,6 +418,13 @@ export function App() {
         // may delete its own). Merge by id, keep cached session ids, drop the
         // vanished, and never leave a stale selection or composer target.
         const roster = (m.children as ChildInfo[]) ?? [];
+        // Attach history rides along once per workspace: the timeline at this
+        // point is a single divider (session started / workspace switch), and
+        // the earlier turns follow it. A reconnect snapshot must not re-seed.
+        const history = histSeededRef.current
+          ? []
+          : foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
+        histSeededRef.current = true;
         setState((s) => {
           const children = roster.map((c) => {
             const prev = s.children.find((p) => p.id === c.id);
@@ -396,6 +435,7 @@ export function App() {
             ...s,
             goal: (m.state.goal as GoalInfo) ?? null,
             children,
+            timeline: history.length > 0 ? [...s.timeline, ...history] : s.timeline,
             selectedAgent: has(s.selectedAgent) ? s.selectedAgent : null,
             target:
               s.target.kind === "helper" && !has(s.target.childId) ? { kind: "master" } : s.target,

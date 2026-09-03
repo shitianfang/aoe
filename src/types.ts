@@ -10,7 +10,19 @@ export type TimelineItem =
   | { kind: "divider"; id: string; text: string; ts?: number }
   | { kind: "user"; id: string; text: string; at: string }
   | { kind: "master"; id: string; text: string; at: string; streaming?: boolean }
-  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number };
+  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number }
+  /** Folded run of older history rows; renders as one "N earlier turns · show" divider. */
+  | { kind: "collapsed"; id: string; count: number; items: TimelineItem[] };
+
+/** Slim transcript entry replayed by the bridge in the attach snapshot. */
+export interface HistoryMessage {
+  role: "user" | "assistant" | "agent_message";
+  text: string;
+  /** epoch ms (message.timestamp) */
+  at?: number;
+  /** sender sessionName, agent_message only */
+  from?: string;
+}
 
 /** GoalState subset we render (see docs/daemon-integration.md). */
 export interface GoalInfo {

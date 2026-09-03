@@ -71,6 +71,28 @@ export function removeHelper(childId: string): Promise<Record<string, unknown>> 
   return bridgeCmd("remove_helper", undefined, { target: childId });
 }
 
+export interface WorkspaceInfo {
+  name: string;
+  pinned: boolean;
+  state: "running" | "idle" | "off";
+}
+
+export async function fetchWorkspaces(): Promise<{ current: string; workspaces: WorkspaceInfo[] }> {
+  const r = await fetch("/bridge/workspaces");
+  if (!r.ok) throw new Error(`workspaces failed (${r.status})`);
+  return r.json();
+}
+
+export async function switchWorkspace(name: string): Promise<void> {
+  const r = await fetch("/bridge/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.ok === false) throw new Error(data.error || `switch failed (${r.status})`);
+}
+
 /** Pull readable text out of an AgentMessage-shaped object. */
 export function extractText(message: unknown): string {
   if (!message || typeof message !== "object") return "";

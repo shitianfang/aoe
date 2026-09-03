@@ -307,14 +307,32 @@ export function App() {
     const bridge = openBridge((m: BridgeMessage) => {
       if (m.type === "hello") {
         bridgeRef.current = m.daemon.connected;
-        setState((s) => ({
-          ...s,
-          bridge: {
-            connected: m.daemon.connected,
-            error: m.daemon.error ?? null,
-            workspace: m.daemon.workspace ?? null,
-          },
-        }));
+        const ws = m.daemon.workspace ?? null;
+        setState((s) => {
+          const switched = ws !== null && s.bridge?.workspace != null && ws !== s.bridge.workspace;
+          const bridgeState = { connected: m.daemon.connected, error: m.daemon.error ?? null, workspace: ws };
+          if (!switched) return { ...s, bridge: bridgeState };
+          // A workspace is its own master, helpers, files, and history.
+          daemonMsgRef.current = null;
+          historyRef.current = [];
+          return {
+            ...s,
+            bridge: bridgeState,
+            master: "idle",
+            view: "timeline",
+            selectedAgent: null,
+            goal: null,
+            children: [],
+            helperEvents: {},
+            files: [],
+            heartbeats: [],
+            autonomous: null,
+            target: { kind: "master" },
+            delivery: "now",
+            error: undefined,
+            timeline: [{ kind: "divider", id: id(), text: `workspace ${ws} · ${clock()}` }],
+          };
+        });
         if (m.daemon.connected) refreshHeartbeats();
       } else if ((m as { type: string }).type === "heartbeats_changed") {
         refreshHeartbeats();

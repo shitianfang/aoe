@@ -21,12 +21,19 @@ const PORT = Number(process.env.PRIME_BRIDGE_PORT || 3117);
 const PRIME_AGENT_DIR = process.env.PRIME_AGENT_DIR || "/workspace/prime-agent";
 const SDK_PATH = path.join(PRIME_AGENT_DIR, "packages/coding-agent/dist/index.js");
 const CLI = path.join(PRIME_AGENT_DIR, "prime-agent.sh");
-const WORKSPACE_DIR =
-  process.env.PRIME_WORKSPACE_DIR || path.join(os.homedir(), ".prime", "desktop", "general");
+// Workspaces are directories under one root; "general" is the pinned default.
+// Top-level session names are globally unique, so each workspace's resident
+// master gets its own session name while the UI always shows "master".
+const WORKSPACE_ROOT =
+  process.env.PRIME_WORKSPACE_ROOT || path.join(os.homedir(), ".prime", "desktop");
+const WS_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
+let currentWorkspace = process.env.PRIME_WORKSPACE || "general";
+let WORKSPACE_DIR = path.join(WORKSPACE_ROOT, currentWorkspace);
+const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
 
 /** @type {Set<import("node:http").ServerResponse>} */
 const sseClients = new Set();
-let daemon = { connected: false, master: null, error: null, workspace: path.basename(WORKSPACE_DIR) };
+let daemon = { connected: false, master: null, error: null, workspace: currentWorkspace };
 /** @type {any} */ let masterConn = null;
 /** @type {any} */ let daemonClient = null;
 /** @type {string|null} */ let masterSessionId = null;
@@ -93,18 +100,28 @@ async function connectDaemon() {
   const client = new sdk.DaemonClient(socketPath);
   await client.connect();
   daemonClient = client;
+  sdkRef = sdk;
+  await attachMaster();
+}
+
+/** @type {any} */ let sdkRef = null;
+
+async function attachMaster() {
+  const client = daemonClient;
+  const name = masterNameFor(currentWorkspace);
+  fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 
   // Idempotent master: attach if a worker is live, resume from disk if not,
   // create fresh only when no master session exists at all.
   const listed = await client.request({ type: "list", all: true });
   if (!listed.success) throw new Error(listed.error || "list failed");
   let master = (listed.data.sessions || []).find(
-    (s) => s.sessionName === "master" && (s.rlmDepth ?? 0) === 0,
+    (s) => s.sessionName === name && (s.rlmDepth ?? 0) === 0,
   );
   if (!master?.activeSessionId) {
     const created = await client.request({
       type: "create",
-      ...(master?.sessionFile ? { sessionPath: master.sessionFile } : { name: "master" }),
+      ...(master?.sessionFile ? { sessionPath: master.sessionFile } : { name }),
       lifecycle: "resident",
       config: { cwd: WORKSPACE_DIR },
       launchEnv: { ...process.env },
@@ -119,7 +136,7 @@ async function connectDaemon() {
   }
   const activeSessionId = master.activeSessionId ?? master.id;
 
-  masterConn = await sdk.DaemonAgentConnection.attach(client, activeSessionId, {
+  masterConn = await sdkRef.DaemonAgentConnection.attach(client, activeSessionId, {
     closeClientOnDispose: false,
     sendClientEnv: true,
   });
@@ -142,7 +159,7 @@ async function connectDaemon() {
     connected: true,
     master: { name: "master", activeSessionId },
     error: null,
-    workspace: path.basename(WORKSPACE_DIR),
+    workspace: currentWorkspace,
   };
   broadcast({ type: "hello", daemon });
   broadcast({
@@ -155,6 +172,46 @@ async function connectDaemon() {
     children: snapshot.children ?? [],
     messages: snapshot.messages ?? [],
   });
+}
+
+async function switchWorkspace(name) {
+  if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
+  if (!daemonClient) throw new Error("daemon not connected");
+  if (name === currentWorkspace && masterConn) return;
+  if (masterConn) {
+    try {
+      await masterConn.dispose(); // resident worker keeps running; this only detaches
+    } catch {
+      /* best-effort detach */
+    }
+    masterConn = null;
+  }
+  currentWorkspace = name;
+  WORKSPACE_DIR = path.join(WORKSPACE_ROOT, name);
+  sessionDir = null;
+  masterSessionId = null;
+  daemon = { connected: false, master: null, error: null, workspace: name };
+  await attachMaster();
+}
+
+async function workspacesPayload() {
+  fs.mkdirSync(path.join(WORKSPACE_ROOT, "general"), { recursive: true });
+  const dirs = fs
+    .readdirSync(WORKSPACE_ROOT, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+    .map((d) => d.name)
+    .sort((a, b) => (a === "general" ? -1 : b === "general" ? 1 : a.localeCompare(b)));
+  let sessions = [];
+  if (daemonClient) {
+    const listed = await daemonClient.request({ type: "list", all: true }).catch(() => null);
+    if (listed?.success) sessions = listed.data.sessions || [];
+  }
+  const workspaces = dirs.map((ws) => {
+    const s = sessions.find((x) => x.sessionName === masterNameFor(ws) && (x.rlmDepth ?? 0) === 0);
+    const state = s?.isSessionActive ? (s.isStreaming ? "running" : "idle") : "off";
+    return { name: ws, pinned: ws === "general", state };
+  });
+  return { current: currentWorkspace, workspaces };
 }
 
 /** An aborted run leaves the session input pump suspended and it never
@@ -223,6 +280,34 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, cors);
     return res.end();
+  }
+  if (req.url === "/bridge/workspaces") {
+    workspacesPayload()
+      .then((p) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(p));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
+  }
+  if (req.url === "/bridge/workspace" && req.method === "POST") {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", async () => {
+      try {
+        const { name } = JSON.parse(raw || "{}");
+        await switchWorkspace(String(name ?? ""));
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, workspace: currentWorkspace }));
+      } catch (e) {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e?.message || String(e) }));
+      }
+    });
+    return;
   }
   if (req.url === "/bridge/learned") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

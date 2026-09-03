@@ -10,6 +10,7 @@ import type {
   GoalInfo,
   HeartbeatInfo,
   HelperEvent,
+  HelperToolRow,
   HistoryMessage,
   LessonResult,
   Theme,
@@ -121,6 +122,8 @@ export function App() {
     goal: null,
     children: [],
     helperEvents: {},
+    helperTranscripts: {},
+    helperWorking: {},
     files: [],
     previewFiles: [],
     previewPath: null,
@@ -399,6 +402,8 @@ export function App() {
             goal: null,
             children: [],
             helperEvents: {},
+            helperTranscripts: {},
+            helperWorking: {},
             files: [],
             previewFiles: [],
             previewPath: null,
@@ -423,6 +428,34 @@ export function App() {
         setState((s) => ({ ...s, files: upsertFile(s.files, m.file.path, "master") }));
       } else if (m.type === "working_message") {
         setState((s) => ({ ...s, working: m.text || undefined }));
+      } else if (m.type === "helper_event") {
+        // Live transcript of a watched helper session, keyed on the wire by
+        // activeSessionId. resync replaces the child's rows; msg/tool append,
+        // except a tool_execution_end updating the row its _start appended.
+        setState((s) => {
+          const child = s.children.find((c) => c.activeSessionId === m.sessionId);
+          if (!child) return s;
+          const ev = m.event;
+          if (ev.kind === "resync") {
+            return { ...s, helperTranscripts: { ...s.helperTranscripts, [child.id]: ev.messages } };
+          }
+          const rows = s.helperTranscripts[child.id] ?? [];
+          if (ev.kind === "tool" && ev.id) {
+            const i = rows.findIndex((r) => r.kind === "tool" && r.id === ev.id);
+            if (i >= 0) {
+              const next = rows.slice();
+              next[i] = { ...(next[i] as HelperToolRow), status: ev.status };
+              return { ...s, helperTranscripts: { ...s.helperTranscripts, [child.id]: next } };
+            }
+          }
+          return { ...s, helperTranscripts: { ...s.helperTranscripts, [child.id]: [...rows, ev] } };
+        });
+      } else if (m.type === "helper_working") {
+        setState((s) => {
+          const child = s.children.find((c) => c.activeSessionId === m.sessionId);
+          if (!child) return s;
+          return { ...s, helperWorking: { ...s.helperWorking, [child.id]: m.text } };
+        });
       } else if (m.type === "snapshot") {
         // The snapshot roster is authoritative: helpers can vanish (the agent
         // may delete its own). Merge by id, keep cached session ids, drop the
@@ -644,6 +677,18 @@ export function App() {
     : null;
   const needsYou = state.children.filter((c) => c.status === "done" && !c.repliedSinceTask).length;
 
+  // Watch the selected helper's live session while its view is open (a second
+  // attach on the same daemon socket). Attach can fail when the helper ran
+  // inline or was deleted — no retry; the view then shows observed events only.
+  const watchTarget = selectedChild?.activeSessionId ?? null;
+  useEffect(() => {
+    if (!watchTarget) return;
+    bridgeCmd("watch_helper", undefined, { target: watchTarget }).catch(() => undefined);
+    return () => {
+      bridgeCmd("unwatch_helper", undefined, { target: watchTarget }).catch(() => undefined);
+    };
+  }, [watchTarget]);
+
   const center = () => {
     if (state.view === "learned") return <LearnedView />;
     if (state.view === "preview") {
@@ -662,6 +707,8 @@ export function App() {
           child={selectedChild}
           index={state.children.indexOf(selectedChild)}
           events={state.helperEvents[selectedChild.id] ?? []}
+          transcript={state.helperTranscripts[selectedChild.id] ?? []}
+          working={state.helperWorking[selectedChild.id] || undefined}
           onStop={stopHelperById}
           onRemove={removeHelperById}
           onSend={sendToHelper}

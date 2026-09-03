@@ -6,7 +6,9 @@
  *   GET  /bridge/events   SSE stream of session events + snapshots
  *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine"
  *                               |"heartbeat_set"|"heartbeat_update"
- *                               |"refine_rollback"|"refine_global"|…, text?, target? }
+ *                               |"refine_rollback"|"refine_global"
+ *                               |"agent_message"|"stop_helper"|"remove_helper"
+ *                               |"watch_helper"|"unwatch_helper", text?, target? }
  *   GET  /bridge/health   { connected, master }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -39,6 +41,9 @@ const sseClients = new Set();
 let daemon = { connected: false, master: null, error: null, workspace: currentWorkspace };
 /** @type {any} */ let masterConn = null;
 /** @type {any} */ let daemonClient = null;
+/** Live child-session attaches for the helper view, keyed by activeSessionId.
+ *  Same socket as master (multi-attach is verified, findings §5). */
+/** @type {Map<string, any>} */ const childConns = new Map();
 /** @type {string|null} */ let masterSessionId = null;
 /** @type {string|null} */ let sessionDir = null;
 
@@ -314,6 +319,7 @@ async function switchWorkspace(name) {
   if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
   if (!daemonClient) throw new Error("daemon not connected");
   if (name === currentWorkspace && masterConn) return;
+  await disposeChildConns(); // helper attaches belong to the old workspace's master
   if (masterConn) {
     try {
       await masterConn.dispose(); // resident worker keeps running; this only detaches
@@ -374,6 +380,110 @@ async function withResumeRetry(fn) {
   }
 }
 
+/** Thin one child-session message the way the master timeline does: text
+ *  blocks joined, empty text dropped. Custom messages carry the bare text in
+ *  details.message — content is the model-facing envelope (findings §4.5). */
+function thinChildMessage(message) {
+  const role = message?.role;
+  if (role !== "assistant" && role !== "user" && role !== "custom") return null;
+  let text = "";
+  if (role === "custom" && typeof message.details?.message === "string") {
+    text = message.details.message;
+  } else if (typeof message.content === "string") {
+    text = message.content;
+  } else if (Array.isArray(message.content)) {
+    text = message.content.map((b) => (typeof b?.text === "string" ? b.text : "")).join("");
+  }
+  if (!text) return null;
+  const at = typeof message.timestamp === "number" ? new Date(message.timestamp).toISOString() : null;
+  return { role, text, at };
+}
+
+function thinChildMessages(messages) {
+  const out = [];
+  for (const m of messages ?? []) {
+    const thin = thinChildMessage(m);
+    if (thin) out.push(thin);
+  }
+  return out;
+}
+
+/** Attach to a helper's live session and feed the renderer a thinned
+ *  transcript. Attach can fail when the helper ran inline or was deleted —
+ *  the caller surfaces {ok:false, error}; no retry (findings §6.3). */
+async function watchHelper(target) {
+  if (!target) throw new Error("missing target");
+  if (childConns.has(target)) return;
+  if (!daemonClient || !sdkRef) throw new Error("daemon not connected");
+  const conn = await sdkRef.DaemonAgentConnection.attach(daemonClient, target, {
+    closeClientOnDispose: false,
+    sendClientEnv: false,
+    directTransport: false,
+  });
+  childConns.set(target, conn);
+  const resync = (messages) =>
+    broadcast({
+      type: "helper_event",
+      sessionId: target,
+      event: { kind: "resync", messages: thinChildMessages(messages) },
+    });
+  conn.subscribe((event) => {
+    if (event?.type === "session_event") {
+      const inner = event.event;
+      const t = inner?.type;
+      if (t === "message_start" || t === "message_end") {
+        // Every start gets an end carrying the final text (findings §7);
+        // emitting only the end keeps one row per message.
+        if (t !== "message_end") return;
+        const msg = thinChildMessage(inner.message);
+        if (msg) broadcast({ type: "helper_event", sessionId: target, event: { kind: "msg", ...msg } });
+      } else if (t === "tool_execution_start" || t === "tool_execution_end") {
+        broadcast({
+          type: "helper_event",
+          sessionId: target,
+          event: {
+            kind: "tool",
+            id: String(inner.toolCallId ?? ""),
+            name: String(inner.toolName ?? "tool"),
+            status: t === "tool_execution_start" ? "running" : inner.isError ? "error" : "done",
+          },
+        });
+      } else if (t === "agent_end") {
+        // agent_end carries the full message history — a free canonical refresh
+        resync(inner.messages);
+      }
+    } else if (event?.type === "session_resynced") {
+      // The attach-instant snapshot can be empty (the transcript is written
+      // while the helper runs); this follows with the full one. Replace wholesale.
+      resync(event.snapshot?.messages);
+    } else if (event?.type === "extension_ui_request") {
+      // free "what is it doing" copy; empty payload clears (findings §5.2)
+      const req = event.request;
+      if (req?.method === "setWorkingMessage") {
+        broadcast({ type: "helper_working", sessionId: target, text: req.payload?.message ?? "" });
+      }
+    }
+  });
+  const snapshot = await conn.getInitialSnapshot().catch(() => null);
+  resync(snapshot?.messages);
+}
+
+async function unwatchHelper(target) {
+  const conn = childConns.get(target);
+  if (!conn) return;
+  childConns.delete(target);
+  try {
+    await conn.dispose(); // master connection stays usable (findings §5)
+  } catch {
+    /* best-effort detach */
+  }
+}
+
+async function disposeChildConns() {
+  const targets = [...childConns.keys()];
+  for (const target of targets) await unwatchHelper(target);
+}
+
 async function handleCmd(body) {
   if (!masterConn) throw new Error("daemon not connected");
   switch (body.op) {
@@ -422,6 +532,12 @@ async function handleCmd(body) {
       return { job: (await masterConn.updateHeartbeat(String(body.action ?? ""))) ?? null };
     case "stop_helper":
       return { cancelled: await masterConn.cancelRlmChild(String(body.target ?? "")) };
+    case "watch_helper":
+      await watchHelper(String(body.target ?? ""));
+      return {};
+    case "unwatch_helper":
+      await unwatchHelper(String(body.target ?? ""));
+      return {};
     case "remove_helper": {
       if (!daemonClient || !masterSessionId) throw new Error("daemon not connected");
       const r = await daemonClient.request({

@@ -73,7 +73,7 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
             ? t("none recorded")
             : (r.appliedEdits ?? []).map((e) => (
                 <span className="edit" key={e.id}>
-                  {e.kind} · {e.title}
+                  {t(e.kind)} · {e.title}
                   {/* real results may omit `applied`; only an explicit false means failure */}
                   {e.applied === false ? (
                     <span className="dim"> — {t("not applied")}{e.error ? ` · ${e.error}` : ""}</span>

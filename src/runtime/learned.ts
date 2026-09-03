@@ -63,6 +63,118 @@ export interface HarnessData {
   entries: HarnessEntry[];
 }
 
+/** `"create memory:some_id"` — the only structured thing a stored round keeps
+ *  about its edits (core writes `${action} ${kind}:${id}`). Everything the
+ *  overview counts is parsed back out of these strings. */
+export interface ChangeRef {
+  action: "create" | "update" | "delete";
+  kind: EntryKind;
+  id: string;
+}
+
+const CHANGE_RE = /^(create|update|delete)\s+(prompt|memory|skill|subagent):(.*)$/i;
+
+export function parseChange(change: string): ChangeRef | null {
+  const m = CHANGE_RE.exec(change.trim());
+  if (m === null) return null;
+  return {
+    action: m[1].toLowerCase() as ChangeRef["action"],
+    kind: m[2].toLowerCase() as EntryKind,
+    id: m[3].trim(),
+  };
+}
+
+/** A round that applied no edits at all. The review thought there was something
+ *  to learn and the refiner concluded there was not — worth showing as its own
+ *  state, not as a lesson. `undefined` changes is an older record, not a no-op. */
+export function isNoop(r: LessonRecord): boolean {
+  return r.changes !== undefined && r.changes.length === 0;
+}
+
+/** What the overview panel counts. All of it comes out of one pull — no extra
+ *  bridge calls, no core change. */
+export interface HarnessStats {
+  /** Entries alive right now, by kind, in ENTRY_KINDS order. */
+  byKind: Array<{ kind: EntryKind; n: number }>;
+  entries: number;
+  /** Rounds that ran, ever. */
+  rounds: number;
+  /** …of which: undid an earlier round / applied nothing / applied something. */
+  rollbacks: number;
+  noops: number;
+  kept: number;
+  /** Rounds by who asked, in a fixed order. */
+  bySource: Array<{ source: "auto" | "manual" | "agent" | "unknown"; n: number }>;
+  /** One bucket per local day that has at least one round, oldest first, with
+   *  empty days filled in so the strip reads as a calendar, not a list. */
+  days: Array<{ day: string; n: number; kept: number }>;
+  /** Newest round timestamp, or "" when nothing has run. */
+  last: string;
+}
+
+/** Local YYYY-MM-DD — buckets must follow the reader's midnight, not UTC's. */
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function harnessStats(data: HarnessData): HarnessStats {
+  const byKind = ENTRY_KINDS.map((kind) => ({
+    kind,
+    n: data.entries.filter((e) => e.kind === kind).length,
+  }));
+  const rollbacks = data.lessons.filter(isRollback).length;
+  const noops = data.lessons.filter(isNoop).length;
+
+  const sources = { auto: 0, manual: 0, agent: 0, unknown: 0 };
+  for (const l of data.lessons) {
+    const k = l.source === "auto" || l.source === "manual" || l.source === "agent" ? l.source : "unknown";
+    sources[k] += 1;
+  }
+
+  // Bucket by day, then fill the gaps: a strip with the quiet days missing
+  // would compress a week of silence into nothing and read as steady work.
+  const hit = new Map<string, { n: number; kept: number }>();
+  for (const l of data.lessons) {
+    const k = dayKey(l.created_at ?? "");
+    if (k === "") continue;
+    const cur = hit.get(k) ?? { n: 0, kept: 0 };
+    cur.n += 1;
+    if (!isNoop(l) && !isRollback(l)) cur.kept += 1;
+    hit.set(k, cur);
+  }
+  const keys = [...hit.keys()].sort();
+  const days: HarnessStats["days"] = [];
+  if (keys.length > 0) {
+    const at = new Date(`${keys[0]}T00:00:00`);
+    const end = new Date(`${keys[keys.length - 1]}T00:00:00`);
+    // Guard the walk: a corrupt future timestamp must not spin this forever.
+    for (let i = 0; at <= end && i < 400; i += 1) {
+      const k = dayKey(at.toISOString());
+      const v = hit.get(k) ?? { n: 0, kept: 0 };
+      days.push({ day: k, n: v.n, kept: v.kept });
+      at.setDate(at.getDate() + 1);
+    }
+  }
+
+  return {
+    byKind,
+    entries: data.entries.length,
+    rounds: data.lessons.length,
+    rollbacks,
+    noops,
+    kept: data.lessons.length - rollbacks - noops,
+    bySource: (["auto", "manual", "agent", "unknown"] as const).map((source) => ({
+      source,
+      n: sources[source],
+    })),
+    days,
+    last: data.lessons[0]?.created_at ?? "",
+  };
+}
+
 /** A rollback is itself recorded as a refinement; those rows cannot be rolled back again. */
 export function isRollback(r: LessonRecord): boolean {
   return /roll ?back/i.test(r.trigger ?? "") || (r.changes ?? []).some((c) => /roll ?back/i.test(c));

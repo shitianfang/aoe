@@ -220,17 +220,17 @@ const ZH: Record<string, string> = {
 
   /* self-evolution column (⚡) */
   "what agents pick up while working — later work uses it.":
-    "agent 工作中自己学到的改进 —— 以后会用上。",
-  "nothing learned yet.": "还没有自进化的记录。",
+    "智能体干活时学到的改进 —— 之后会用上。",
+  "nothing learned yet.": "还没学到东西。",
   "agents keep small improvements as they work — they appear here on their own.":
-    "agent 干活时会自己记下小改进,自动出现在这里。",
-  "let agents learn on their own": "开启自主学习",
+    "智能体干活时会自己记下小改进,自动出现在这里。",
+  "let agents learn on their own": "让智能体自己学",
   "about every {n} turns, or when it tidies its context — at most once per {m} minutes.":
-    "大约每 {n} 轮、或整理上下文时自动学一次;两次至少间隔 {m} 分钟。",
-  "for one agent": "只属于某个 agent",
+    "大约每 {n} 轮学一次,清理旧对话时也会学;两次之间至少隔 {m} 分钟。",
+  "for one agent": "只给某个智能体",
   "for every workspace": "所有工作区通用",
   "something new": "有新内容",
-  "kept everywhere": "已在所有工作区",
+  "kept everywhere": "已应用到所有工作区",
 
   /* timeline */
   "lesson kept · {summary}": "记下经验 · {summary}",
@@ -309,8 +309,8 @@ const ZH: Record<string, string> = {
   "failed · {error}": "失败 · {error}",
 
   /* lessons */
-  "kept for this workspace": "仅本工作区保留",
-  "from {source}": "来自 {source}",
+  "kept for this workspace": "只给这个智能体",
+  "from {source}": "{source}发起",
   "rolls back {id}": "撤销了 {id}",
   summary: "摘要",
   evidence: "依据",
@@ -323,11 +323,11 @@ const ZH: Record<string, string> = {
   "rolling back…": "撤销中…",
   "roll back {id}": "撤销 {id}",
   "roll back": "撤销",
-  "reviewing…": "评估中…",
+  "reviewing…": "学习中…",
   "apply everywhere": "应用到所有工作区",
-  "runs a new review — result may differ": "会重新评估一次 —— 结果可能不同",
+  "runs a new review — result may differ": "会重新学一次 —— 结果可能不同",
   "roll back failed": "撤销失败",
-  "apply everywhere failed": "应用到所有工作区失败",
+  "apply everywhere failed": "应用失败",
   auto: "自动",
   manual: "主动",
   "the agent": "智能体",
@@ -338,12 +338,12 @@ const ZH: Record<string, string> = {
   skill: "技能",
   subagent: "助手",
   /* one applied edit, in words instead of "create memory:some_id" */
-  "added a {kind}": "新增了一条{kind}",
-  "updated a {kind}": "更新了一条{kind}",
-  "removed a {kind}": "删除了一条{kind}",
+  "added a {kind}": "新增了{kind}",
+  "updated a {kind}": "更新了{kind}",
+  "removed a {kind}": "删除了{kind}",
   "no change": "无改动",
   "nothing was changed — the review kept everything as it was.":
-    "这次评估后什么都没改 —— 原样保留。",
+    "这次学习没有改动 —— 原样保留。",
 
   /* learned pane (one lesson's full record) */
   lesson: "经验",
@@ -438,8 +438,8 @@ const ZH: Record<string, string> = {
   "start learning": "开始学习",
   "learning… this can take a few minutes.": "正在学习… 可能需要几分钟。",
   "learn failed": "学习失败",
-  "last auto review {at}": "上次自动评估 {at}",
-  "next auto learn no earlier than {at}": "下次自动学习不早于 {at}",
+  "last auto review {at}": "上次自动学习 {at}",
+  "next auto learn no earlier than {at}": "下次自动学习最早 {at}",
 
   /* inspector · subject binding */
   Task: "任务",

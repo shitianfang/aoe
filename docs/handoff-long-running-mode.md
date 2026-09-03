@@ -4,6 +4,20 @@
 
 本文覆盖的是**实现**，不是设计。设计线的结论不重复。
 
+## ✅ 续跑记录（2026-09-03，会话 c7ff6d26）：本文的待办已全部完成
+
+接手会话把 §6 的六项全部做完。本节之后的原文保留作背景，其中"未验证 / 未推送"的表述已过时：
+
+- **§3 六处修复全部复核通过**，含 3.1 末尾那条"不必再走 `_agentEventQueue`"的判断（`_processAgentEvent` 本身就在队列里串行执行，成立）。
+- **§4 说"现有 harness 做不到中途调用"是错的**：`agent-session-goal.test.ts` 的 `createFauxIpythonTool` 就是现成模式。已补 3.1 回归测试（真实 turn 中途经假 ipython 工具分发 host request），并做了变异验证——把 emit 改回立即执行，测试确实变红。
+- **实机 E2E 抓到一个所有单测和两轮审查都漏掉的致命 bug**：kernel 传输层把信封字段并进 payload（`rlm/__init__.py:81` 混入 `type`，`repl-manager.ts` 加 `cellSourceCode`），而 `parseAutonomousLimitPayload` 遍历所有键，导致**每次真实 `autonomous.enable` 调用都报 usage 错**。修法：只读四个具名限额键（与 goal/preview handler 惯例一致）；测试里的假 ipython 工具现在携带真实信封，这类错配以后单测能抓到。教训：**host handler 的单测必须带传输信封**。
+- **实机全链路验证通过**（隔离 bridge:3217 + 独立 socket/workspace 的 daemon + master@e2e，NIM 真模型）：带前缀发长任务 → master 只选一个驱动并一行说明理由（选了 `goal.create`，带 `token_budget=400000`）；信封修复并重启 daemon 后 `autonomous.enable(turns=3, time="5m")` 成功，续跑机制真实运转（观察到 continuationsUsed/turnsUsed 增长）；abort 后 `autonomous_status` 落盘在 toolResult 之后——3.1 修复在生产成立，中止路径的冲刷也正常。
+- **fable 两轮对抗性审查放行**（SAFE TO PUSH）。fork 已推送：`fork/main` = `2d8f6cccc`（`d91113c00` 功能、`dc78aa4c7` 键护栏+回归测试、`2d8f6cccc` 信封修复）。`d91113c00` 在推送前已被另一会话先推上去。
+- **§6.5/6.6 已修并推送**（本仓库 `a32acfa`：dev:bridge 指向真实路径、README Status 刷新；顺带带上了这两个文件里进行中的 AOE 更名段）。
+- 审查留下两个不阻塞的已知项：(i) `clearedDispatchEnded`/`!msg` 早退路径上 status 落盘会推迟到下一轮末（连接快照仍实时，纯外观）；(ii) 限额键白名单大小写敏感，手写 `host_request` 传 `{Turns:"5"}` 会被静默忽略（bundled skill 只发小写，无真实调用方受影响）。
+- §7 的两个真实缺口仍在：客户端没有暴露 goal 的 `--budget` 输入；autonomous gate 命令只能从启动参数配，bridge 没传。
+- 运行须知：daemon 硬性要求 Node ≥22.8，本机在 `/home/vscode/.local/node22/bin/node`（`/usr/bin/node` 是 20，直接拒起）；daemon/worker 进程 argv 被改写成 `prime-agent`，按 cmdline 找不到，要用 `/proc/<pid>/environ` 或 cwd 定位。
+
 ## 0. 三十秒摘要
 
 - 目标：客户端加一个「长程自主」开关，勾上以后发消息，由 master 自己在三种续跑方式里**选一种**建起来，参数它自己填。

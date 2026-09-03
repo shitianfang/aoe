@@ -1,4 +1,5 @@
 import type { FileActivity } from "../types";
+import { useT } from "../i18n";
 
 const PREVIEWABLE = /\.(html?|md|png|pdf)$/i;
 
@@ -6,14 +7,15 @@ export function FilesColumn(props: {
   files: FileActivity[];
   onOpenPreview: (file: FileActivity) => void;
 }) {
+  const t = useT();
   return (
     <aside className="col2">
-      <div className="sec">Files</div>
+      <div className="sec">{t("Files")}</div>
       {props.files.length === 0 ? (
         <div className="colnote">
-          no file activity yet.
+          {t("no file activity yet.")}
           <br />
-          files agents edit will appear here — who changed what, when.
+          {t("files agents edit will appear here — who changed what, when.")}
         </div>
       ) : (
         <>
@@ -32,16 +34,16 @@ export function FilesColumn(props: {
                       props.onOpenPreview(f);
                     }}
                   >
-                    diff
+                    {t("diff")}
                   </a>
                 </div>
               </button>
             );
           })}
           <div className="colnote">
-            who changed what, when.
+            {t("who changed what, when.")}
             <br />
-            open an html, md, png or pdf file to preview it.
+            {t("open an html, md, png or pdf file to preview it.")}
           </div>
         </>
       )}

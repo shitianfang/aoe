@@ -9,7 +9,8 @@ import type {
   HeartbeatInfo,
 } from "../types";
 import { hhmmEpoch, injectionReasonText } from "../helperDisplay";
-import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
+import { bridgeCmd, bridgeUrl, fetchAutonomous } from "../runtime/bridge";
+import { getLang, t as tr, useT } from "../i18n";
 
 function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -31,7 +32,22 @@ function tk(n: number): string {
   return String(Math.max(0, Math.round(n)));
 }
 
-const asMinutes = (ms: number) => `${Math.max(0, Math.round(ms / 60_000))}m`;
+const asMinutes = (ms: number) => tr("{n}m", { n: Math.max(0, Math.round(ms / 60_000)) });
+
+/** Runtime defaults for the unattended limits (core DEFAULT_AUTONOMOUS_LIMITS:
+ *  12 turns, 80k tokens, 30 minutes, 3 continuations). Shown as prefill and
+ *  substituted quietly when an edit does not parse — never a loud error. */
+const UNATTENDED_DEFAULTS = { turns: "12", tokens: "80k", time: "30m", continued: "3" };
+
+const countOr = (v: string, fallback: string) =>
+  /^[1-9]\d*$/.test(v.trim()) ? v.trim() : fallback;
+/** tokens: <n>[k|m]; time: <n>[s|m|h] (bare minutes) — the /autonomous on syntax. */
+const suffixedOr = (v: string, suffixes: string, fallback: string) => {
+  const s = v.trim().toLowerCase();
+  return new RegExp(`^\\d+(\\.\\d+)?[${suffixes}]?$`).test(s) && Number.parseFloat(s) > 0
+    ? s
+    : fallback;
+};
 
 /** Refinement rows in the harness state files (GET /bridge/learned). */
 interface LearnedSummary {
@@ -47,7 +63,7 @@ function stamp(d: Date): string {
     d.getDate() === now.getDate();
   return sameDay
     ? hhmm(d)
-    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hhmm(d)}`;
+    : `${d.toLocaleDateString(getLang() === "zh" ? "zh-CN" : undefined, { month: "short", day: "numeric" })} ${hhmm(d)}`;
 }
 
 /** Count today's lessons and find the newest, across both scopes. Returns null
@@ -87,6 +103,7 @@ export function Inspector(props: {
   refreshKey?: number;
   onOpenLearn: () => void;
 }) {
+  const t = useT();
   const goal = props.goal;
   const goalActive = Boolean(goal?.active);
   const auto = props.autonomous;
@@ -95,6 +112,10 @@ export function Inspector(props: {
   const [objText, setObjText] = useState("");
   const [objErr, setObjErr] = useState<string | null>(null);
   const [autoErr, setAutoErr] = useState<string | null>(null);
+  const [limTurns, setLimTurns] = useState(UNATTENDED_DEFAULTS.turns);
+  const [limTokens, setLimTokens] = useState(UNATTENDED_DEFAULTS.tokens);
+  const [limTime, setLimTime] = useState(UNATTENDED_DEFAULTS.time);
+  const [limCont, setLimCont] = useState(UNATTENDED_DEFAULTS.continued);
   const [hbText, setHbText] = useState("");
   const [hbErr, setHbErr] = useState<string | null>(null);
   const [crons, setCrons] = useState<CronInfo[]>([]);
@@ -139,7 +160,7 @@ export function Inspector(props: {
   const goalCmd = (sub: string) => {
     setObjErr(null);
     bridgeCmd("prompt", `/goal ${sub}`).catch((e) =>
-      setObjErr(e instanceof Error ? e.message : "failed"),
+      setObjErr(e instanceof Error ? e.message : t("failed")),
     );
   };
 
@@ -149,24 +170,41 @@ export function Inspector(props: {
     setObjErr(null);
     bridgeCmd("prompt", `/goal ${text}`)
       .then(() => setObjText(""))
-      .catch((e) => setObjErr(e instanceof Error ? e.message : "failed"));
+      .catch((e) => setObjErr(e instanceof Error ? e.message : t("failed")));
   };
 
   const toggleUnattended = async (on: boolean) => {
     setAutoErr(null);
     try {
-      await bridgeCmd("prompt", `/autonomous ${on ? "on" : "off"}`);
+      if (on) {
+        const limits = [
+          `turns=${countOr(limTurns, UNATTENDED_DEFAULTS.turns)}`,
+          `tokens=${suffixedOr(limTokens, "km", UNATTENDED_DEFAULTS.tokens)}`,
+          `time=${suffixedOr(limTime, "smh", UNATTENDED_DEFAULTS.time)}`,
+          `continuations=${countOr(limCont, UNATTENDED_DEFAULTS.continued)}`,
+        ].join(" ");
+        await bridgeCmd("prompt", `/autonomous on ${limits}`);
+        // A pre-limits daemon rejects the syntax as a failed command (the
+        // prompt call itself still resolves): if unattended did not switch
+        // on, degrade to the plain toggle it does understand.
+        const probe = await fetchAutonomous().catch(() => null);
+        if (probe?.autonomous && !probe.autonomous.enabled) {
+          await bridgeCmd("prompt", "/autonomous on");
+        }
+      } else {
+        await bridgeCmd("prompt", "/autonomous off");
+      }
       // The toggle alone does not emit fresh counters — ask for them.
       await bridgeCmd("prompt", "/autonomous status");
     } catch (e) {
-      setAutoErr(e instanceof Error ? e.message : "failed");
+      setAutoErr(e instanceof Error ? e.message : t("failed"));
     }
   };
 
   const updateCheckin = (action: "pause" | "resume" | "clear") => {
     setHbErr(null);
     bridgeCmd("heartbeat_update", undefined, { action }).catch((e) =>
-      setHbErr(e instanceof Error ? e.message : "failed"),
+      setHbErr(e instanceof Error ? e.message : t("failed")),
     );
   };
 
@@ -174,51 +212,54 @@ export function Inspector(props: {
     setHbErr(null);
     bridgeCmd("cron_cancel", undefined, { target: jobId })
       .then(loadCrons)
-      .catch((e) => setHbErr(e instanceof Error ? e.message : "failed"));
+      .catch((e) => setHbErr(e instanceof Error ? e.message : t("failed")));
   };
 
   const submitCheckin = () => {
     const m = /^every\s+([^:]+?)\s*:\s*(.+)$/i.exec(hbText.trim());
     if (!m) {
-      setHbErr("format: every 30m: instruction");
+      setHbErr(t("format: every 30m: instruction"));
       return;
     }
     setHbErr(null);
     bridgeCmd("heartbeat_set", m[2].trim(), { schedule: `every ${m[1].trim()}`, mode: "follow_up" })
       .then(() => setHbText(""))
-      .catch((e) => setHbErr(e instanceof Error ? e.message : "failed"));
+      .catch((e) => setHbErr(e instanceof Error ? e.message : t("failed")));
   };
 
   return (
     <aside className="insp">
       <div className="flow">
-        <span className={goalActive ? "active" : ""}>objective</span>
+        <span className={goalActive ? "active" : ""}>{t("objective")}</span>
         <i />
-        <span className={auto?.enabled ? "active" : ""}>unattended</span>
+        <span className={auto?.enabled ? "active" : ""}>{t("unattended")}</span>
         <i />
         <span className={props.heartbeats.some((h) => h.status === "active") ? "active" : ""}>
-          check-in
+          {t("check-in")}
         </span>
       </div>
 
       <div className="panel">
         <div className="phead">
-          <span>Driving</span>
-          <code>{goalActive ? "objective" : "you"}</code>
+          <span>{t("Driving")}</span>
+          <code>{goalActive ? t("objective") : t("you")}</code>
         </div>
         {goalActive ? (
           <>
             <div className="rule">“{goal?.objective}”</div>
             <div className="kv">
-              <span className="k">Status</span>
-              <span className="v ok">{goal?.status}</span>
+              <span className="k">{t("Status")}</span>
+              <span className="v ok">{goal?.status ? t(goal.status) : ""}</span>
             </div>
             {typeof goal?.tokenBudget === "number" && goal.tokenBudget > 0 && (
               <div className="kv">
-                <span className="k">Budget</span>
+                <span className="k">{t("Budget")}</span>
                 <span className="v faint">
-                  {tk(goal.tokensUsed ?? 0)} of {tk(goal.tokenBudget)} ·{" "}
-                  {Math.round(((goal.tokensUsed ?? 0) / goal.tokenBudget) * 100)}%
+                  {t("{used} of {max}", {
+                    used: tk(goal.tokensUsed ?? 0),
+                    max: tk(goal.tokenBudget),
+                  })}{" "}
+                  · {Math.round(((goal.tokensUsed ?? 0) / goal.tokenBudget) * 100)}%
                 </span>
               </div>
             )}
@@ -226,15 +267,15 @@ export function Inspector(props: {
               <div className="brow">
                 {goal?.status === "paused" ? (
                   <button className="btn" onClick={() => goalCmd("resume")}>
-                    resume
+                    {t("resume")}
                   </button>
                 ) : (
                   <button className="btn" onClick={() => goalCmd("pause")}>
-                    pause
+                    {t("pause")}
                   </button>
                 )}
                 <button className="btn" onClick={() => goalCmd("clear")}>
-                  clear
+                  {t("clear")}
                 </button>
               </div>
             )}
@@ -242,18 +283,20 @@ export function Inspector(props: {
         ) : (
           <>
             <div className="kv">
-              <span className="k">Objective</span>
-              <span className="v faint">none</span>
+              <span className="k">{t("Objective")}</span>
+              <span className="v faint">{t("none")}</span>
             </div>
             <div className="rule">
               {online
-                ? "master acts when you message it. An objective keeps it going on its own."
-                : "master acts when you message it. Objectives and check-ins need the runtime (bridge offline)."}
+                ? t("master acts when you message it. An objective keeps it going on its own.")
+                : t(
+                    "master acts when you message it. Objectives and check-ins need the runtime (bridge offline).",
+                  )}
             </div>
             {online && (
               <input
                 className="iin"
-                placeholder="set an objective…"
+                placeholder={t("set an objective…")}
                 value={objText}
                 onChange={(e) => setObjText(e.target.value)}
                 onKeyDown={(e) => {
@@ -269,60 +312,74 @@ export function Inspector(props: {
       {auto?.enabled ? (
         <div className="panel">
           <div className="phead">
-            <span>Unattended</span>
-            <code>on</code>
+            <span>{t("Unattended")}</span>
+            <code>{t("on")}</code>
           </div>
           <div className="rule">
-            Steps in only after a failed check or a turn without evidence; stops at any limit. The
-            objective continues regardless.
+            {t(
+              "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.",
+            )}
           </div>
           <div className="kv">
-            <span className="k">Continued</span>
+            <span className="k">{t("Continued")}</span>
             <span className="v">
-              {auto.continuationsUsed ?? 0} of {auto.limits?.maxContinuations ?? "?"}
+              {t("{used} of {max}", {
+                used: auto.continuationsUsed ?? 0,
+                max: auto.limits?.maxContinuations ?? "?",
+              })}
             </span>
           </div>
           <div className="kv">
-            <span className="k">Turns</span>
+            <span className="k">{t("Turns")}</span>
             <span className="v">
-              {auto.turnsUsed ?? 0} of {auto.limits?.maxTurns ?? "?"}
+              {t("{used} of {max}", { used: auto.turnsUsed ?? 0, max: auto.limits?.maxTurns ?? "?" })}
             </span>
           </div>
           {typeof auto.limits?.maxTokens === "number" && auto.limits.maxTokens > 0 && (
             <div className="kv">
-              <span className="k">Tokens</span>
+              <span className="k">{t("Tokens")}</span>
               <span className="v">
-                {tk(auto.tokensUsed ?? 0)} of {tk(auto.limits.maxTokens)}
+                {t("{used} of {max}", {
+                  used: tk(auto.tokensUsed ?? 0),
+                  max: tk(auto.limits.maxTokens),
+                })}
               </span>
             </div>
           )}
           {typeof auto.limits?.timeoutMs === "number" && auto.limits.timeoutMs > 0 && (
             <div className="kv">
-              <span className="k">Time</span>
+              <span className="k">{t("Time")}</span>
               {/* startedAt is the only clock the runtime gives; without it we
                   show the limit alone rather than guess how long it has run. */}
               <span className="v">
                 {typeof auto.startedAt === "number"
-                  ? `${asMinutes(Math.max(0, Date.now() - auto.startedAt))} of ${asMinutes(auto.limits.timeoutMs)}`
-                  : `limit ${asMinutes(auto.limits.timeoutMs)}`}
+                  ? t("{used} of {max}", {
+                      used: asMinutes(Math.max(0, Date.now() - auto.startedAt)),
+                      max: asMinutes(auto.limits.timeoutMs),
+                    })
+                  : t("limit {max}", { max: asMinutes(auto.limits.timeoutMs) })}
               </span>
             </div>
           )}
           {auto.lastInjection && (
             <div className="kv">
-              <span className="k">Last continued</span>
+              <span className="k">{t("Last continued")}</span>
               <span className="v faint">
                 {injectionReasonText(auto.lastInjection.reason)} · {hhmmEpoch(auto.lastInjection.at)}
               </span>
             </div>
           )}
           {auto.lastGateFailure?.command && (
-            <div className="ierr">last check failed · {trunc(auto.lastGateFailure.command, 40)}</div>
+            <div className="ierr">
+              {t("last check failed · {command}", {
+                command: trunc(auto.lastGateFailure.command, 40),
+              })}
+            </div>
           )}
           {online && (
             <div className="brow">
               <button className="btn" onClick={() => toggleUnattended(false)}>
-                turn off
+                {t("turn off")}
               </button>
             </div>
           )}
@@ -332,11 +389,45 @@ export function Inspector(props: {
         online && (
           <div className="panel">
             <div className="phead">
-              <span>Unattended</span>
-              <code>off</code>
+              <span>{t("Unattended")}</span>
+              <code>{t("off")}</code>
+            </div>
+            <div className="lims">
+              <label>
+                <span>{t("turns")}</span>
+                <input
+                  value={limTurns}
+                  placeholder={UNATTENDED_DEFAULTS.turns}
+                  onChange={(e) => setLimTurns(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>{t("tokens")}</span>
+                <input
+                  value={limTokens}
+                  placeholder={UNATTENDED_DEFAULTS.tokens}
+                  onChange={(e) => setLimTokens(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>{t("time")}</span>
+                <input
+                  value={limTime}
+                  placeholder={UNATTENDED_DEFAULTS.time}
+                  onChange={(e) => setLimTime(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>{t("continued")}</span>
+                <input
+                  value={limCont}
+                  placeholder={UNATTENDED_DEFAULTS.continued}
+                  onChange={(e) => setLimCont(e.target.value)}
+                />
+              </label>
             </div>
             <button className="btn" onClick={() => toggleUnattended(true)}>
-              turn unattended on
+              {t("turn unattended on")}
             </button>
             {autoErr && <div className="ierr">{autoErr}</div>}
           </div>
@@ -346,29 +437,31 @@ export function Inspector(props: {
       {(props.heartbeats.length > 0 || crons.length > 0 || online) && (
         <div className="panel">
           <div className="phead">
-            <span>Re-entry</span>
+            <span>{t("Re-entry")}</span>
           </div>
           {props.heartbeats.map((h) => (
             <div className="kv hbrow" key={h.id} title={h.prompt}>
               <span className="k">
-                {h.source === "rlm_heartbeat" ? "check-in · agent" : "check-in"}
+                {t(h.source === "rlm_heartbeat" ? "check-in · agent" : "check-in")}
               </span>
               <span className="v faint">
-                {h.status === "paused" ? "paused" : `next ${hbWhen(h.nextRunAt) || "soon"}`}
+                {h.status === "paused"
+                  ? t("paused")
+                  : t("next {when}", { when: hbWhen(h.nextRunAt) || t("soon") })}
               </span>
               {h.source !== "rlm_heartbeat" && online && (
                 <span className="hbops">
                   {h.status === "paused" ? (
                     <button className="btn xs" onClick={() => updateCheckin("resume")}>
-                      resume
+                      {t("resume")}
                     </button>
                   ) : (
                     <button className="btn xs" onClick={() => updateCheckin("pause")}>
-                      pause
+                      {t("pause")}
                     </button>
                   )}
                   <button className="btn xs" onClick={() => updateCheckin("clear")}>
-                    clear
+                    {t("clear")}
                   </button>
                 </span>
               )}
@@ -382,13 +475,13 @@ export function Inspector(props: {
             return (
               <div className="kv hbrow" key={c.id} title={c.prompt}>
                 <span className="k">
-                  sched{c.schedule?.expression ? ` · ${c.schedule.expression}` : ""}
+                  {t("sched")}{c.schedule?.expression ? ` · ${c.schedule.expression}` : ""}
                 </span>
-                <span className="v faint">{next ? `next ${next}` : c.status}</span>
+                <span className="v faint">{next ? t("next {when}", { when: next }) : t(c.status)}</span>
                 {online && (
                   <span className="hbops">
                     <button className="btn xs" onClick={() => cancelCron(c.id)}>
-                      cancel
+                      {t("cancel")}
                     </button>
                   </span>
                 )}
@@ -398,7 +491,7 @@ export function Inspector(props: {
           {online && (
             <input
               className="iin"
-              placeholder="new check-in… (every 30m: instruction)"
+              placeholder={t("new check-in… (every 30m: instruction)")}
               value={hbText}
               onChange={(e) => setHbText(e.target.value)}
               onKeyDown={(e) => {
@@ -412,16 +505,16 @@ export function Inspector(props: {
 
       <div className="panel">
         <div className="phead">
-          <span>Learned</span>
+          <span>{t("Learned")}</span>
         </div>
         {learned && (
           <>
             <div className="kv">
-              <span className="k">Today</span>
+              <span className="k">{t("Today")}</span>
               <span className="v">{learned.today}</span>
             </div>
             <div className="kv">
-              <span className="k">Last lesson</span>
+              <span className="k">{t("Last lesson")}</span>
               <span className="v faint">{learned.last}</span>
             </div>
           </>
@@ -432,14 +525,16 @@ export function Inspector(props: {
           typeof autoRefine.lastReviewAt === "number" &&
           typeof autoRefine.cooldownMs === "number" && (
             <div className="kv">
-              <span className="k">Next review</span>
+              <span className="k">{t("Next review")}</span>
               <span className="v faint">
-                not before {stamp(new Date(autoRefine.lastReviewAt + autoRefine.cooldownMs))}
+                {t("not before {at}", {
+                  at: stamp(new Date(autoRefine.lastReviewAt + autoRefine.cooldownMs)),
+                })}
               </span>
             </div>
           )}
         <button className="open" onClick={props.onOpenLearn}>
-          open learned →
+          {t("open learned →")}
         </button>
       </div>
     </aside>

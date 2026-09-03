@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PreviewFile, PreviewVersion, TimelineItem } from "../types";
 import { fetchPreviewText, previewFileUrl } from "../runtime/preview";
+import { useT } from "../i18n";
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -18,6 +19,7 @@ function kindOf(name: string): "html" | "md" | "png" | "pdf" | null {
 
 /** One version pane: md as plain text, html in a sandboxed iframe, png/pdf raw. */
 function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null; current: boolean }) {
+  const t = useT();
   const { file, version } = props;
   const kind = kindOf(file.name);
   const v = version?.label;
@@ -38,18 +40,18 @@ function VersionPane(props: { file: PreviewFile; version: PreviewVersion | null;
   const body = () => {
     if (kind === "png") return <img className="vimg" src={previewFileUrl(file.path, v)} alt={file.name} />;
     if (kind === "pdf") return <embed className="vframe" src={previewFileUrl(file.path, v)} type="application/pdf" />;
-    if (text === null) return <div className="vempty">loading…</div>;
+    if (text === null) return <div className="vempty">{t("loading…")}</div>;
     if (kind === "html") return <iframe className="vframe" sandbox="" srcDoc={text} title={`${file.name} ${v ?? "live"}`} />;
     return <pre className="vdoc">{text}</pre>;
   };
 
   // Declared versions were explicitly published by the agent; say so.
-  const vlabel = version ? `${version.label}${version.declared ? " · published" : ""}` : null;
+  const vlabel = version ? `${version.label}${version.declared ? ` · ${t("published")}` : ""}` : null;
   return (
     <div className="vbox">
       <div className="vh">
-        <b>{vlabel ? (props.current ? `${vlabel} · current` : vlabel) : "live"}</b>
-        <span>{version ? fmtTime(version.at) : "unsaved this turn"}</span>
+        <b>{vlabel ? (props.current ? `${vlabel} · ${t("current")}` : vlabel) : t("live")}</b>
+        <span>{version ? fmtTime(version.at) : t("unsaved this turn")}</span>
       </div>
       {body()}
     </div>
@@ -62,6 +64,7 @@ export function PreviewView(props: {
   timeline: TimelineItem[];
   onSelect: (path: string) => void;
 }) {
+  const t = useT();
   const file =
     (props.selectedPath ? props.files.find((f) => f.path === props.selectedPath) : undefined) ??
     props.files[0];
@@ -71,7 +74,7 @@ export function PreviewView(props: {
       <div className="view">
         <div className="prev">
           <div className="colnote" style={{ padding: 0 }}>
-            nothing published yet — files an agent writes will preview here.
+            {t("nothing published yet — files an agent writes will preview here.")}
           </div>
         </div>
       </div>
@@ -118,7 +121,7 @@ export function PreviewView(props: {
             {file.label ?? file.name}
           </span>
           {file.label && file.label !== file.name && <span className="sub">{file.name}</span>}
-          {file.live && <span className="live">● live</span>}
+          {file.live && <span className="live">● {t("live")}</span>}
         </div>
         <div className={shown.length === 2 ? "vgrid" : "vgrid overlay"}>
           {shown.length === 0 ? (
@@ -132,7 +135,7 @@ export function PreviewView(props: {
         {from && to && between.length > 0 && (
           <div className="between">
             <div className="bh">
-              between {from.label} → {to.label}
+              {t("between {from} → {to}", { from: from.label, to: to.label })}
             </div>
             {between.map((e) =>
               e.kind === "tool" ? (
@@ -145,7 +148,11 @@ export function PreviewView(props: {
                 <div className="ev violet" key={e.id}>
                   <span className="ic" />
                   <strong>
-                    {e.kind === "lesson" ? `lesson kept · ${e.result.summary ?? e.result.id}` : e.kind === "divider" ? e.text : ""}
+                    {e.kind === "lesson"
+                      ? t("lesson kept · {summary}", { summary: e.result.summary ?? e.result.id })
+                      : e.kind === "divider"
+                        ? e.text
+                        : ""}
                   </strong>
                   <span className="rt" />
                 </div>

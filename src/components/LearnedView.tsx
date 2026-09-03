@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { LearnedSel } from "../types";
 import { lessonSourceText } from "../helperDisplay";
 import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
+import { getLang, useT } from "../i18n";
 
 export interface HarnessRefinement {
   id: string;
@@ -49,7 +50,8 @@ export function fetchLearned(): Promise<LearnedData> {
 function when(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const locale = getLang() === "zh" ? "zh-CN" : undefined;
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 /** A rollback is itself recorded as a refinement; those rows cannot be rolled back again. */
@@ -74,8 +76,11 @@ export function LearnedView(props: {
   epoch: number;
   onSelect: (s: LearnedSel | null) => void;
 }) {
+  const t = useT();
   const [data, setData] = useState<LearnedData | null>(null);
   const [rolled, setRolled] = useState<Record<string, "pending" | "done">>({});
+  /** Expanded history rows; the newest row defaults open. */
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   const [globalRun, setGlobalRun] = useState<"idle" | "pending" | "done">("idle");
   const [err, setErr] = useState<string | null>(null);
 
@@ -96,7 +101,7 @@ export function LearnedView(props: {
         const { [key]: _drop, ...rest } = m;
         return rest;
       });
-      setErr(e instanceof Error ? e.message : "roll back failed");
+      setErr(e instanceof Error ? e.message : t("roll back failed"));
     }
   };
 
@@ -111,7 +116,7 @@ export function LearnedView(props: {
       refresh();
     } catch (ex) {
       setGlobalRun("idle");
-      setErr(ex instanceof Error ? ex.message : "apply everywhere failed");
+      setErr(ex instanceof Error ? ex.message : t("apply everywhere failed"));
     }
   };
 
@@ -136,36 +141,36 @@ export function LearnedView(props: {
       <div className="learn">
         <div className="sec">
           <a className="lk" onClick={() => props.onSelect(null)}>
-            ← history
+            {t("← history")}
           </a>
         </div>
         <div className="edetail" style={{ marginTop: 0 }}>
           <div className="eh">
             <span className="id">
-              {sel.kind} · {sel.title ?? sel.id}
+              {t(sel.kind)} · {sel.title ?? sel.id}
             </span>
             <span className="tm">
-              <span className={sel.scope === "everywhere" ? "scope g" : "scope"}>{sel.scope}</span>
+              <span className={sel.scope === "everywhere" ? "scope g" : "scope"}>{t(sel.scope)}</span>
               {typeof sel.version === "number" ? ` · v${sel.version}` : ""}
-              {sel.updated_at ? ` · updated ${when(sel.updated_at)}` : ""}
+              {sel.updated_at ? ` · ${t("updated {when}", { when: when(sel.updated_at) })}` : ""}
               {selChangedBy
-                ? ` · last changed by ${selChangedBy.id.slice(0, 6)}`
-                : " · no lesson recorded this change"}
+                ? ` · ${t("last changed by {id}", { id: selChangedBy.id.slice(0, 6) })}`
+                : ` · ${t("no lesson recorded this change")}`}
             </span>
           </div>
           {sel.content ? (
             <pre className="econtent">{sel.content}</pre>
           ) : (
             <div className="colnote" style={{ padding: "8px 0 0" }}>
-              no content stored for this entry.
+              {t("no content stored for this entry.")}
             </div>
           )}
           {sel.scope !== "everywhere" ? (
             <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
               <button className="btn" onClick={() => applyEverywhere(sel)} disabled={globalRun !== "idle"}>
-                {globalRun === "done" ? "kept everywhere" : globalRun === "pending" ? "reviewing…" : "apply everywhere"}
+                {globalRun === "done" ? t("kept everywhere") : globalRun === "pending" ? t("reviewing…") : t("apply everywhere")}
               </button>
-              <span className="note">runs a new review — result may differ</span>
+              <span className="note">{t("runs a new review — result may differ")}</span>
             </div>
           ) : null}
         </div>
@@ -180,35 +185,82 @@ export function LearnedView(props: {
 
   return (
     <div className="learn">
-      <div className="sec">History</div>
+      <div className="sec">{t("History")}</div>
       {refinements.length === 0 ? (
         <div className="colnote" style={{ padding: "0 0 18px" }}>
-          no lessons yet. When master keeps a lesson it appears here — with its evidence, edits, and a
-          one-step roll back.
+          {t(
+            "no lessons yet. When master keeps a lesson it appears here — with its evidence, edits, and a one-step roll back.",
+          )}
         </div>
       ) : (
-        refinements.map((r) => {
+        refinements.map((r, i) => {
           const key = `${r.scope}-${r.id}`;
           const state = rolled[key];
+          // Rows expand to the full record; the newest one starts open.
+          const isOpen = open[key] ?? i === 0;
           return (
-            <div className="lrow" key={key}>
-              <span className="id">{r.id.slice(0, 6)}</span>
-              <span className="tm">{when(r.created_at)}</span>
-              <span className="tx">
-                {r.trigger ?? "lesson"} · <span className={r.scope === "everywhere" ? "scope g" : "scope"}>{r.scope}</span>
-                {/* machine source field, never inferred from the trigger text */}
-                {lessonSourceText(r.source) ? ` · from ${lessonSourceText(r.source)}` : ""}
-                {r.changes?.length ? ` · ${r.changes.length} edits` : ""}
-              </span>
-              <span className="op">
-                {isRollback(r) ? null : state === "done" ? (
-                  <span className="tm">rolled back</span>
-                ) : (
-                  <a className="lk" onClick={() => state !== "pending" && rollBack(key, r.id)}>
-                    {state === "pending" ? "rolling back…" : "roll back"}
-                  </a>
-                )}
-              </span>
+            <div key={key}>
+              <div
+                className={isOpen ? "lrow click on" : "lrow click"}
+                onClick={() => setOpen((m) => ({ ...m, [key]: !isOpen }))}
+              >
+                <span className="id">{r.id.slice(0, 6)}</span>
+                <span className="tm">{when(r.created_at)}</span>
+                <span className="tx">
+                  {r.trigger ?? t("lesson")} ·{" "}
+                  <span className={r.scope === "everywhere" ? "scope g" : "scope"}>{t(r.scope)}</span>
+                  {/* machine source field, never inferred from the trigger text */}
+                  {lessonSourceText(r.source) ? ` · ${t("from {source}", { source: lessonSourceText(r.source) as string })}` : ""}
+                  {r.changes?.length ? ` · ${t("{n} edits", { n: r.changes.length })}` : ""}
+                </span>
+                <span className="op">
+                  <span className="tm">{isOpen ? "▾" : "▸"}</span>
+                </span>
+              </div>
+              {isOpen && (
+                <div className="edetail" style={{ marginTop: 0, marginBottom: 10 }}>
+                  {r.trigger ? <div className="hfull">{r.trigger}</div> : null}
+                  {r.evidence ? (
+                    <div className="hkv">
+                      <span className="hk">{t("evidence")}</span>
+                      <span className="hv">{r.evidence}</span>
+                    </div>
+                  ) : null}
+                  {(r.changes ?? []).length > 0 ? (
+                    <div className="hkv">
+                      <span className="hk">{t("edits")}</span>
+                      <span className="hv">
+                        {(r.changes ?? []).map((c, j) => (
+                          <span className="hline" key={j}>
+                            {c}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  ) : null}
+                  {r.outcome ? (
+                    <div className="hkv">
+                      <span className="hk">{t("expected")}</span>
+                      <span className="hv">{r.outcome}</span>
+                    </div>
+                  ) : null}
+                  {isRollback(r) ? null : (
+                    <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
+                      {state === "done" ? (
+                        <span className="note">{t("rolled back")}</span>
+                      ) : (
+                        <button
+                          className="btn"
+                          disabled={state === "pending"}
+                          onClick={() => rollBack(key, r.id)}
+                        >
+                          {state === "pending" ? t("rolling back…") : t("roll back")}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })

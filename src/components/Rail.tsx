@@ -1,4 +1,5 @@
 import type { BridgeState, ColumnView } from "../types";
+import { useT } from "../i18n";
 
 export function Rail(props: {
   column: ColumnView;
@@ -11,14 +12,15 @@ export function Rail(props: {
   onLogo: () => void;
   onSettings: () => void;
 }) {
+  const t = useT();
   return (
     <nav className="rail">
-      <button className="logo" title={`${props.workspace} · switch workspace`} onClick={props.onLogo}>
+      <button className="logo" title={t("{ws} · switch workspace", { ws: props.workspace })} onClick={props.onLogo}>
         {props.workspace.slice(0, 1).toUpperCase()}
       </button>
       <button
         className={props.column === "agents" ? "rbtn on" : "rbtn"}
-        title="Agents"
+        title={t("Agents")}
         onClick={() => props.onColumn("agents")}
       >
         <svg viewBox="0 0 24 24">
@@ -28,7 +30,7 @@ export function Rail(props: {
       </button>
       <button
         className={props.column === "files" ? "rbtn on" : "rbtn"}
-        title="Files"
+        title={t("Files")}
         onClick={() => props.onColumn("files")}
       >
         <svg viewBox="0 0 24 24">
@@ -37,7 +39,7 @@ export function Rail(props: {
       </button>
       <button
         className={props.learnedOn ? "rbtn on" : "rbtn"}
-        title="Learned"
+        title={t("Learned")}
         onClick={props.onLearned}
       >
         <svg viewBox="0 0 24 24">
@@ -46,7 +48,7 @@ export function Rail(props: {
       </button>
       <button
         className={props.column === "skills" ? "rbtn on" : "rbtn"}
-        title="Skills"
+        title={t("Skills")}
         onClick={() => props.onColumn("skills")}
       >
         <svg viewBox="0 0 24 24">
@@ -55,7 +57,7 @@ export function Rail(props: {
       </button>
       <button
         className={props.column === "extensions" ? "rbtn on" : "rbtn"}
-        title="Extensions"
+        title={t("Extensions")}
         onClick={() => props.onColumn("extensions")}
       >
         <svg viewBox="0 0 24 24">
@@ -66,7 +68,7 @@ export function Rail(props: {
         </svg>
       </button>
       <div className="sp" />
-      <button className="uav" title="you · settings" onClick={props.onSettings}>
+      <button className="uav" title={t("you · settings")} onClick={props.onSettings}>
         Y<span className={props.bridge?.connected ? "udot" : "udot bad"} />
       </button>
     </nav>

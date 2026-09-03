@@ -1,4 +1,5 @@
 import type { ChildInfo } from "./types";
+import { t } from "./i18n";
 
 /** Clean identity hues (semantic green/red stay reserved for state). */
 export const IDENTITY_HUES = ["cyan", "amber", "violet", "blue", "rose"] as const;
@@ -65,24 +66,25 @@ function pick(pool: string[], seed: string): string {
 }
 
 /** The little self-tag under an agent's name: its own working line when it
- *  set one, else a stable bit of flavor for the state it's in. */
+ *  set one, else a stable bit of flavor for the state it's in. The pick is
+ *  seeded in English so the same agent keeps the same tag in either language. */
 export function flavorTag(name: string, word: string, working?: string): string {
-  if (working) return working;
+  if (working) return working; // the runtime's own words — never translated
   switch (word) {
     case "running":
-      return pick(RUN_TAGS, name);
+      return t(pick(RUN_TAGS, name));
     case "needs you":
-      return "waiting on you";
+      return t("waiting on you");
     case "replied":
-      return "left you a note";
+      return t("left you a note");
     case "failed":
-      return "tripped on something";
+      return t("tripped on something");
     case "stopped":
-      return "clocked out";
+      return t("clocked out");
     case "inactive":
-      return "off duty";
+      return t("off duty");
     default:
-      return pick(IDLE_TAGS, name);
+      return t(pick(IDLE_TAGS, name));
   }
 }
 
@@ -92,14 +94,14 @@ export function reachable(c: ChildInfo): boolean {
 
 /** Unattended injection reason → product words (HANDOFF §4: check, unattended). */
 export function injectionReasonText(reason: "gate_failed" | "missing_terminal_evidence"): string {
-  return reason === "gate_failed" ? "after a failed check" : "no evidence in the turn";
+  return reason === "gate_failed" ? t("after a failed check") : t("no evidence in the turn");
 }
 
 /** Lesson source → product words ("who asked for this lesson"). */
 export function lessonSourceText(source: string | undefined): string | null {
-  if (source === "auto") return "auto";
-  if (source === "manual") return "you asked";
-  if (source === "agent") return "the agent";
+  if (source === "auto") return t("auto");
+  if (source === "manual") return t("you asked");
+  if (source === "agent") return t("the agent");
   return null; // unknown/older record — say nothing rather than guess
 }
 

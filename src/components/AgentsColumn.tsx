@@ -3,6 +3,7 @@ import type { AgentState, ChildInfo, RootAgent } from "../types";
 import { flavorTag, helperName, hhmmEpoch, statusIcon, statusWord } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { bridgeCmd } from "../runtime/bridge";
+import { useLang, useT } from "../i18n";
 
 const ACTIVE = new Set(["queued", "running", "done"]);
 
@@ -52,6 +53,8 @@ export function AgentsColumn(props: {
   onSelectRoot: (name: string) => void;
   onRefreshOthers: () => void;
 }) {
+  const t = useT();
+  const lang = useLang();
   const groupKey = `agents-group:${props.workspace}`;
   const foldKey = `agents-fold:${props.workspace}`;
   const [showInactive, setShowInactive] = useState(false);
@@ -79,7 +82,7 @@ export function AgentsColumn(props: {
       setAdding(false);
       props.onRefreshOthers();
     } catch (e) {
-      setAddErr(e instanceof Error ? e.message : "create failed");
+      setAddErr(e instanceof Error ? e.message : t("create failed"));
     }
   };
 
@@ -140,6 +143,7 @@ export function AgentsColumn(props: {
     props.working,
     props.helperWorking,
     props.rootWorking,
+    lang,
   ]);
 
   /** parent of a node in the displayed tree (grouping override, else real family). */
@@ -250,7 +254,7 @@ export function AgentsColumn(props: {
             </span>
             {n.tag && <span className="tag">{n.tag}</span>}
           </span>
-          <span className={n.state.cls} title={n.state.word}>
+          <span className={n.state.cls} title={t(n.state.word)}>
             {n.state.glyph}
           </span>
         </div>
@@ -273,8 +277,8 @@ export function AgentsColumn(props: {
       }}
     >
       <div className="sec row">
-        <span>Agents</span>
-        <button className="plus" title="new agent" onClick={() => setAdding((v) => !v)}>
+        <span>{t("Agents")}</span>
+        <button className="plus" title={t("new agent")} onClick={() => setAdding((v) => !v)}>
           +
         </button>
       </div>
@@ -283,7 +287,7 @@ export function AgentsColumn(props: {
           <input
             autoFocus
             value={draft}
-            placeholder="new agent name…"
+            placeholder={t("new agent name…")}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && createAgent()}
           />
@@ -293,14 +297,14 @@ export function AgentsColumn(props: {
       {roots.map((n) => renderNode(n, 0))}
       {props.children.length === 0 && others.length === 0 && (
         <div className="colnote">
-          master runs this workspace.
+          {t("master runs this workspace.")}
           <br />
-          helpers appear here when it starts them.
+          {t("helpers appear here when it starts them.")}
         </div>
       )}
       {inactiveCount > 0 && (
         <button className="more" onClick={() => setShowInactive((v) => !v)}>
-          {inactiveCount} inactive · {showInactive ? "hide" : "show"}
+          {t("{n} inactive", { n: inactiveCount })} · {showInactive ? t("hide") : t("show")}
         </button>
       )}
     </aside>

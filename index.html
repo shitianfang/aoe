@@ -1,11 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prime Agent</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" />
-    <script>document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";</script>
+    <script>
+      var d = document.documentElement;
+      d.dataset.theme = localStorage.getItem("theme") || "light";
+      d.lang = (localStorage.getItem("lang") || "zh") === "en" ? "en" : "zh-CN";
+    </script>
   </head>
   <body>
     <div id="root"></div>

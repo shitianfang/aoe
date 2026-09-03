@@ -48,6 +48,7 @@ import {
 import { fetchPreviewFiles } from "./runtime/preview";
 import type { ChatMessage } from "./runtime/nim";
 import type { LearnedSel } from "./types";
+import { t as tr, useT } from "./i18n";
 
 let nextId = 1;
 const id = () => `t${nextId++}`;
@@ -283,7 +284,12 @@ function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
     }
     if (m.role === "user") out.push({ kind: "user", id: id(), text: m.text, at: hhmm(m.at) });
     else if (m.role === "assistant") out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at) });
-    else out.push({ kind: "note", id: id(), text: `msg ← ${m.from ?? "agent"}`, rt: hhmm(m.at) });
+    else out.push({
+      kind: "note",
+      id: id(),
+      text: tr("msg ← {from}", { from: m.from ?? "agent" }),
+      rt: hhmm(m.at),
+    });
   }
   return out;
 }
@@ -305,20 +311,25 @@ function foldHistory(items: TimelineItem[]): TimelineItem[] {
 function childTransitionEvents(prev: ChildInfo | undefined, next: ChildInfo): HelperEvent[] {
   const out: HelperEvent[] = [];
   if (!prev) {
-    out.push({ id: id(), tone: "", text: "started by master", rt: clock() });
+    out.push({ id: id(), tone: "", text: tr("started by master"), rt: clock() });
   }
   if (prev && !prev.repliedSinceTask && next.repliedSinceTask) {
-    out.push({ id: id(), tone: "good", text: "replied", rt: clock() });
+    out.push({ id: id(), tone: "good", text: tr("replied"), rt: clock() });
   }
   if (prev && prev.status !== next.status) {
     if (next.status === "done" && !next.repliedSinceTask) {
-      out.push({ id: id(), tone: "bad", text: "finished without replying", rt: clock() });
+      out.push({ id: id(), tone: "bad", text: tr("finished without replying"), rt: clock() });
     } else if (next.status === "done") {
-      out.push({ id: id(), tone: "", text: "finished", rt: clock() });
+      out.push({ id: id(), tone: "", text: tr("finished"), rt: clock() });
     } else if (next.status === "error") {
-      out.push({ id: id(), tone: "bad", text: next.error ? `failed · ${next.error}` : "failed", rt: clock() });
+      out.push({
+        id: id(),
+        tone: "bad",
+        text: next.error ? tr("failed · {error}", { error: next.error }) : tr("failed"),
+        rt: clock(),
+      });
     } else if (next.status === "cancelled") {
-      out.push({ id: id(), tone: "", text: "stopped", rt: clock() });
+      out.push({ id: id(), tone: "", text: tr("stopped"), rt: clock() });
     }
   }
   return out;
@@ -352,13 +363,20 @@ export function App() {
     heartbeats: [],
     autonomous: null,
     target: { kind: "master" },
-    timeline: [{ kind: "divider", id: id(), text: `session started · ${clock()}` }],
+    timeline: [{ kind: "divider", id: id(), text: tr("session started · {at}", { at: clock() }) }],
   }));
+  const tt = useT();
   const [wsOpen, setWsOpen] = useState(false);
   // Learned: the entry the left column selected (detail in the center pane),
   // and a counter bumped per kept lesson so column + pane re-pull.
   const [learnedSel, setLearnedSel] = useState<LearnedSel | null>(null);
   const [lessonEpoch, setLessonEpoch] = useState(0);
+  // Split width: the left pane's share [0.2, 0.8], persisted per workspace.
+  const ratioKey = `pane-ratio:${state.bridge?.workspace || "general"}`;
+  const [paneRatio, setPaneRatio] = useState(0.5);
+  useEffect(() => {
+    setPaneRatio(loadJson(ratioKey, 0.5));
+  }, [ratioKey]);
   // Bumped when the bridge-pulled rows the inspector owns (scheduled re-entries,
   // lessons) may have moved: attach, heartbeats_changed, refine_complete.
   const [inspectorKey, setInspectorKey] = useState(0);
@@ -723,7 +741,13 @@ export function App() {
         if (!p) return;
         const resolved = p.path ?? p.source ?? "";
         const base = resolved.split(/[\\/]/).pop() || "file";
-        push({ kind: "note", id: id(), text: `published · ${p.label || base}`, rt: clock(), ts: Date.now() });
+        push({
+          kind: "note",
+          id: id(),
+          text: tr("published · {label}", { label: p.label || base }),
+          rt: clock(),
+          ts: Date.now(),
+        });
         if (resolved) {
           declaredRef.current.add(resolved);
           if (p.kind === "file") {
@@ -739,24 +763,10 @@ export function App() {
         if (result?.id) {
           push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
         } else {
-          push({ kind: "note", id: id(), text: "lesson kept", rt: clock(), ts: Date.now() });
+          push({ kind: "note", id: id(), text: tr("lesson kept"), rt: clock(), ts: Date.now() });
         }
-        // The AI learned something — pop the Learned pane into the second
-        // pane without stealing focus, showing the entry this lesson touched
-        // (falls back to the history list when no edit was recorded, or the
-        // stale selection would otherwise linger).
-        const edit =
-          result?.appliedEdits?.find((e) => e.applied !== false) ?? result?.appliedEdits?.[0];
-        setLearnedSel(
-          edit
-            ? {
-                scope: result?.scope === "global" ? "everywhere" : "this workspace",
-                kind: edit.kind,
-                id: edit.id,
-              }
-            : null,
-        );
-        setState((s) => popPane(s, { kind: "learned" }));
+        // No auto-pop: the lesson card lands in the timeline and the Learned
+        // column re-pulls; the pane opens only when the user clicks a row.
       } else if (t === "refine_failed") {
         const raw = event.error;
         const msg =
@@ -937,7 +947,7 @@ export function App() {
             autonomous: null,
             target: { kind: "master" },
             error: undefined,
-            timeline: [{ kind: "divider", id: id(), text: `workspace ${ws} · ${clock()}` }],
+            timeline: [{ kind: "divider", id: id(), text: tr("workspace {ws} · {at}", { ws, at: clock() }) }],
             ...restoreSplit(splitKey),
           };
         });
@@ -1146,7 +1156,7 @@ export function App() {
 
   const stopHelperById = useCallback((childId: string) => {
     stopHelper(childId).catch((e) =>
-      setState((s) => ({ ...s, error: e instanceof Error ? e.message : "stop failed" })),
+      setState((s) => ({ ...s, error: e instanceof Error ? e.message : tr("stop failed") })),
     );
   }, []);
 
@@ -1161,7 +1171,7 @@ export function App() {
             s.target.kind === "helper" && s.target.childId === childId ? { kind: "master" } : s.target,
         })),
       )
-      .catch((e) => setState((s) => ({ ...s, error: e instanceof Error ? e.message : "remove failed" })));
+      .catch((e) => setState((s) => ({ ...s, error: e instanceof Error ? e.message : tr("remove failed") })));
   }, []);
 
   const sendToHelper = useCallback(async (child: ChildInfo, text: string) => {
@@ -1172,7 +1182,10 @@ export function App() {
         id: id(),
         tone: "",
         text: `msg ← you · “${text}”`,
-        rt: status === "queued" ? "queued, lands at its next step" : `delivered · ${clock()}`,
+        rt:
+          status === "queued"
+            ? tr("queued, lands at its next step")
+            : tr("delivered · {at}", { at: clock() }),
       };
       setState((s) => ({
         ...s,
@@ -1180,7 +1193,7 @@ export function App() {
         helperEvents: { ...s.helperEvents, [child.id]: [...(s.helperEvents[child.id] ?? []), ev] },
       }));
     } catch (e) {
-      setState((s) => ({ ...s, error: e instanceof Error ? e.message : "message failed" }));
+      setState((s) => ({ ...s, error: e instanceof Error ? e.message : tr("message failed") }));
     }
   }, []);
 
@@ -1226,7 +1239,10 @@ export function App() {
       if (aborted) {
         setState((s) => ({
           ...s,
-          timeline: [...s.timeline, { kind: "divider", id: id(), text: `stopped by you · ${clock()}` }],
+          timeline: [
+            ...s.timeline,
+            { kind: "divider", id: id(), text: tr("stopped by you · {at}", { at: clock() }) },
+          ],
         }));
       }
     } finally {
@@ -1255,7 +1271,7 @@ export function App() {
     } catch (e) {
       setState((s) => ({
         ...s,
-        error: e instanceof Error ? e.message : "bridge command failed",
+        error: e instanceof Error ? e.message : tr("bridge command failed"),
       }));
     }
   }, []);
@@ -1300,7 +1316,7 @@ export function App() {
         } catch (e) {
           setState((s) => ({
             ...s,
-            error: e instanceof Error ? e.message : "bridge command failed",
+            error: e instanceof Error ? e.message : tr("bridge command failed"),
           }));
         }
         return;
@@ -1474,10 +1490,10 @@ export function App() {
       id: `rload-${name}`,
       text:
         load === undefined
-          ? "attaching · loading history…"
+          ? tt("attaching · loading history…")
           : load === "partial"
-            ? "attached mid-run · catching up…"
-            : "no conversation yet",
+            ? tt("attached mid-run · catching up…")
+            : tt("no conversation yet"),
     };
     return (
       <>
@@ -1486,13 +1502,12 @@ export function App() {
             <BotAvatar seed={name} />
             <span className="nm">{name}</span>
             <span className="rel">
-              root agent ·{" "}
               {rs === "working" ? (
-                <span className="run">running</span>
+                <span className="run">{tt("running")}</span>
               ) : other?.state === "inactive" && load === undefined ? (
-                <>inactive · a message wakes it</>
+                <>{tt("inactive · a message wakes it")}</>
               ) : (
-                <>idle</>
+                <>{tt("idle")}</>
               )}
             </span>
           </div>
@@ -1505,7 +1520,9 @@ export function App() {
   /** One pane's content. */
   const paneBody = (p: PaneView) => {
     if (p.kind === "empty") {
-      return <div className="pnote">nothing open — pick an agent on the left, or drag one here</div>;
+      return (
+        <div className="pnote">{tt("nothing open — pick an agent on the left, or drag one here")}</div>
+      );
     }
     if (p.kind === "learned") return <LearnedView sel={learnedSel} epoch={lessonEpoch} onSelect={setLearnedSel} />;
     if (p.kind === "preview") {
@@ -1525,7 +1542,7 @@ export function App() {
         // it away — until then, say so instead of inventing content.
         return (
           <div className="transcript">
-            <div className="div">helper no longer here</div>
+            <div className="div">{tt("helper no longer here")}</div>
           </div>
         );
       }
@@ -1550,8 +1567,12 @@ export function App() {
             <span className="chip master" />
             <span className="nm">master</span>
             <span className="rel">
-              runs this workspace ·{" "}
-              {state.master === "working" ? <span className="run">running</span> : <>idle</>}
+              {tt("runs this workspace")} ·{" "}
+              {state.master === "working" ? (
+                <span className="run">{tt("running")}</span>
+              ) : (
+                <>{tt("idle")}</>
+              )}
             </span>
           </div>
         </div>
@@ -1563,11 +1584,11 @@ export function App() {
   const focusedPane = currentPane(state);
 
   const paneTitle = (p: PaneView): string => {
-    if (p.kind === "learned") return "Learned";
-    if (p.kind === "preview") return "Preview";
+    if (p.kind === "learned") return tt("Learned");
+    if (p.kind === "preview") return tt("Preview");
     if (p.kind === "helper") {
       const c = state.children.find((x) => x.id === p.childId);
-      return c ? helperName(c) : "helper";
+      return c ? helperName(c) : tt("helper");
     }
     if (p.kind === "root") return p.name;
     if (p.kind === "empty") return "";
@@ -1582,14 +1603,46 @@ export function App() {
     return null;
   };
 
+  /** Drag the gutter to resize the split; double-click resets to 50/50. */
+  const gutterDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const panes = e.currentTarget.parentElement;
+    if (!panes) return;
+    const rect = panes.getBoundingClientRect();
+    document.body.classList.add("resizing");
+    const move = (ev: MouseEvent) => {
+      const r = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
+      setPaneRatio(r);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.classList.remove("resizing");
+      setPaneRatio((r) => {
+        saveJson(ratioKey, r);
+        return r;
+      });
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
   const center = () => {
     if (state.split) {
-      // Two panes, fixed 50/50, separated by the recessed gutter color; each
-      // pane carries its own tab group and (for conversations) its own input.
+      // Two panes split by a draggable gutter; each pane carries its own tab
+      // group and (for conversations) its own input.
       const fs = state.split.focusSide;
       return (
         <div className="panes">
           {renderPane("left", fs !== "left")}
+          <div
+            className="gutter"
+            onMouseDown={gutterDown}
+            onDoubleClick={() => {
+              setPaneRatio(0.5);
+              saveJson(ratioKey, 0.5);
+            }}
+          />
           {renderPane("right", fs !== "right")}
         </div>
       );
@@ -1674,7 +1727,7 @@ export function App() {
             {paneTitle(t)}
             <button
               className="tx"
-              title="close"
+              title={tt("close")}
               onClick={(e) => {
                 e.stopPropagation();
                 closeTab(side, t);
@@ -1690,10 +1743,12 @@ export function App() {
 
   const renderPane = (side: "left" | "right" | null, away: boolean) => {
     const p = side === null ? focusedPane : (activeOf(state, side) ?? { kind: "empty" as const });
+    const grow = side === "left" ? paneRatio : side === "right" ? 1 - paneRatio : 1;
     return (
       <div
         key={side ?? "solo"}
         className={away ? "pane away" : "pane"}
+        style={{ flexGrow: grow }}
         onMouseDownCapture={side ? () => focusPane(side) : undefined}
       >
         {paneTabs(side, p)}
@@ -1770,7 +1825,12 @@ export function App() {
           heartbeats={state.heartbeats}
           autonomous={state.autonomous}
           refreshKey={inspectorKey}
-          onOpenLearn={() => setState((s) => popPane({ ...s, column: "learned" }, { kind: "learned" }))}
+          onOpenLearn={() => {
+            // Fresh look at the history (newest record opens expanded), not a
+            // stale entry selection from an earlier click.
+            setLearnedSel(null);
+            setState((s) => popPane({ ...s, column: "learned" }, { kind: "learned" }));
+          }}
         />
       </div>
     </div>

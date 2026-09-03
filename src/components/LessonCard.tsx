@@ -2,18 +2,20 @@ import { useState } from "react";
 import type { LessonResult } from "../types";
 import { lessonSourceText } from "../helperDisplay";
 import { bridgeCmd } from "../runtime/bridge";
+import { useT } from "../i18n";
 
 /** Expanded view of one kept lesson (RefinementResult). Everything shown is
  *  real mechanism: rationale is the harness's own evidence text, expected is
  *  never verified by the system, and roll back / apply everywhere are the two
  *  operations the runtime actually offers (rollbackId / global refine). */
 export function LessonCard(props: { result: LessonResult; at?: string }) {
+  const t = useT();
   const r = props.result;
   const [rollback, setRollback] = useState<"idle" | "pending" | "done">("idle");
   const [globalRun, setGlobalRun] = useState<"idle" | "pending" | "done">("idle");
   const [err, setErr] = useState<string | null>(null);
 
-  const scopeLabel = r.scope === "global" ? "kept everywhere" : "kept for this workspace";
+  const scopeLabel = r.scope === "global" ? t("kept everywhere") : t("kept for this workspace");
   // Machine source field (schema 27) — older lessons carry none; say nothing then.
   const sourceLabel = lessonSourceText(r.source);
 
@@ -25,7 +27,7 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
       setRollback("done");
     } catch (e) {
       setRollback("idle");
-      setErr(e instanceof Error ? e.message : "roll back failed");
+      setErr(e instanceof Error ? e.message : t("roll back failed"));
     }
   };
 
@@ -39,7 +41,7 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
       setGlobalRun("done");
     } catch (e) {
       setGlobalRun("idle");
-      setErr(e instanceof Error ? e.message : "apply everywhere failed");
+      setErr(e instanceof Error ? e.message : t("apply everywhere failed"));
     }
   };
 
@@ -50,31 +52,31 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
         <span>
           {props.at ? `${props.at} · ` : ""}
           {scopeLabel}
-          {sourceLabel ? ` · from ${sourceLabel}` : ""}
-          {r.rollbackOf ? ` · rolls back ${r.rollbackOf}` : ""}
+          {sourceLabel ? ` · ${t("from {source}", { source: sourceLabel })}` : ""}
+          {r.rollbackOf ? ` · ${t("rolls back {id}", { id: r.rollbackOf })}` : ""}
         </span>
       </div>
       <div className="lb">
-        <span className="ll">summary</span>
+        <span className="ll">{t("summary")}</span>
         <span className="lv">
           <b>{r.summary ?? r.id}</b>
         </span>
         {r.rationale ? (
           <>
-            <span className="ll">evidence</span>
+            <span className="ll">{t("evidence")}</span>
             <span className="lv">{r.rationale}</span>
           </>
         ) : null}
-        <span className="ll">edits</span>
+        <span className="ll">{t("edits")}</span>
         <span className="lv">
           {(r.appliedEdits ?? []).length === 0
-            ? "none recorded"
+            ? t("none recorded")
             : (r.appliedEdits ?? []).map((e) => (
                 <span className="edit" key={e.id}>
                   {e.kind} · {e.title}
                   {/* real results may omit `applied`; only an explicit false means failure */}
                   {e.applied === false ? (
-                    <span className="dim"> — not applied{e.error ? ` · ${e.error}` : ""}</span>
+                    <span className="dim"> — {t("not applied")}{e.error ? ` · ${e.error}` : ""}</span>
                   ) : null}
                   {e.before ? <span className="dl del">− {e.before}</span> : null}
                   {e.after ? <span className="dl add">+ {e.after}</span> : null}
@@ -84,23 +86,27 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
         </span>
         {r.expectedOutcome ? (
           <>
-            <span className="ll">expected</span>
+            <span className="ll">{t("expected")}</span>
             <span className="lv">
-              {r.expectedOutcome} <span className="dim">(not checked by the system)</span>
+              {r.expectedOutcome} <span className="dim">{t("(not checked by the system)")}</span>
             </span>
           </>
         ) : null}
       </div>
       <div className="lf">
         <button className="btn" onClick={doRollback} disabled={rollback !== "idle"}>
-          {rollback === "done" ? "rolled back" : rollback === "pending" ? "rolling back…" : `roll back ${r.id}`}
+          {rollback === "done"
+            ? t("rolled back")
+            : rollback === "pending"
+              ? t("rolling back…")
+              : t("roll back {id}", { id: r.id })}
         </button>
         {r.scope !== "global" ? (
           <button className="btn" onClick={doGlobal} disabled={globalRun !== "idle"}>
-            {globalRun === "done" ? "kept everywhere" : globalRun === "pending" ? "reviewing…" : "apply everywhere"}
+            {globalRun === "done" ? t("kept everywhere") : globalRun === "pending" ? t("reviewing…") : t("apply everywhere")}
           </button>
         ) : null}
-        <span className="note">{err ? <span className="err">{err}</span> : "runs a new review — result may differ"}</span>
+        <span className="note">{err ? <span className="err">{err}</span> : t("runs a new review — result may differ")}</span>
       </div>
     </div>
   );

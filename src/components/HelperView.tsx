@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
 import { helperName, hhmmEpoch, reachable } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
+import { t, useT } from "../i18n";
 
 function hhmm(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -15,40 +16,42 @@ function stateLine(c: ChildInfo): JSX.Element {
   // Real terminal timestamp (schema 27); absent on older daemons or on
   // helpers rehydrated after a restart — then the word stands alone.
   const done = typeof c.completedAt === "number" ? ` ${hhmmEpoch(c.completedAt)}` : "";
-  if (c.status === "queued") return <>queued · not yet started</>;
+  if (c.status === "queued") return <>{t("queued · not yet started")}</>;
   if (c.status === "running") {
     return (
       <>
-        <span className="run">running</span> · {c.repliedSinceTask ? "replied" : "not yet replied"}
+        <span className="run">{t("running")}</span> ·{" "}
+        {t(c.repliedSinceTask ? "replied" : "not yet replied")}
       </>
     );
   }
   if (c.status === "done") {
-    if (c.repliedSinceTask) return <>finished{done} · replied</>;
+    if (c.repliedSinceTask) return <>{t("finished{done}", { done })} · {t("replied")}</>;
     return (
       <>
-        finished{done} · <span className="need">no reply yet</span> ·{" "}
-        {reachable(c) ? "still reachable" : "ran inline, not reachable"}
+        {t("finished{done}", { done })} · <span className="need">{t("no reply yet")}</span> ·{" "}
+        {t(reachable(c) ? "still reachable" : "ran inline, not reachable")}
       </>
     );
   }
   if (c.status === "error") {
     return (
       <>
-        <span className="need">failed{done}</span>
+        <span className="need">{t("failed{done}", { done })}</span>
         {c.error ? <> · {c.error}</> : null}
       </>
     );
   }
-  return <>stopped{done}</>;
+  return <>{t("stopped{done}", { done })}</>;
 }
 
 function stripLine(c: ChildInfo): string {
-  const base = "own cost billed to master";
-  if (c.status === "running" || c.status === "queued") return `${base} · running`;
-  if (c.status === "done") return reachable(c) ? `${base} · finished` : `${base} · ran inline, not reachable`;
-  if (c.status === "error") return `${base} · failed`;
-  return `${base} · stopped`;
+  const base = t("own cost billed to master");
+  if (c.status === "running" || c.status === "queued") return `${base} · ${t("running")}`;
+  if (c.status === "done")
+    return `${base} · ${t(reachable(c) ? "finished" : "ran inline, not reachable")}`;
+  if (c.status === "error") return `${base} · ${t("failed")}`;
+  return `${base} · ${t("stopped")}`;
 }
 
 export function HelperView(props: {
@@ -62,6 +65,7 @@ export function HelperView(props: {
   onRemove: (childId: string) => void;
   onSend: (child: ChildInfo, text: string) => void;
 }) {
+  const t = useT();
   const c = props.child;
   const name = helperName(c);
   const running = c.status === "running" || c.status === "queued";
@@ -70,10 +74,10 @@ export function HelperView(props: {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
-    const t = text.trim();
-    if (!t || !canMessage) return;
+    const msg = text.trim();
+    if (!msg || !canMessage) return;
     setText("");
-    props.onSend(c, t);
+    props.onSend(c, msg);
   };
 
   return (
@@ -82,35 +86,35 @@ export function HelperView(props: {
         <div className="r1">
           <BotAvatar seed={name} />
           <span className="nm">{name}</span>
-          <span className="rel">helper · {stateLine(c)}</span>
+          <span className="rel">{t("helper")} · {stateLine(c)}</span>
           <span className="act">
             {running ? (
               <button className="btn" onClick={() => props.onStop(c.id)}>
-                stop helper
+                {t("stop helper")}
               </button>
             ) : (
               <button className="btn" onClick={() => props.onRemove(c.id)}>
-                remove helper
+                {t("remove helper")}
               </button>
             )}
           </span>
         </div>
-        {c.label && <div className="r3">Task — “{c.label}”</div>}
+        {c.label && <div className="r3">{t("Task — “{label}”", { label: c.label })}</div>}
       </div>
       <div className="transcript hevents">
         {/* Live transcript from the helper's own session (second attach on the
             daemon socket). Only helpers with an activeSessionId are watchable. */}
         {!reachable(c) ? (
-          <div className="div">not reachable — ran inline or removed</div>
+          <div className="div">{t("not reachable — ran inline or removed")}</div>
         ) : props.transcript.length === 0 ? (
-          <div className="div">transcript · nothing yet</div>
+          <div className="div">{t("transcript · nothing yet")}</div>
         ) : (
           props.transcript.map((row, i) =>
             row.kind === "tool" ? (
               <div className={row.status === "error" ? "ev bad" : "ev"} key={`tr${i}`}>
                 <span className="ic" />
                 <strong>{row.name === "ipython" ? "python" : row.name}</strong>
-                <span className={row.status === "done" ? "rt ok" : "rt"}>{row.status}</span>
+                <span className={row.status === "done" ? "rt ok" : "rt"}>{t(row.status)}</span>
               </div>
             ) : row.role === "assistant" ? (
               <div className="msg" key={`tr${i}`}>
@@ -134,9 +138,9 @@ export function HelperView(props: {
           )
         )}
         {props.working ? <div className="div">{props.working.toLowerCase()}</div> : null}
-        <div className="div">observed</div>
+        <div className="div">{t("observed")}</div>
         {props.events.length === 0 ? (
-          <div className="div">nothing observed yet</div>
+          <div className="div">{t("nothing observed yet")}</div>
         ) : (
           props.events.map((e) => (
             <div className={e.tone ? `ev ${e.tone}` : "ev"} key={e.id}>
@@ -153,18 +157,22 @@ export function HelperView(props: {
           <input
             ref={inputRef}
             value={text}
-            placeholder={canMessage ? `Message ${name}…` : `${name} ran inline — not reachable`}
+            placeholder={
+              canMessage
+                ? t("Message {name}…", { name })
+                : t("{name} ran inline — not reachable", { name })
+            }
             disabled={!canMessage}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
             <div className="dmode">
-              <span className="static">delivered now</span>
+              <span className="static">{t("delivered now")}</span>
             </div>
-            <span className="to">to {name}</span>
+            <span className="to">{t("to {name}", { name })}</span>
             <button className="send" onClick={submit} disabled={!canMessage}>
-              SEND
+              {t("SEND")}
             </button>
           </div>
         </div>

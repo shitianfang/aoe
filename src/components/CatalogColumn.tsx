@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { bridgeUrl } from "../runtime/bridge";
 import type { CatalogItem } from "../types";
+import { useT } from "../i18n";
 
 /** Read-only left column for the runtime's catalogs (Skills, Extensions):
  *  what is loaded, nothing more — no install, enable or edit affordances. */
 function CatalogColumn(props: { title: string; path: string; empty: string }) {
+  const t = useT();
   const [items, setItems] = useState<CatalogItem[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -22,8 +24,8 @@ function CatalogColumn(props: { title: string; path: string; empty: string }) {
 
   return (
     <aside className="col2">
-      <div className="sec">{props.title}</div>
-      {items !== null && items.length === 0 && <div className="colnote">{props.empty}</div>}
+      <div className="sec">{t(props.title)}</div>
+      {items !== null && items.length === 0 && <div className="colnote">{t(props.empty)}</div>}
       {(items ?? []).map((it, i) => (
         <div className="f ro" key={`${it.name}-${i}`} title={it.detail || it.name}>
           <div className="fn">{it.name}</div>

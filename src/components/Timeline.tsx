@@ -2,18 +2,20 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { LessonResult, TimelineItem } from "../types";
 import { LessonCard } from "./LessonCard";
+import { useT } from "../i18n";
 
 /** "lesson kept · summary · [view]" — view expands the full card inline. */
 function LessonRow(props: { result: LessonResult; at: string }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="lwrap">
       <div className="ev good">
         <span className="ic" />
-        <strong>lesson kept · {props.result.summary ?? props.result.id}</strong>
+        <strong>{t("lesson kept · {summary}", { summary: props.result.summary ?? props.result.id })}</strong>
         <span className="rt">
           <a className="lk" onClick={() => setOpen((v) => !v)}>
-            {open ? "hide" : "view"}
+            {open ? t("hide") : t("view")}
           </a>
           {` · ${props.at}`}
         </span>
@@ -24,6 +26,7 @@ function LessonRow(props: { result: LessonResult; at: string }) {
 }
 
 export function Timeline(props: { items: TimelineItem[] }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Expanded collapsed-history blocks, by item id. Local state: folding is a
   // view concern and re-collapsing on data changes would be hostile.
@@ -45,7 +48,7 @@ export function Timeline(props: { items: TimelineItem[] }) {
           key={item.id}
           onClick={() => setExpanded((e) => ({ ...e, [item.id]: true }))}
         >
-          {item.count} earlier turns · show
+          {t("{count} earlier turns · show", { count: item.count })}
         </div>
       );
     }
@@ -62,7 +65,7 @@ export function Timeline(props: { items: TimelineItem[] }) {
           <span className="ic" />
           <strong>{item.name}</strong>
           <span className={item.status === "done" ? "rt ok" : "rt"}>
-            {item.status === "running" ? "running…" : `${item.status} · ${item.at}`}
+            {item.status === "running" ? t("running…") : `${t(item.status)} · ${item.at}`}
           </span>
         </div>
       );

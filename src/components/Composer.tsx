@@ -11,12 +11,13 @@ import type {
 } from "../types";
 import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
+import { t, useT } from "../i18n";
 
 function popupStatus(c: ChildInfo): string {
-  if (c.status === "running" || c.status === "queued") return "running";
-  if (c.status === "done") return c.repliedSinceTask ? "replied" : "no reply";
-  if (c.status === "error") return "failed";
-  return "stopped";
+  if (c.status === "running" || c.status === "queued") return t("running");
+  if (c.status === "done") return t(c.repliedSinceTask ? "replied" : "no reply");
+  if (c.status === "error") return t("failed");
+  return t("stopped");
 }
 
 function hhmm(iso?: string): string {
@@ -50,6 +51,7 @@ export function Composer(props: {
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
+  const t = useT();
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,11 +77,11 @@ export function Composer(props: {
   // The NIM fallback has no steer; while busy it can only stop.
   const canSendBusy = Boolean(props.bridge?.connected);
   const submit = () => {
-    const t = text.trim();
-    if (!t) return;
+    const msg = text.trim();
+    if (!msg) return;
     if (busy && !canSendBusy) return;
     setText("");
-    props.onSend(t);
+    props.onSend(msg);
   };
 
   const strip = () => {
@@ -87,38 +89,41 @@ export function Composer(props: {
     if (props.viewRoot) {
       // Viewing another root: its state where known, nothing invented.
       const segs: string[] = [
-        `${props.viewRoot.name} ${props.viewRoot.state === "working" ? "running" : "idle"}`,
+        t("{name} {state}", {
+          name: props.viewRoot.name,
+          state: t(props.viewRoot.state === "working" ? "running" : "idle"),
+        }),
       ];
       if (props.viewRoot.state === "working" && props.viewRoot.working) {
         segs.push(props.viewRoot.working.toLowerCase());
       }
-      if (props.bridge && !props.bridge.connected) segs.push("runtime offline · model only");
+      if (props.bridge && !props.bridge.connected) segs.push(t("runtime offline · model only"));
       return <>{segs.join(" · ")}</>;
     }
     const masterBusy = props.master === "working";
     const segs: Array<string | JSX.Element> = [];
-    if (props.goal?.active) segs.push("objective");
+    if (props.goal?.active) segs.push(t("objective"));
     const auto = props.autonomous;
     if (auto?.enabled) {
       const max = auto.limits?.maxContinuations;
       segs.push(
         typeof max === "number"
-          ? `unattended ${auto.continuationsUsed ?? 0} of ${max}`
-          : "unattended on",
+          ? t("unattended {used} of {max}", { used: auto.continuationsUsed ?? 0, max })
+          : t("unattended on"),
       );
-      if (auto.lastGateFailure) segs.push("check failed");
+      if (auto.lastGateFailure) segs.push(t("check failed"));
     }
     const next = props.heartbeats
       .filter((h) => h.status === "active" && h.nextRunAt)
       .map((h) => h.nextRunAt as string)
       .sort()[0];
     const nextAt = hhmm(next);
-    if (nextAt) segs.push(`next check-in ${nextAt}`);
-    if (props.bridge && !props.bridge.connected) segs.push("runtime offline · model only");
+    if (nextAt) segs.push(t("next check-in {at}", { at: nextAt }));
+    if (props.bridge && !props.bridge.connected) segs.push(t("runtime offline · model only"));
     const helpersRunning = props.children.some((c) => c.status === "running" || c.status === "queued");
     if (masterBusy && props.working) segs.push(props.working.toLowerCase());
-    else if (!masterBusy && helpersRunning) segs.push("waiting on helpers");
-    if (segs.length === 0) segs.push(masterBusy ? "master running" : "master idle");
+    else if (!masterBusy && helpersRunning) segs.push(t("waiting on helpers"));
+    if (segs.length === 0) segs.push(t(masterBusy ? "master running" : "master idle"));
     return (
       <>
         {segs.map((s, i) => (
@@ -145,30 +150,30 @@ export function Composer(props: {
           <input
             ref={inputRef}
             value={text}
-            placeholder={`Message ${targetName}…`}
+            placeholder={t("Message {name}…", { name: targetName })}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
             {!props.fixedRoot && props.target.kind === "helper" && (
               <div className="dmode">
-                <span className="static">delivered now</span>
+                <span className="static">{t("delivered now")}</span>
               </div>
             )}
             {props.fixedRoot ? (
-              <span className="to fixed">to {targetName}</span>
+              <span className="to fixed">{t("to {name}", { name: targetName })}</span>
             ) : (
               <span className="to" onClick={() => setPopOpen((v) => !v)}>
-                to {targetName} ▾
+                {t("to {name}", { name: targetName })} ▾
               </span>
             )}
             {busy ? (
               <button className="send" onClick={canSendBusy && text.trim() ? submit : props.onStop}>
-                {canSendBusy && text.trim() ? "SEND" : "STOP"}
+                {canSendBusy && text.trim() ? t("SEND") : t("STOP")}
               </button>
             ) : (
               <button className="send" onClick={submit}>
-                SEND
+                {t("SEND")}
               </button>
             )}
           </div>
@@ -185,12 +190,12 @@ export function Composer(props: {
                   <span className="st">{popupStatus(c)}</span>
                 </button>
               ))}
-              {props.others.length > 0 && <div className="h">other agents</div>}
+              {props.others.length > 0 && <div className="h">{t("other agents")}</div>}
               {props.others.map((a) => (
                 <button className="tr" key={a.name} onClick={() => pick({ kind: "root", name: a.name })}>
                   <BotAvatar seed={a.name} sm />
                   {a.name}
-                  <span className="st">{a.state}</span>
+                  <span className="st">{t(a.state)}</span>
                 </button>
               ))}
             </div>

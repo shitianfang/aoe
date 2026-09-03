@@ -62,11 +62,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* workspace + settings popups (anchored to the rail; there is no top bar) */
 .scrim { position: fixed; inset: 0; z-index: 25; }
-.wspop { position: fixed; top: 12px; left: 56px; z-index: 30; min-width: 260px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
-.setpop { position: fixed; bottom: 12px; left: 56px; z-index: 30; min-width: 210px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
+.wspop { position: fixed; top: 12px; left: 48px; z-index: 30; min-width: 260px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
+.setpop { position: fixed; bottom: 12px; left: 48px; z-index: 30; min-width: 210px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
 .setpop .h { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); padding: 6px 10px; }
 .setpop .srow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 10px; font-size: 12px; }
 .setpop .srow .k { color: var(--t2); }
+.setpop .seg { display: flex; }
+.setpop .seg .btn + .btn { border-left: 0; }
+.setpop .seg .btn.on { color: var(--t1); background: var(--hair); border-color: var(--t3); }
 .stat { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
 .stat b { color: var(--green); font-weight: 500; }
 .stat b.bad { color: var(--red); }
@@ -105,6 +108,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .edetail .eh .id { color: var(--t1); font-size: 10.5px; font-weight: 700; }
 .edetail .econtent { margin: 8px 0 0; padding: 8px 10px; background: var(--soft); border: 1px solid var(--hair); font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; }
 .edetail .lf { display: flex; gap: 8px; align-items: center; padding: 9px 0 0; }
+/* expanded history record (Learned pane) */
+.edetail .hfull { font-size: 12px; color: var(--t1); }
+.edetail .hkv { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; margin-top: 7px; font-size: 12px; }
+.edetail .hk { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); padding-top: 2px; }
+.edetail .hv { color: var(--t2); overflow-wrap: break-word; }
+.edetail .hv .hline { display: block; }
 .edetail .lf .note { font-family: var(--mono); font-size: 8px; color: var(--t3); }
 
 /* lesson card (timeline, expanded) */
@@ -247,8 +256,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    separation, no divider lines); the unfocused pane reads slightly muted.
    The drop hint is a quiet ink tint over the half a drag would take. */
 .cbody { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.panes { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--soft); gap: 3px; }
+.panes { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--soft); }
 .pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--win); transition: opacity 120ms ease; }
+.gutter { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--soft); }
+.gutter:hover { background: var(--hair-hi); }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }
 .pane.away { opacity: .8; }
 .pbody { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .drophint { position: absolute; top: 0; bottom: 0; width: 50%; background: var(--hair); pointer-events: none; }
@@ -257,7 +270,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* reset layout — small muted text at the right end of the tab bar, split only */
 
 /* agent header (helper views) */
-.ahead { padding: 14px 18px 12px; border-bottom: 1px dashed var(--hair); flex-shrink: 0; }
+.ahead { padding: 14px 18px 6px; flex-shrink: 0; }
 .ahead .r1 { display: flex; align-items: center; gap: 10px; }
 .ahead .r1 .nm { font-family: var(--mono); font-size: 13px; font-weight: 700; }
 .ahead .r1 .rel { font-family: var(--mono); font-size: 9px; color: var(--t3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -383,6 +396,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .kv.hbrow { justify-content: flex-start; gap: 8px; }
 .kv.hbrow .k { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbops { display: flex; gap: 4px; flex-shrink: 0; }
+/* Unattended limit prefills: one quiet mono row, background separation only. */
+.lims { display: flex; gap: 6px; margin: 8px 0; }
+.lims label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lims span { font-family: var(--mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.lims input { width: 100%; height: 20px; padding: 0 5px; border: 0; background: var(--hair); color: var(--t1); font-family: var(--mono); font-size: 10px; outline: none; border-radius: 0; }
+.lims input:focus { background: var(--hair-hi); }
+.lims input::placeholder { color: var(--t3); }
 .iin { width: 100%; margin-top: 8px; height: 24px; padding: 0 8px; border: 1px solid var(--hair-hi); background: transparent; color: var(--t1); font-family: var(--mono); font-size: 10px; outline: none; border-radius: 0; }
 .iin::placeholder { color: var(--t3); }
 .iin:focus { border-color: var(--t3); }

@@ -257,8 +257,29 @@ worker：关掉应用，那队人照跑。
 - **Claude Code**——bridge 在工作区目录下跑 `claude -p`，带 `--permission-mode acceptEdits`，放开
   Bash、WebSearch、WebFetch，按 session id 续接，并把它的工具活动和子代理流回时间线。AOE 自己不添
   任何凭据：子进程继承你的环境变量，用的就是你机器上已有的那份登录。整个应用共用一个会话；这条路
-  需要 bridge（它是一条 bridge 路由，NIM 那条不是），并且在 Windows 上跑不通。
+  需要 bridge（它是一条 bridge 路由；自从有了下面那个用量读数，NIM 那条也是了），并且在
+  Windows 上跑不通。
 - **NVIDIA NIM**——`.env` 里的 `NIM_API_KEY`，在服务端代理转发，渲染层永远看不到 key。
+
+### NIM 用量读数
+
+NVIDIA 不肯告诉你自己的限额：NIM 的响应不管成功还是 429 都**不带任何** `X-RateLimit-*` 头，
+也没有任何 usage 接口可查。免费档大约是**每个 key 每分钟 40 次**，所有模型共用——你只能靠
+吃到 429 才知道超了。
+
+所以由 bridge 来数。所有 NIM 请求都从它过（`ALL /nim/*` 转发到 integrate.api.nvidia.com），
+`GET /bridge/nim` 给出最近一分钟的数字，composer 把它显示在模型下拉旁边，形如 `12/40`——
+只有在这一分钟快用完、或者刚吃到 429 时才上色。实测里**先撑不住的是并发不是分钟**：大约五个
+请求同时在飞就开始被拒，那时候 `used` 还很好看，所以读数里也带了 `inflight`，tooltip 会说明。
+
+有两个后果值得知道：
+
+- 想让这个数字是全量的，**运行时**也得从 bridge 走 NIM：把 `~/.prime/agent/models.json` 里
+  该 provider 的 `baseUrl` 写成 `http://127.0.0.1:3117/nim/v1`，而不是直连 NVIDIA。会话是在
+  创建或切换模型时解析模型的，所以改完要重新选一次模型。
+- 这也让 bridge 成了模型流量的硬依赖：bridge 没起，运行时就完全够不着 NIM——单独跑
+  `./core/prime-agent.sh` 也一样。想让运行时独立，就把 `baseUrl` 改回
+  `https://integrate.api.nvidia.com/v1`，代价是读数只能数到应用自己发的那部分。
 
 ## 配置
 
@@ -271,6 +292,7 @@ worker：关掉应用，那队人照跑。
 | `PRIME_AGENT_DAEMON_SOCKET` | 守护进程 socket 路径 | SDK 的平台默认值 |
 | `NIM_API_KEY` | 兜底聊天的 key | — |
 | `NIM_MODEL` | 兜底聊天的模型 | `deepseek-ai/deepseek-v4-pro-0813` |
+| `NIM_RPM` | 用量读数按每分钟多少次算 | `40`（免费档） |
 | `AOE_DEV_URL` | Electron 外壳加载的 dev 地址 | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | 打印每一次 roster 轮次结束 | 关 |
 

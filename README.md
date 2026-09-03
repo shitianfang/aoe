@@ -310,11 +310,36 @@ Without the runtime, the app degrades to model-only chat rather than breaking:
   `--permission-mode acceptEdits` and Bash, WebSearch and WebFetch allowed, resumes by session
   id, and streams its tool activity and subagents back into the timeline. AOE adds no
   credential of its own; the child inherits your environment and uses the login already there.
-  One session is shared across the app, and this path needs the bridge — it is a bridge route,
-  unlike NIM. It has not been made to work on Windows.
+  One session is shared across the app, and this path needs the bridge — as, since the usage
+  readout below, does NIM. It has not been made to work on Windows.
 - **NVIDIA NIM** — `NIM_API_KEY` from `.env`, proxied server-side; the renderer never sees a
   key. Keys come from [build.nvidia.com](https://build.nvidia.com); `NIM_MODEL` defaults to
   `deepseek-ai/deepseek-v4-pro-0813`.
+
+### The NIM budget readout
+
+NVIDIA tells you nothing about your own rate limit: a NIM response carries no `X-RateLimit-*`
+header on success or on 429, and there is no usage endpoint to ask. The free tier is about
+**40 requests per minute per key**, shared across every model — and you find out you crossed
+it by getting a 429.
+
+So the bridge counts. Every NIM request passes through it (`ALL /nim/*` proxies to
+integrate.api.nvidia.com) and `GET /bridge/nim` reports the trailing minute; the composer
+shows it beside the model picker as `12/40`, taking colour only when the minute is nearly
+spent or a 429 just came back. Concurrency runs out first in practice — around five requests
+in flight starts drawing 429s well before the minute is used up — so the payload carries
+`inflight` too, and the tooltip says so.
+
+Two consequences worth knowing:
+
+- For the count to be the whole truth, the **runtime** must reach NIM through the bridge as
+  well. Set the provider's `baseUrl` in `~/.prime/agent/models.json` to
+  `http://127.0.0.1:3117/nim/v1` rather than to NVIDIA directly. A session resolves its model
+  when it is created or switched, so re-pick the model once after changing this.
+- That makes the bridge a hard dependency for model traffic: with the bridge down, the
+  runtime cannot reach NIM at all — including `./core/prime-agent.sh` run on its own. Point
+  `baseUrl` back at `https://integrate.api.nvidia.com/v1` if you want the runtime independent,
+  and the readout then only counts what the app itself sends.
 
 ## Configuration
 
@@ -327,6 +352,7 @@ Without the runtime, the app degrades to model-only chat rather than breaking:
 | `PRIME_AGENT_DAEMON_SOCKET` | daemon socket path | the SDK's platform default |
 | `NIM_API_KEY` | key for the fallback chat provider | — |
 | `NIM_MODEL` | model for the fallback chat provider | `deepseek-ai/deepseek-v4-pro-0813` |
+| `NIM_RPM` | requests/minute the NIM readout counts against | `40` (free tier) |
 | `AOE_DEV_URL` | dev server the Electron shell loads | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | log every roster turn end | off |
 

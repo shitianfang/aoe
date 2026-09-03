@@ -503,9 +503,28 @@ body.resizing iframe { pointer-events: none; }
 .crow .to:hover { color: var(--t2); }
 /* model pick — sits on the strip above the box (offline: which backend
    answers; connected: the runtime's own model) */
-.mpick { flex-shrink: 0; border: 0; background: none; padding: 0; max-width: 200px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
+/* The picker is exactly as wide as the name it is currently showing. A native
+   select sizes itself to its WIDEST option, which left a dead gap after every
+   shorter model name. The width comes from .sizer instead — a hidden clone of
+   the select holding only the current name — so the browser measures what one
+   option really needs, arrow included. (A hidden span plus a guessed arrow
+   allowance was tried first and still left a gap: the arrow takes more room
+   than it looks like it does.) */
+.mpickw { position: relative; display: inline-block; flex-shrink: 0; max-width: 200px; }
+.mpickw > .sizer { visibility: hidden; pointer-events: none; max-width: 100%; }
+.mpickw > .live { position: absolute; inset: 0; width: 100%; }
+.mpick { border: 0; background: none; padding: 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
 .mpick:hover, .mpick:focus { color: var(--t2); }
 .mpick:disabled { color: var(--t3); opacity: .6; cursor: default; }
+/* NIM's minute budget, beside the picker. NVIDIA sends no rate-limit header
+   and has no usage endpoint, so this number is the bridge's own count of what
+   it proxied. Same quiet mono register as the picker; digits stay mono in both
+   languages (machine text is exactly what mono is for). Colour only arrives
+   when the minute is nearly gone or a 429 just did — a square, not a word. */
+.nimq { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; color: var(--t3); cursor: default; }
+.nimq .sq { width: 5px; height: 5px; background: currentColor; }
+.nimq.warm { color: var(--amber); }
+.nimq.hot { color: var(--red); }
 .dmode { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .dmode span.static { cursor: default; color: var(--t3); }
 /* Long-running switch: same quiet mono register as the delivery note it sits

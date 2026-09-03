@@ -48,6 +48,37 @@
 - dev 走 Vite 代理 `/api/nim`（key 在 .env，服务端注入）；打包走 electron/main.cjs 的本地代理。**renderer 选的模型优先，env/config 只是兜底**（main.cjs：`if (!parsed.model)`）。
 - 离线候选列表在 `src/runtime/providers.ts` 的 `MODEL_PICKS`，与 models.json 独立维护——改前先查实时目录（§0）。
 
+## 2d. NIM 用量读数（2026-09-03 追加）
+
+- **NVIDIA 什么都不告诉你**：实测 200 和 429 的响应头里都没有任何 `X-RateLimit-*`，429 的 body
+  只有 `{"status":429,"title":"Too Many Requests"}`；`/v1/usage` `/v1/limits` `/v1/account`
+  `/v1/credits` 全 404。所以"已用/额度"只能自己数,额度是常量(免费档 ~40 RPM/key,所有模型共用,
+  `NIM_RPM` 可覆盖)。
+- **实测这个 key 的真实形状**:25 次串行(~19 RPM)全过;20 并发 13 个 429;并发梯度 4 全过、
+  6 挂 1 个、8 挂 3 个——**先撑不住的是并发(约 5)不是分钟**。所以 payload 里带 `inflight`,
+  agent 一次扇出五个 helper 就会在 `used` 还很低时吃 429。
+- **要数得全就得有唯一收口**:`models.json` 的 `baseUrl` 从 `https://integrate.api.nvidia.com/v1`
+  改成 `http://127.0.0.1:3117/nim/v1`,vite 的 `/api/nim` 代理和 `electron/main.cjs` 的打包代理
+  也都改成指向 bridge。bridge 侧是 `handleNim()`(纯流式透传,SSE 不受影响)+ 一个 60s 滑动窗口。
+  **Authorization 优先透传**:daemon 和 vite 各自带自己的 key,只有渲染层那条(永远无 key)才由
+  bridge 从 `NIM_API_KEY` / `auth.json` 补上——渲染层不持 key 这条铁律没破。
+- **会话在创建或 `set_model` 时解析模型对象**(`ModelRegistry.find` 读 models.json),所以改完
+  `baseUrl` 后**已经在跑的会话要重新选一次模型**才会走新路径;新建的会话自动就是新的。
+  已端到端验证:新建 root → prompt → `/bridge/nim` 的 `used` 从 0 变 1。
+- **代价(用户已知情选择)**:bridge 现在是模型流量的硬依赖,bridge 没起运行时够不着 NIM,
+  单独跑 `./core/prime-agent.sh` 也一样。要独立就把 `baseUrl` 改回直连,读数则只剩应用自己那部分。
+- UI:`GET /bridge/nim` → `{used,limit,inflight,resetInMs,throttledMsAgo}`,Composer 每 5s 拉一次,
+  只在显示模型下拉、且当前模型确实是 NIM 时渲染(Claude Code 那条路不占 NIM 额度)。
+  视觉遵守克制铁律:平时只有 mono 的 `32/40 RPM`,≥75% 上琥珀 + 一个小方块、20s 内吃过 429 上红,
+  **词义只在 tooltip**。**单位必须写出来**(用户:"0/40 你说清楚是每分钟还是多久"):`RPM` 是 NIM
+  自己的说法,对齐它,别只留个分数。
+- **模型下拉的宽度**:原生 `<select>` 的宽度是**最长那个 option** 的宽度,短名字后面就空一截。
+  修法是同格放一个 `visibility:hidden` 的**克隆 select(只有当前这一个 option)**撑宽度,真的那个
+  `position:absolute; inset:0`。别用隐藏 span 加一个"箭头预留 px"去凑——试过,箭头实际占的比猜的多,
+  仍然空一截;让浏览器自己算这一个 option 要多宽才是准的。
+- **`settings.json` 的 `defaultModel` 会被覆盖**:UI 里换一次模型,`set_model` 就把它写回去。
+  所以"设默认模型"不是一劳永逸的,最后一次手选的说了算。
+
 ## 3. Composer 模型下拉（src/components/Composer.tsx）
 
 - 在线：`fetchModels()`（`/bridge/model`）填目录，onChange 乐观更新 + `setDaemonModel()`，失败回拉真值。选项 value 用 `provider::id` 防撞。

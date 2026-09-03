@@ -168,30 +168,40 @@ export function Composer(props: {
       if (modelRoot) return null;
       const label = MODEL_PICKS.find((p) => p.id === offlinePick)?.label ?? offlinePick;
       return (
-        <select
-          className="mpick"
-          value={offlinePick}
-          onChange={(e) => setModelPick(e.target.value)}
-          aria-label={t("model")}
-          title={label}
-        >
-          {/* Two backends in one list: name the groups so a Claude Code model
-              is never mistaken for a cloud one. */}
-          <optgroup label="Claude Code">
-            {MODEL_PICKS.filter((p) => isClaudePick(p.id)).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="NIM">
-            {MODEL_PICKS.filter((p) => !isClaudePick(p.id)).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+        <span className="mpickw">
+          {/* A native select is as wide as its WIDEST option, which left a gap
+              after every shorter name. The width comes from this hidden clone
+              instead: one select, one option, the current name — so the box is
+              exactly what the browser wants for the name on show, arrow and all,
+              with no guess about how much room the arrow needs. */}
+          <select className="mpick sizer" tabIndex={-1} aria-hidden="true" value="" onChange={() => {}}>
+            <option value="">{label}</option>
+          </select>
+          <select
+            className="mpick live"
+            value={offlinePick}
+            onChange={(e) => setModelPick(e.target.value)}
+            aria-label={t("model")}
+            title={label}
+          >
+            {/* Two backends in one list: name the groups so a Claude Code model
+                is never mistaken for a cloud one. */}
+            <optgroup label="Claude Code">
+              {MODEL_PICKS.filter((p) => isClaudePick(p.id)).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="NIM">
+              {MODEL_PICKS.filter((p) => !isClaudePick(p.id)).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </span>
       );
     }
     // The picker stays mounted while the catalog is in flight. Unmounting it
@@ -201,35 +211,42 @@ export function Composer(props: {
     const loading = !daemonModels || daemonModels.models.length === 0;
     const cur = daemonModels?.current ?? null;
     return (
-      <select
-        className="mpick"
-        value={cur ? `${cur.provider}::${cur.id}` : ""}
-        aria-label={t("model")}
-        disabled={loading}
-        title={cur?.name ?? ""}
-        onChange={(e) => {
-          const m = daemonModels?.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
-          if (!m) return;
-          setDaemonModels((st) => (st ? { ...st, current: m } : st));
-          setDaemonModel(m, modelRoot).catch(() =>
-            // Rejected (e.g. mid-run) — re-pull the truth.
-            fetchModels(modelRoot).then(setDaemonModels).catch(() => undefined),
-          );
-        }}
-      >
-        {/* Not yet knowable (a root before its attach): an empty box beats
-            implying the subject sits on whatever happens to sort first. */}
-        {!cur && <option value="">—</option>}
-        {cur &&
-          !(daemonModels?.models ?? []).some((x) => x.provider === cur.provider && x.id === cur.id) && (
-            <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>
-          )}
-        {(daemonModels?.models ?? []).map((m) => (
-          <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
-            {m.name}
-          </option>
-        ))}
-      </select>
+      <span className="mpickw">
+        {/* Sizer: see the offline branch — the select is as wide as its own
+            current name, not as its longest option. */}
+        <select className="mpick sizer" tabIndex={-1} aria-hidden="true" value="" onChange={() => {}}>
+          <option value="">{cur?.name ?? "—"}</option>
+        </select>
+        <select
+          className="mpick live"
+          value={cur ? `${cur.provider}::${cur.id}` : ""}
+          aria-label={t("model")}
+          disabled={loading}
+          title={cur?.name ?? ""}
+          onChange={(e) => {
+            const m = daemonModels?.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
+            if (!m) return;
+            setDaemonModels((st) => (st ? { ...st, current: m } : st));
+            setDaemonModel(m, modelRoot).catch(() =>
+              // Rejected (e.g. mid-run) — re-pull the truth.
+              fetchModels(modelRoot).then(setDaemonModels).catch(() => undefined),
+            );
+          }}
+        >
+          {/* Not yet knowable (a root before its attach): an empty box beats
+              implying the subject sits on whatever happens to sort first. */}
+          {!cur && <option value="">—</option>}
+          {cur &&
+            !(daemonModels?.models ?? []).some(
+              (x) => x.provider === cur.provider && x.id === cur.id,
+            ) && <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>}
+          {(daemonModels?.models ?? []).map((m) => (
+            <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </span>
     );
   };
 
@@ -309,7 +326,7 @@ export function Composer(props: {
     return (
       <span className={`nimq${throttled ? " hot" : near ? " warm" : ""}`} title={title}>
         {(throttled || near) && <i className="sq" />}
-        {nim.used}/{nim.limit}
+        {nim.used}/{nim.limit} RPM
       </span>
     );
   };

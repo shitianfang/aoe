@@ -262,6 +262,10 @@ const ZH: Record<string, string> = {
   /* composer */
   "Message {name}…": "发消息给 {name}…",
   "delivered now": "立即送达",
+  "NIM: {used} of ~{limit} requests this minute. The free tier's ceiling is per key and shared by every model, so this counts the runtime's calls as well as this window's.":
+    "NIM：本分钟已用 {used} 次，上限约 {limit} 次。免费额度按 key 计、所有模型共用，所以这里也算上了运行时自己发的请求。",
+  "NVIDIA just answered 429. {used} of ~{limit} requests this minute; {inflight} in flight — about five at once is where it starts refusing.":
+    "NVIDIA 刚返回了 429。本分钟 {used}/{limit} 次，正在飞 {inflight} 个——大约五个并发就会开始被拒。",
   "long-running": "长程自主",
   "{name} sets up an objective, a wake-up schedule or unattended itself, and says which.":
     "让 {name} 自己选一种方式跑下去——设目标、定时唤醒、或自动运行——并说明选了哪个。",

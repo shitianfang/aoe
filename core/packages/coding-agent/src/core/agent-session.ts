@@ -83,6 +83,7 @@ import {
 	type AgentAutonomousConfig,
 	type AgentAutonomousStatus,
 	AUTONOMOUS_LIMIT_ARGS_USAGE,
+	AUTONOMOUS_SKILL_NAME,
 	type AutonomousLimitOverrides,
 	type AutonomousRuntimeState,
 	addAutonomousContinuation,
@@ -91,6 +92,7 @@ import {
 	createAutonomousRuntimeState,
 	nextAutonomousContinuation,
 	parseAutonomousLimitArgs,
+	parseAutonomousLimitPayload,
 	refreshAutonomousQualityGates,
 	setAutonomousEnabled,
 } from "./autonomous.js";
@@ -1127,6 +1129,17 @@ export class AgentSession {
 	private _overflowRecovery: "idle" | "attempted" | "reported" = "idle";
 	private _continueAfterThresholdCompaction = false;
 	private _pendingRequestedCompaction: { customInstructions?: string } | undefined;
+	/** Set when the kernel autonomous skill changes the mode from inside a turn.
+	 *  The status message must not be pushed into agent.state.messages while a
+	 *  tool call is in flight: it would land between the assistant's tool_use and
+	 *  its tool_result, and convertToLlm renders a custom entry as a user message,
+	 *  so the next request would carry tool_use -> user -> tool_result and the
+	 *  provider would reject it. Held here and flushed at agent_end instead. */
+	private _pendingAutonomousStatusEmit = false;
+	/** The agent has spent its one grant of unattended mode in this session. */
+	private _autonomousAgentArmed = false;
+	/** Unattended mode is currently on because the agent armed it, not the user. */
+	private _autonomousArmedByAgent = false;
 	private _pendingRequestedRefine: { instructions?: string; global?: boolean } | undefined;
 
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -2076,9 +2089,12 @@ export class AgentSession {
 		}
 		if (command.kind === "on") {
 			setAutonomousEnabled(this._autonomousState, true, { cwd: this._cwd, limits: command.limits });
+			// The user set this one, so the agent's off switch no longer applies.
+			this._autonomousArmedByAgent = false;
 		} else if (command.kind === "off") {
 			setAutonomousEnabled(this._autonomousState, false);
 			this._clearQueuedAutonomousContinuations();
+			this._autonomousArmedByAgent = false;
 		}
 		this._emitAutonomousStatus();
 		return true;
@@ -3045,6 +3061,81 @@ export class AgentSession {
 	}
 
 	/**
+	 * Handle an autonomous.* request from the kernel host bridge (the bundled
+	 * autonomous skill). Root sessions only — see _createKernelHostHandlers.
+	 *
+	 * Two asymmetries against the user's `/autonomous` command, both because
+	 * enabling resets every counter and the agent must not be able to widen a
+	 * budget the user set:
+	 *
+	 * - The agent gets ONE grant per session. Guarding only a direct re-enable
+	 *   would leave `disable()` then `enable()` as a way to zero the counters
+	 *   after a limit stopped the run, so the guard tracks the spent grant, not
+	 *   the current state.
+	 * - The agent may only switch off what it switched on. Unattended mode the
+	 *   user armed is theirs to clear; the continuation prompt tells the model
+	 *   not to end the session itself, so handing it an off switch for the
+	 *   user's setting would contradict that.
+	 */
+	async handleAutonomousHostRequest(
+		type: string,
+		payload: Record<string, unknown> = {},
+	): Promise<Record<string, unknown>> {
+		switch (type) {
+			case "autonomous.get":
+				return { autonomous: this.getAutonomousStatus() };
+			case "autonomous.enable": {
+				if (this._autonomousState.enabled) {
+					throw new Error("Autonomous mode is already on; report its current limits rather than restarting them.");
+				}
+				if (this._autonomousAgentArmed) {
+					throw new Error(
+						"Autonomous mode has already been armed once in this session; report where the run stopped and let the user decide whether to extend it.",
+					);
+				}
+				const limits = parseAutonomousLimitPayload(payload);
+				setAutonomousEnabled(this._autonomousState, true, { cwd: this._cwd, limits });
+				this._autonomousAgentArmed = true;
+				this._autonomousArmedByAgent = true;
+				this._requestAutonomousStatusEmit();
+				return { autonomous: this.getAutonomousStatus() };
+			}
+			case "autonomous.disable": {
+				if (!this._autonomousArmedByAgent) {
+					throw new Error(
+						this._autonomousState.enabled
+							? "Autonomous mode was switched on by the user; only they can switch it off."
+							: "Autonomous mode is already off.",
+					);
+				}
+				setAutonomousEnabled(this._autonomousState, false);
+				this._clearQueuedAutonomousContinuations();
+				this._autonomousArmedByAgent = false;
+				this._requestAutonomousStatusEmit();
+				return { autonomous: this.getAutonomousStatus() };
+			}
+			default:
+				throw new Error(`unknown autonomous request type "${type}"`);
+		}
+	}
+
+	/** Emit the status now when idle; hold it until agent_end when a turn is in
+	 *  flight. See _pendingAutonomousStatusEmit for why mid-turn is unsafe. */
+	private _requestAutonomousStatusEmit(): void {
+		if (this.isStreaming) {
+			this._pendingAutonomousStatusEmit = true;
+			return;
+		}
+		this._emitAutonomousStatus();
+	}
+
+	private _flushPendingAutonomousStatus(): void {
+		if (!this._pendingAutonomousStatusEmit) return;
+		this._pendingAutonomousStatusEmit = false;
+		this._emitAutonomousStatus();
+	}
+
+	/**
 	 * Handle a preview.* request from the kernel host bridge. preview.publish
 	 * declares an existing file or served URL as a work product: it appends a
 	 * durable transcript record and emits a preview_published session event for
@@ -3799,6 +3890,9 @@ export class AgentSession {
 			this._finishActiveRetryWithFailure(msg);
 			this._resolveRetry();
 			if (!compactionWillRetry) {
+				// Before any goal continuation, so a status the kernel asked for
+				// mid-turn lands with the turn that changed it.
+				this._flushPendingAutonomousStatus();
 				this._finishGoalForTerminalAssistantMessage(msg);
 				// In serialized mode, agent-callable refine.run is serviced
 				// at the shouldStopAfterTurn boundary, not here at agent_end.
@@ -9400,6 +9494,9 @@ export class AgentSession {
 		if (!this._agentObserveController || !this._rlmHeartbeatController) {
 			skills = skills.filter((skill) => skill.name !== ORCHESTRATION_HEARTBEAT_SKILL_NAME);
 		}
+		if (this._rlmDepth > 0) {
+			skills = skills.filter((skill) => skill.name !== AUTONOMOUS_SKILL_NAME);
+		}
 		return skills;
 	}
 
@@ -9418,6 +9515,15 @@ export class AgentSession {
 			}),
 			"preview.publish": async (payload) => this.handlePreviewHostRequest("preview.publish", payload),
 		};
+		// Root sessions only: unattended mode is the user's budget for the session
+		// they are watching. An RLM child arming its own continuations would spend
+		// that budget from inside a tool call, out of sight of the panel that
+		// reports it.
+		if (this._rlmDepth === 0) {
+			for (const type of ["autonomous.get", "autonomous.enable", "autonomous.disable"]) {
+				handlers[type] = async (payload) => this.handleAutonomousHostRequest(type, payload);
+			}
+		}
 		if (this._includeGoals) {
 			for (const type of ["goal.get", "goal.create", "goal.complete"]) {
 				handlers[type] = async (payload) => this.handleGoalHostRequest(type, payload);

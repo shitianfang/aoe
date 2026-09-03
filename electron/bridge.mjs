@@ -4,7 +4,8 @@
  * renderer can reach from a browser or the Electron renderer:
  *
  *   GET  /bridge/events   SSE stream of session events + snapshots
- *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine", text? }
+ *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine"
+ *                               |"refine_rollback"|"refine_global"|…, text?, target? }
  *   GET  /bridge/health   { connected, master }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -337,6 +338,17 @@ async function handleCmd(body) {
       return {};
     case "refine":
       return { result: await masterConn.refine(body.text ? { instructions: body.text } : {}) };
+    case "refine_rollback":
+      // Undo one lesson; recorded by the harness as a new refinement.
+      return { result: await masterConn.refine({ rollbackId: String(body.target ?? "") }) };
+    case "refine_global":
+      // Runs a new global review — the kept lesson may differ from the local one.
+      return {
+        result: await masterConn.refine({
+          global: true,
+          ...(body.text ? { instructions: String(body.text) } : {}),
+        }),
+      };
     case "agent_message": {
       // Messages to helpers are always steer-queued by the runtime; the
       // receipt says delivered vs queued.

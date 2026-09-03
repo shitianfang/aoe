@@ -1,5 +1,26 @@
-import { useEffect, useRef } from "react";
-import type { TimelineItem } from "../types";
+import { useEffect, useRef, useState } from "react";
+import type { LessonResult, TimelineItem } from "../types";
+import { LessonCard } from "./LessonCard";
+
+/** "lesson kept · summary · [view]" — view expands the full card inline. */
+function LessonRow(props: { result: LessonResult; at: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="lwrap">
+      <div className="ev good">
+        <span className="ic" />
+        <strong>lesson kept · {props.result.summary ?? props.result.id}</strong>
+        <span className="rt">
+          <a className="lk" onClick={() => setOpen((v) => !v)}>
+            {open ? "hide" : "view"}
+          </a>
+          {` · ${props.at}`}
+        </span>
+      </div>
+      {open ? <LessonCard result={props.result} at={props.at} /> : null}
+    </div>
+  );
+}
 
 export function Timeline(props: { items: TimelineItem[] }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -29,6 +50,9 @@ export function Timeline(props: { items: TimelineItem[] }) {
               </span>
             </div>
           );
+        }
+        if (item.kind === "lesson") {
+          return <LessonRow key={item.id} result={item.result} at={item.at} />;
         }
         if (item.kind === "user") {
           return (

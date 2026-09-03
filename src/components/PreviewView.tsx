@@ -86,7 +86,8 @@ export function PreviewView(props: {
   const between =
     from && to
       ? props.timeline.filter((x) => {
-          const ts = (x.kind === "tool" || x.kind === "divider") && x.ts !== undefined ? x.ts : null;
+          const ts =
+            (x.kind === "tool" || x.kind === "divider" || x.kind === "lesson") && x.ts !== undefined ? x.ts : null;
           if (ts === null) return false;
           if (x.kind === "divider" && !x.text.startsWith("lesson kept")) return false;
           return ts > Date.parse(from.at) && ts <= Date.parse(to.at);
@@ -138,7 +139,9 @@ export function PreviewView(props: {
               ) : (
                 <div className="ev violet" key={e.id}>
                   <span className="ic" />
-                  <strong>{e.text}</strong>
+                  <strong>
+                    {e.kind === "lesson" ? `lesson kept · ${e.result.summary ?? e.result.id}` : e.kind === "divider" ? e.text : ""}
+                  </strong>
                   <span className="rt" />
                 </div>
               ),

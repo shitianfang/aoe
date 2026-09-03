@@ -139,9 +139,9 @@ export function LearnedView(props: {
             {src !== null ? ` · ${t("from {source}", { source: src })}` : ""}
           </span>
         </div>
-        <div className="hfull" style={{ marginTop: 8 }}>
-          {sel.trigger ?? t("lesson")}
-        </div>
+        {/* The headline of the pane: the lesson's own summary. Spacing lives
+            in .hfull now — the metadata row above stays small on purpose. */}
+        <div className="hfull">{sel.trigger ?? t("lesson")}</div>
         {sel.evidence !== undefined && sel.evidence !== "" && (
           <div className="hkv">
             <span className="hk">{t("why it was kept")}</span>

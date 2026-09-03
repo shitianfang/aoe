@@ -186,7 +186,7 @@ const ZH: Record<string, string> = {
 
   /* self-evolution column (⚡) */
   "what agents pick up while working — later work uses it.":
-    "agent 工作中自己学到的改进 —— 之后的工作会用上。",
+    "agent 工作中自己学到的改进 —— 以后会用上。",
   "nothing learned yet.": "还没有自进化的记录。",
   "agents keep small improvements as they work — they appear here on their own.":
     "agent 干活时会自己记下小改进,自动出现在这里。",

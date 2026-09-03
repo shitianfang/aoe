@@ -63,8 +63,11 @@ export function LearnedColumn(props: {
   const row = (r: LessonRecord) => {
     const on = props.selected !== null && props.selected.id === r.id && props.selected.owner === r.owner;
     const src = lessonRowSourceText(r.source);
+    // A review that applied nothing is still a record, but it is not something
+    // the agent learned — say so in the row so nobody opens it to find out.
+    const nil = r.changes !== undefined && r.changes.length === 0 ? t("no change") : null;
     // No avatars here — attribution is the muted "owner · source" suffix.
-    const meta = [r.owner, src].filter((part): part is string => part !== null);
+    const meta = [r.owner, src, nil].filter((part): part is string => part !== null);
     return (
       <button
         key={`${r.owner ?? "*"}-${r.id}`}

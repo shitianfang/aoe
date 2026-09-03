@@ -37,8 +37,9 @@ What comes back is files in a directory and a record of how they got there.
 
 It runs locally: an Electron client over a [prime-agent](https://github.com/PrimeIntellect-ai/prime-agent)
 daemon with a persistent Python kernel. Sessions, files and harness state — the agent's own
-mutable prompt and memory, as opposed to its fixed base prompt — stay on your machine; model
-calls and one web font are the only things that leave it.
+mutable prompt and memory, as opposed to its fixed base prompt — stay on your machine. AOE
+itself sends nothing but model calls and one web font; what an agent's own tools fetch is up
+to the work you give it.
 
 One rule runs through the whole interface:
 
@@ -62,7 +63,7 @@ model-only chat, without the crew, the drivers or the lessons.
 ```sh
 git clone https://github.com/shitianfang/aoe && cd aoe
 npm install
-cp .env.example .env   # an NVIDIA NIM key — https://build.nvidia.com
+cp .env.example .env   # then paste a real NVIDIA NIM key — https://build.nvidia.com
 npm run dev            # renderer on http://localhost:3000
 npm run app            # the Electron shell, in a second terminal
 ```
@@ -78,8 +79,9 @@ npm run core:build     # build it once — the bridge loads its dist
 
 Give the runtime a model. prime-agent keeps its own provider config in `~/.prime/agent/` and
 the app reads whatever is there: Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, Prime
-Inference and a couple of dozen more are built in, plus any OpenAI-compatible endpoint — this
-project develops against NVIDIA NIM.
+Inference and a couple of dozen more are built in, plus any OpenAI-compatible endpoint added
+by hand in `~/.prime/agent/models.json`. The NVIDIA NIM key above is the model-only fallback,
+not a runtime provider.
 
 ```sh
 ./core/prime-agent.sh   # then /login, and pick a subscription or API-key provider
@@ -103,14 +105,16 @@ best set"* — and watch the left column fill up.
 > exists precisely so an agent does not stop to ask. Worker and kernel processes give
 > lifecycle isolation, **not** a security sandbox. Point a workspace at a directory you can
 > afford to lose, and keep untrusted instructions, skills and extensions out of it.
-> The bridge binds `127.0.0.1` but answers any origin, and `npm run dev` serves the renderer
-> on `0.0.0.0` — anything that can reach port 3117 can drive your agents. Trusted network
-> only.
+> The bridge binds `127.0.0.1`, but it answers any origin, so any page open in your browser
+> can drive your agents. `npm run dev` also serves the renderer on `0.0.0.0` with the host
+> check off and proxies `/bridge` straight through — anything that can reach port 3000 has the
+> same control. Trusted network only.
 >
-> To stop a run: the composer's send button becomes **stop** while an agent is working, which
-> aborts the turn. Closing the app does not — workers are resident and keep going. Clear the
-> objective or switch unattended off to stop it starting again, and `pkill -f prime-agent`
-> ends everything.
+> To stop a run: while an agent is working and the composer is empty, the send button is
+> **stop**, which aborts the turn — type into it and it stays send, which steers instead.
+> Closing the app does not stop anything: workers are resident. Clear the objective or switch
+> unattended off so it does not start again, and `pkill -f prime-agent` ends everything except
+> the Python kernel.
 
 If something is off:
 
@@ -199,8 +203,8 @@ a part of the product you can read, undo and spread.
   line about what to focus on. It takes minutes; the finished lesson turns up on its own as a
   row in the Self-evolution column, and — for master — as a card in the timeline as it lands.
 - **Auto-learn** is one switch for the whole machine: every agent, every workspace. It writes
-  the runtime's own global setting, and the bridge reloads every live worker so the change
-  takes hold now. The Inspector states the rhythm: when the last automatic review ran, and
+  the runtime's own global setting, and the bridge reloads every live root worker so the
+  change takes hold now. The Inspector states the rhythm: when the last automatic review ran, and
   the earliest the next one can.
 - **The Self-evolution column** (the rail's lightning icon) merges every kept lesson into two
   groups — *for one agent*, where master's and every root's are interleaved newest first with
@@ -213,7 +217,7 @@ a part of the product you can read, undo and spread.
   and after.
 
 Two operations. **Roll back** undoes a lesson in one step; the rollback is itself recorded as
-a lesson, and the column will not offer to roll that one back again. **Apply everywhere**
+a lesson, and its own detail pane will not offer to roll it back again. **Apply everywhere**
 runs a fresh review in the global scope, seeded with that lesson's summary — the result is a
 new lesson that applies to every session on the machine, and it may come out differently from
 the local one.
@@ -224,8 +228,8 @@ The runtime's only tool is a Python REPL, so writes happen inside the kernel and
 argument can be trusted as a record of what changed. The bridge scans the workspace at each
 turn end and diffs it against the previous manifest. The Files column is that diff, plus
 whatever an agent publishes explicitly: what changed, who changed it, when. The scan stops at
-four levels deep and skips dot-directories, so a file written to `.out/report.html` will not
-appear.
+four levels deep and skips anything dot-prefixed, `node_modules` and `.git`, so a file written
+to `.out/report.html` will not appear.
 
 Preview opens `.html` (in a sandboxed iframe), `.md`, `.png` and `.pdf`. Every turn that
 changes a file's content snapshots a version, and the view puts the last two side by side
@@ -259,8 +263,8 @@ saying which masters are running. It reopens where you left off.
 
 - **Up to four center panes on a 2×2 grid, each with its own tab group.** Drag a tab — or an
   agent straight out of the column — past a pane's edge to split there, or into its middle to
-  add it as a tab. Each pane gets its own composer, bound to what it shows, and the layout is
-  stored per workspace.
+  add it as a tab. Each conversation pane gets its own composer, bound to the agent it shows,
+  and the layout is stored per workspace.
 - **Chinese and English, light and dark**, switched under the avatar. Agent replies render as
   Markdown, including half-written ones mid-stream.
 - **Skills and Extensions** are read-only catalogs of what the runtime has available: skills,
@@ -363,9 +367,10 @@ Packaged builds do **not** bundle `core/`, so a target machine needs:
 ## Running against upstream
 
 The client is not welded to the vendored runtime. It speaks daemon protocol v7 over a local
-socket and takes three things out of the runtime directory — `dist/index.js` as its SDK,
-`dist/cli.js` to spawn the daemon when none is up, and `skills/` for the Skills catalog — so
-`PRIME_AGENT_DIR` can point at any built prime-agent checkout.
+socket and takes three things out of the runtime directory — `packages/coding-agent/dist/index.js`
+as its SDK, `packages/coding-agent/dist/cli.js` to spawn the daemon when none is up, and
+`packages/coding-agent/skills/` as one source for the Skills catalog — so `PRIME_AGENT_DIR`
+can point at any built prime-agent checkout.
 
 `core/` carries changes that are not upstream yet, which raise the daemon schema from 25 to
 27. Against an upstream checkout every schema-27 path degrades rather than fails:
@@ -373,7 +378,7 @@ socket and takes three things out of the runtime directory — `dist/index.js` a
 | Fork surface | What it drives here | Against upstream (schema 25) |
 | --- | --- | --- |
 | `preview_events` / `preview_published` | snapshot the moment work is published, its label, its timeline chip | the turn-end filesystem scan — which always runs anyway — becomes the only source, and nothing is labelled published |
-| connection-state `autonomous` | the unattended panel | comes back `null`; the panel is omitted |
+| connection-state `autonomous` | the unattended panel's live readout | comes back `null`; the panel still offers its limits and the turn-on control, but never reports progress |
 | connection-state `autoRefine` | auto-learn switch and next-review time | the switch survives: the bridge reads `settings.json` instead. Only the *last review / next no earlier than* line goes |
 | `RefinementResult.source` | lesson origin label | no label shown |
 | helper `completedAt` | real helper finish time | no finish time; the status word stands alone |

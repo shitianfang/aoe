@@ -29,33 +29,32 @@ export function SampleHelper(props: { agent: SampleAgent }) {
         <div className="r3">{t("Task — “{label}”", { label: t(a.task) })}</div>
       </div>
       <div className="transcript hevents">
-        {a.turns.map((row, i) =>
-          row.kind === "tool" ? (
-            <div className="ev" key={i}>
-              <span className="ic" />
-              <strong>{row.text}</strong>
-              <span className={row.status === "done" ? "rt ok" : "rt"}>
-                {t(row.status === "done" ? "done" : "running…")}
-              </span>
-            </div>
-          ) : row.kind === "task" ? (
-            <div className="msg user" key={i}>
-              <span className="chip ghost">M</span>
-              <span className="body">
-                <span className="afrom">master</span>
-                {t(row.text)}
-              </span>
-            </div>
-          ) : (
-            <div className="msg" key={i}>
-              <BotAvatar seed={a.name} />
-              <div className="body">
-                <span className="afrom">{a.name}</span>
-                <Markdown text={t(row.text)} />
-                {row.at ? <span className="when">{row.at}</span> : null}
+        {a.turns.length === 0 ? (
+          <div className="div">{t("queued · not yet started")}</div>
+        ) : (
+          a.turns.map((row, i) =>
+            row.kind === "tool" ? (
+              // Indented to the message column: a tool call is the helper's own
+              // step, not a rule between speakers. Flush left it read as a
+              // divider sitting between master and the reply.
+              <div className="ev egtool" key={i}>
+                <span className="ic" />
+                <strong>{row.text}</strong>
+                <span className={row.status === "done" ? "rt ok" : "rt"}>
+                  {t(row.status === "done" ? "done" : "running…")}
+                </span>
               </div>
-            </div>
-          ),
+            ) : (
+              <div className="msg" key={i}>
+                <BotAvatar seed={a.name} />
+                <div className="body">
+                  <span className="afrom">{a.name}</span>
+                  <Markdown text={t(row.text)} />
+                  {row.at ? <span className="when">{row.at}</span> : null}
+                </div>
+              </div>
+            ),
+          )
         )}
         <div className="div">{t("example · a real helper's own words appear here")}</div>
       </div>

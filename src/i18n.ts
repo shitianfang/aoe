@@ -328,7 +328,15 @@ const ZH: Record<string, string> = {
   /* harness entry kinds (HANDOFF §2) — subagent is a helper in product words */
   prompt: "提示词",
   memory: "记忆",
+  skill: "技能",
   subagent: "助手",
+  /* one applied edit, in words instead of "create memory:some_id" */
+  "added a {kind}": "新增了一条{kind}",
+  "updated a {kind}": "更新了一条{kind}",
+  "removed a {kind}": "删除了一条{kind}",
+  "no change": "无改动",
+  "nothing was changed — the review kept everything as it was.":
+    "这次评估后什么都没改 —— 原样保留。",
 
   /* learned pane (one lesson's full record) */
   lesson: "经验",
@@ -345,6 +353,11 @@ const ZH: Record<string, string> = {
   current: "当前",
   "unsaved this turn": "本轮未保存",
   "between {from} → {to}": "{from} → {to} 之间",
+  preview: "预览",
+  previous: "上一版",
+  "side by side": "并排",
+  "{who} is writing": "{who} 正在写",
+  "{n} versions kept": "留了 {n} 版",
 
   /* inspector */
   "check-in": "定时跟进",

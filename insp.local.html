@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>inspector harness</title>
+<link rel="stylesheet" href="/src/app.css" />
+<style>
+  body { overflow: auto; zoom: 1; background: var(--ground); }
+  .harness { display: flex; gap: 24px; padding: 20px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .cap { font-family: var(--mono); font-size: 10px; color: var(--t2); text-transform: uppercase; letter-spacing: .1em; }
+  .insp { height: auto; max-height: none; overflow: visible; border: 1px solid var(--hair-hi); }
+  .chip.master { width: 22px; height: 22px; background: var(--hi-bg); display: inline-block; position: relative; }
+  .chip.master::after { content:""; position:absolute; width:4px; height:4px; background: var(--hi-fg); left:6px; top:9px; box-shadow: 6px 0 0 var(--hi-fg); }
+</style>
+</head>
+<body>
+<div class="harness" id="h"></div>
+<script type="module">
+document.documentElement.setAttribute("data-theme", "light");
+const AV = `<span class="chip master"></span>`;
+
+/* ---------- panels, exactly as Inspector.tsx renders them today ---------- */
+const selfev = `
+<div class="panel selfev">
+  <div class="phead"><span>自进化</span></div>
+  <div class="selfrow">
+    <label class="lauto"><input type="checkbox" checked><span>让智能体自己学习</span></label>
+    <button class="btn">学习一次</button>
+  </div>
+  <div class="rule">上次自动评估 14:20 · 下次自动学习不早于 15:20</div>
+</div>`;
+
+const goalOff = `
+<div class="panel">
+  <div class="kv"><span class="k">开启目标</span><span class="v faint">无</span></div>
+  <div class="rule">你发消息时 master 才行动。设定目标可让它自行推进。</div>
+  <div class="hbnew">
+    <input class="iin" placeholder="给 master 设定一个目标…" />
+    <button class="btn">设定</button>
+  </div>
+</div>`;
+
+const goalOn = `
+<div class="panel">
+  <div class="rule">“把 README 的中英文两版对齐，并补上安装章节”</div>
+  <div class="kv"><span class="k">状态</span><span class="v ok">进行中</span></div>
+  <div class="kv"><span class="k">预算</span><span class="v faint">41k/200k · 21%</span></div>
+  <div class="brow"><button class="btn">暂停</button><button class="btn">清除</button></div>
+</div>`;
+
+const unattendedOff = `
+<div class="panel">
+  <div class="phead"><span>自动运行</span><code>关</code></div>
+  <div class="rule">按下面这些上限开启。仅在检查失败、或某轮没有交付证据时才续跑。</div>
+  <div class="lims">
+    <label><span>轮数</span><input placeholder="12" /></label>
+    <label><span>用量</span><input placeholder="80k" /></label>
+    <label><span>时长</span><input placeholder="30m" /></label>
+    <label><span>续跑次数</span><input placeholder="3" /></label>
+  </div>
+  <button class="btn">开启自动运行</button>
+</div>`;
+
+const unattendedOn = `
+<div class="panel">
+  <div class="phead"><span>自动运行</span><code>开</code></div>
+  <div class="rule">仅在检查失败、或某轮没有证据时续跑;触及任一上限即停止。目标不受影响,继续推进。</div>
+  <div class="kv"><span class="k">续跑次数</span><span class="v">1/3</span></div>
+  <div class="kv"><span class="k">轮数</span><span class="v">4/12</span></div>
+  <div class="kv"><span class="k">用量</span><span class="v">23k/80k</span></div>
+  <div class="kv"><span class="k">时间</span><span class="v">6 分钟/30 分钟</span></div>
+  <div class="brow"><button class="btn">关闭</button></div>
+</div>`;
+
+const reentry = `
+<div class="panel">
+  <div class="phead"><span>自动唤醒</span></div>
+  <div class="kv hbrow">
+    <span class="k">定时跟进</span><span class="v faint">下次 15:30</span>
+    <span class="hbops"><button class="btn xs">暂停</button><button class="btn xs">清除</button></span>
+  </div>
+  <div class="kv hbrow">
+    <span class="k">排期 · @daily</span><span class="v faint">下次 9月4日 00:00</span>
+    <span class="hbops"><button class="btn xs">取消</button></span>
+  </div>
+  <div class="hbnew">
+    <select><option>每 30 分钟</option></select>
+    <input class="iin" placeholder="到点用这条提示唤醒它…" />
+    <button class="btn">添加</button>
+  </div>
+</div>`;
+
+const subj = (st) => `<div class="subj">${AV}<span class="nm">master</span><span class="st">${st}</span></div>`;
+
+const panel = (cap, inner) =>
+  `<div class="col"><div class="cap">${cap}</div><aside class="insp">${inner}</aside></div>`;
+
+document.getElementById("h").innerHTML =
+  panel("目标未开启", subj("由你推进") + selfev + goalOff + unattendedOff + reentry) +
+  panel("目标已开启", subj("目标推进中") + selfev + goalOn + unattendedOn + reentry);
+</script>
+</body>
+</html>

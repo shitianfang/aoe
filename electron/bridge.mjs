@@ -118,6 +118,22 @@ How work goes here:
 5. Before your first file write, read the \`aoe-way\` skill and work by it: the variant rules, the blind subagent review protocol, and what to report so the user can check you instead of trusting you.
 6. End each turn with what changed, what you would do next, and anything you added that was not asked for but is needed.`;
 
+/** Appended to the instructions of every /refine this client starts. The
+ *  refiner writes its summary, rationale and expected outcome for itself — in
+ *  English, in harness vocabulary ("trajectory", "scope policy", "entry id") —
+ *  but in this app that text is the whole ⚡ Self-evolution tab, read by the
+ *  person whose workspace it is. Same record, addressed to its actual reader.
+ *  Only covers refines the client starts; the runtime's own auto-refine has
+ *  its own prompt inside core. */
+const REFINE_STYLE = `Write summary, title, rationale and expectedOutcome for the person who owns this workspace, not for the harness:
+- Use the language the user writes in. A Chinese conversation gets a Chinese record.
+- Plain words. No harness vocabulary — not "trajectory", "scope policy", "store", "entry id", "refinement".
+- summary is one short sentence saying what future work will do differently. Not a verdict on whether edits were justified.
+- rationale is two sentences at most: what in this session showed it.`;
+
+/** Refine instructions = whatever the caller passed, plus the house style. */
+const refineInstructions = (text) => [text, REFINE_STYLE].filter(Boolean).join("\n\n");
+
 /** Skills the app itself ships (repo `skills/`, next to `electron/`). They are
  *  handed to each session on top of the runtime's own, so the method lives with
  *  the client and stays out of the user's agent home. */
@@ -1223,7 +1239,7 @@ async function handleCmd(body) {
       return { model: { id: model.id, name: model.name || model.id, provider: model.provider } };
     }
     case "refine":
-      return { result: await masterConn.refine(body.text ? { instructions: body.text } : {}) };
+      return { result: await masterConn.refine({ instructions: refineInstructions(body.text) }) };
     case "refine_rollback":
       // Undo one lesson; recorded by the harness as a new refinement.
       return { result: await masterConn.refine({ rollbackId: String(body.target ?? "") }) };
@@ -1232,7 +1248,7 @@ async function handleCmd(body) {
       return {
         result: await masterConn.refine({
           global: true,
-          ...(body.text ? { instructions: String(body.text) } : {}),
+          instructions: refineInstructions(body.text ? String(body.text) : ""),
         }),
       };
     case "agent_message": {
@@ -1409,10 +1425,10 @@ async function handleCmd(body) {
     }
     case "root_refine": {
       // Learn-now for another root: a real /refine on the root's own session
-      // and harness (empty instructions = plain refine). Mirrors master's
+      // and harness (no focus text = just the house style). Mirrors master's
       // "refine" op; can take minutes (the SDK allows 10).
       const { conn } = await ensureRootConn(String(body.target ?? ""));
-      return { result: await conn.refine(body.text ? { instructions: String(body.text) } : {}) };
+      return { result: await conn.refine({ instructions: refineInstructions(body.text ? String(body.text) : "") }) };
     }
     case "set_auto_refine": {
       // The auto-refine switch is a GLOBAL setting: settings.json autoRefine

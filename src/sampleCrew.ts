@@ -12,7 +12,7 @@
  */
 
 export interface SampleTurn {
-  kind: "task" | "reply" | "tool";
+  kind: "reply" | "tool";
   /** task/reply: the words. tool: the tool's name. */
   text: string;
   /** tool rows only. */
@@ -37,7 +37,6 @@ export const SAMPLE_CREW: SampleAgent[] = [
     state: "done",
     at: "14:22",
     turns: [
-      { kind: "task", text: "read the workspace and list what is here" },
       { kind: "tool", text: "python", status: "done" },
       {
         kind: "reply",
@@ -52,7 +51,6 @@ export const SAMPLE_CREW: SampleAgent[] = [
     state: "done",
     at: "14:26",
     turns: [
-      { kind: "task", text: "write the page structure into today.html" },
       { kind: "tool", text: "python", status: "done" },
       {
         kind: "reply",
@@ -66,7 +64,6 @@ export const SAMPLE_CREW: SampleAgent[] = [
     task: "restyle it and publish a version",
     state: "running",
     turns: [
-      { kind: "task", text: "restyle it and publish a version" },
       { kind: "tool", text: "python", status: "done" },
       {
         kind: "reply",
@@ -80,7 +77,7 @@ export const SAMPLE_CREW: SampleAgent[] = [
     name: "checker",
     task: "compare the last two versions and report",
     state: "queued",
-    turns: [{ kind: "task", text: "compare the last two versions and report" }],
+    turns: [],
   },
 ];
 

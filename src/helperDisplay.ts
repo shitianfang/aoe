@@ -133,6 +133,22 @@ export function lessonSourceText(source: string | undefined): string | null {
   return null; // unknown/older record — say nothing rather than guess
 }
 
+/** One harness `changes` entry — the machine string `"create memory:some_id"` —
+ *  split into product words plus the bare id. The pane says what the edit did;
+ *  the id stays as mono machine text beside it, unlabelled. */
+export function lessonChangeText(change: string): { what: string; id: string | null } {
+  const m = /^(create|update|delete)\s+(prompt|memory|skill|subagent):(.*)$/i.exec(change.trim());
+  if (m === null) return { what: change, id: null }; // unknown shape — show it verbatim
+  const kind = { prompt: t("prompt"), memory: t("memory"), skill: t("skill"), subagent: t("subagent") }[
+    m[2].toLowerCase() as "prompt" | "memory" | "skill" | "subagent"
+  ];
+  const what = { create: "added a {kind}", update: "updated a {kind}", delete: "removed a {kind}" }[
+    m[1].toLowerCase() as "create" | "update" | "delete"
+  ];
+  const id = m[3].trim();
+  return { what: t(what, { kind }), id: id === "" ? null : id };
+}
+
 /** Row-suffix variant: 主动/自动 only — an agent-invoked lesson was not asked
  *  for by you either, so it reads as 自动 in the terse suffix; the detail pane
  *  still says precisely who. */

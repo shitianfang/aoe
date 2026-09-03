@@ -72,7 +72,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .wsnew input { width: 100%; height: 28px; padding: 0 10px; border: 1px solid var(--hair); background: var(--soft); color: var(--t1); font-family: var(--mono); font-size: 10.5px; outline: none; }
 .wsnew input::placeholder { color: var(--t3); }
 .wsnew input:focus { border-color: var(--t3); }
-.wsrow .m b { color: var(--red); font-weight: 500; }
 
 /* learned view */
 .learn { flex: 1; overflow-y: auto; padding: 18px; }
@@ -234,6 +233,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .vbox .vh { display: flex; justify-content: space-between; padding: 7px 10px; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .vbox .vh b { color: var(--t1); }
 .vbox .vempty { padding: 14px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
+.pfiles { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+.vbox .vdoc { margin: 0; padding: 12px; font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
+.vbox .vframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
+.vbox .vimg { display: block; max-width: 100%; }
 .between { padding-top: 16px; }
 .between .bh { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); padding-bottom: 8px; }
 .between .ev { margin-left: 0; margin-top: 8px; }

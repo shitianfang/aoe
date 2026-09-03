@@ -1,6 +1,6 @@
 import type { FileActivity } from "../types";
 
-const PREVIEWABLE = /\.(html?|md|png)$/i;
+const PREVIEWABLE = /\.(html?|md|png|pdf)$/i;
 
 export function FilesColumn(props: {
   files: FileActivity[];
@@ -41,7 +41,7 @@ export function FilesColumn(props: {
           <div className="colnote">
             who changed what, when.
             <br />
-            open an html, md or png file to preview it.
+            open an html, md, png or pdf file to preview it.
           </div>
         </>
       )}

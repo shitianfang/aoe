@@ -36,7 +36,7 @@ import {
   bridgeUrl,
   type BridgeMessage,
 } from "./runtime/bridge";
-import { getPreviewState } from "./runtime/preview";
+import { fetchPreviewFiles } from "./runtime/preview";
 import type { ChatMessage } from "./runtime/nim";
 
 let nextId = 1;
@@ -92,7 +92,8 @@ export function App() {
     children: [],
     helperEvents: {},
     files: [],
-    preview: getPreviewState(),
+    previewFiles: [],
+    previewPath: null,
     heartbeats: [],
     autonomous: null,
     target: { kind: "master" },
@@ -144,6 +145,17 @@ export function App() {
           /* bridge offline */
         }
       }, 400);
+    };
+
+    let pvTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshPreview = () => {
+      // preview_update fires once per turn with changes — cheap throttled re-pull.
+      if (pvTimer) return;
+      pvTimer = setTimeout(async () => {
+        pvTimer = null;
+        const previewFiles = await fetchPreviewFiles().catch(() => []);
+        setState((s) => ({ ...s, previewFiles }));
+      }, 300);
     };
 
     const mergeChild = (child: ChildInfo) => {
@@ -275,9 +287,11 @@ export function App() {
         const toolName = String(event.toolName ?? "tool");
         const path = filePathFromArgs(event.args);
         const label = path ? `${toolName} · ${path.split(/[\\/]/).pop()}` : toolName;
+        const writes = toolName === "edit" || toolName === "write";
+        if (path && writes) refreshPreview(); // live marker moves mid-turn
         setState((s) => ({
           ...s,
-          files: path && toolName === "edit" ? upsertFile(s.files, path, "master") : s.files,
+          files: path && writes ? upsertFile(s.files, path, "master") : s.files,
           timeline: [
             ...s.timeline,
             {
@@ -286,6 +300,7 @@ export function App() {
               name: label,
               status: "running",
               at: clock(),
+              ts: Date.now(),
             },
           ],
         }));
@@ -299,7 +314,12 @@ export function App() {
         }));
       } else if (t === "refine_complete") {
         const result = event.result as { id?: string; summary?: string } | undefined;
-        push({ kind: "divider", id: id(), text: `lesson kept · ${result?.summary ?? result?.id ?? ""} · ${clock()}` });
+        push({
+          kind: "divider",
+          id: id(),
+          text: `lesson kept · ${result?.summary ?? result?.id ?? ""} · ${clock()}`,
+          ts: Date.now(),
+        });
       } else if (t === "compaction_end") {
         // compaction is not shown (HANDOFF §4)
       }
@@ -326,6 +346,8 @@ export function App() {
             children: [],
             helperEvents: {},
             files: [],
+            previewFiles: [],
+            previewPath: null,
             heartbeats: [],
             autonomous: null,
             target: { kind: "master" },
@@ -334,9 +356,14 @@ export function App() {
             timeline: [{ kind: "divider", id: id(), text: `workspace ${ws} · ${clock()}` }],
           };
         });
-        if (m.daemon.connected) refreshHeartbeats();
-      } else if ((m as { type: string }).type === "heartbeats_changed") {
+        if (m.daemon.connected) {
+          refreshHeartbeats();
+          refreshPreview();
+        }
+      } else if (m.type === "heartbeats_changed") {
         refreshHeartbeats();
+      } else if (m.type === "preview_update") {
+        refreshPreview();
       } else if (m.type === "snapshot") {
         // The snapshot roster is authoritative: helpers can vanish (the agent
         // may delete its own). Merge by id, keep cached session ids, drop the
@@ -373,8 +400,22 @@ export function App() {
   );
   const setTarget = useCallback((target: ComposerTarget) => setState((s) => ({ ...s, target })), []);
   const setDelivery = useCallback((delivery: DeliveryMode) => setState((s) => ({ ...s, delivery })), []);
+  // From the Files column: match the tool-arg path (may be absolute) against
+  // the workspace-relative preview index.
   const openPreview = useCallback(
-    () => setState((s) => ({ ...s, view: "preview", selectedAgent: null })),
+    (file?: FileActivity) =>
+      setState((s) => {
+        const match = file
+          ? s.previewFiles.find(
+              (p) => p.path === file.path || file.path.endsWith(`/${p.path}`) || p.name === file.name,
+            )
+          : undefined;
+        return { ...s, view: "preview", selectedAgent: null, previewPath: match?.path ?? s.previewPath };
+      }),
+    [],
+  );
+  const selectPreviewFile = useCallback(
+    (previewPath: string) => setState((s) => ({ ...s, previewPath })),
     [],
   );
 
@@ -538,7 +579,16 @@ export function App() {
 
   const center = () => {
     if (state.view === "learned") return <LearnedView />;
-    if (state.view === "preview") return <PreviewView preview={state.preview} />;
+    if (state.view === "preview") {
+      return (
+        <PreviewView
+          files={state.previewFiles}
+          selectedPath={state.previewPath}
+          timeline={state.timeline}
+          onSelect={selectPreviewFile}
+        />
+      );
+    }
     if (selectedChild) {
       return (
         <HelperView

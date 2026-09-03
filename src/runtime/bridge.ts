@@ -14,7 +14,9 @@ export interface BridgeHello {
 export type BridgeMessage =
   | { type: "hello"; daemon: BridgeHello }
   | { type: "snapshot"; state: { goal: unknown; heartbeat: unknown }; children: unknown[]; messages: unknown[] }
-  | { type: "event"; event: Record<string, unknown> };
+  | { type: "event"; event: Record<string, unknown> }
+  | { type: "heartbeats_changed" }
+  | { type: "preview_update" };
 
 // Packaged app: Electron main hosts the daemon bridge and hands its port over
 // via the page query. Dev: same-origin Vite proxy.

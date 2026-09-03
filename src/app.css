@@ -8,6 +8,7 @@
   --t1: #1b1e23; --t2: #4e565f; --t3: #8a9199;
   --cyan: #4accdf; --violet: #a78bfa; --amber: #e5b563;
   --blue: #7ea6e8; --rose: #e59ab8;
+  --you: var(--cyan); /* the human's identity color */
   --cyan-bg: #e2f5f8; --cyan-bd: #9fd9e4; --cyan-tx: #0b7c8d;
   --amber-bg: #faf2df; --amber-bd: #e3cd97; --amber-tx: #8f6c14;
   --violet-bg: #f0ebfc; --violet-bd: #cdbcf2; --violet-tx: #6a48c8;
@@ -138,8 +139,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .rbtn.on { color: var(--t1); background: var(--soft); }
 .rbtn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.5; }
 .rail .sp { flex: 1; }
-.uav { position: relative; width: 26px; height: 26px; background: var(--soft2); border: 1px solid var(--hair-hi); color: var(--t2); font-family: var(--mono); font-size: 9px; font-weight: 700; display: grid; place-items: center; cursor: pointer; }
-.uav:hover { color: var(--t1); border-color: var(--t3); }
+.uav { position: relative; width: 26px; height: 26px; background: var(--you); color: #141517; font-family: var(--mono); font-size: 9px; font-weight: 700; display: grid; place-items: center; cursor: pointer; }
+.uav:hover { filter: brightness(1.06); }
 .uav .udot { position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; background: var(--green); border: 1px solid var(--win); }
 .uav .udot.bad { background: var(--red); }
 
@@ -163,11 +164,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .chip.violet { background: var(--violet); }
 .chip.blue { background: var(--blue); }
 .chip.rose { background: var(--rose); }
+.chip.you { background: var(--you); border: 0; color: #141517; font-weight: 700; }
 .chip.sm { width: 18px; height: 18px; font-size: 8px; }
 /* generative bot faces — SVG inherits the chip's ink color */
 .chip.bot svg { width: 22px; height: 22px; display: block; }
 .chip.bot.sm svg { width: 16px; height: 16px; }
-.chip.bot.ghost { color: var(--t3); }
 .a { display: flex; align-items: center; gap: 9px; padding: 6px 8px; cursor: pointer; margin-bottom: 3px; border: 1px solid transparent; width: 100%; text-align: left; }
 .a.tree { gap: 8px; padding: 5px 8px; }
 .a.droptgt { border-color: var(--t3); background: var(--soft); }
@@ -216,13 +217,30 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* Tab bar separates by surface color, not lines (VSCode-style): the strip is
    recessed, the active tab takes the content surface and fuses with the panel
    below — no underline, no border across the bar, no per-tab separators. */
-.tabs { display: flex; align-items: stretch; min-height: 34px; background: var(--soft); flex-shrink: 0; }
-.tab { display: flex; align-items: center; gap: 7px; padding: 0 14px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
-.tab.on { color: var(--t1); background: var(--win); }
+/* tab strip sits on the window ground; the active tab is a slightly-gray slab
+   with air around it, so it reads as wrapped/held by the strip */
+.tabs { display: flex; align-items: center; gap: 4px; min-height: 34px; padding: 5px 8px; background: var(--win); flex-shrink: 0; }
+.tab { display: flex; align-items: center; gap: 7px; padding: 5px 12px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
+.tab.on { color: var(--t1); background: var(--soft); }
 .tab:hover { color: var(--t2); }
 .tab.on:hover { color: var(--t1); }
 
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* Split layout: everything under the tab bar. Two content surfaces separated
+   by the recessed gutter color showing through a small gap (background
+   separation, no divider lines); the unfocused pane reads slightly muted.
+   The drop hint is a quiet ink tint over the half a drag would take. */
+.cbody { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.panes { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--soft); gap: 3px; }
+.pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--win); transition: opacity 120ms ease; }
+.pane.away { opacity: .8; }
+.drophint { position: absolute; top: 0; bottom: 0; width: 50%; background: var(--hair); pointer-events: none; }
+.drophint.left { left: 0; }
+.drophint.right { right: 0; }
+/* reset layout — small muted text at the right end of the tab bar, split only */
+.reset { margin-left: auto; padding: 0 14px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.reset:hover { color: var(--t2); }
 
 /* agent header (helper views) */
 .ahead { padding: 14px 18px 12px; border-bottom: 1px dashed var(--hair); flex-shrink: 0; }

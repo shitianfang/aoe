@@ -175,6 +175,27 @@ export interface AutonomousInfo {
   lastGateFailure?: { command?: string; attempt?: number };
 }
 
+/** What one center pane can show. In single-pane layout this is implied by
+ *  view/selectedAgent/selectedRoot; the split layout names the second pane's
+ *  content explicitly. */
+export type PaneView =
+  | { kind: "timeline" }
+  | { kind: "learned" }
+  | { kind: "preview" }
+  | { kind: "helper"; childId: string }
+  | { kind: "root"; name: string };
+
+/** Split layout for the center area (two panes max — the mockup's freedom,
+ *  bounded). The canonical view fields (view/selectedAgent/selectedRoot)
+ *  always describe the FOCUSED pane, so every existing action — tabs, agent
+ *  column, composer view-jumps — drives the focused pane for free; `other` is
+ *  the second pane, `focusSide` says which side the focused pane sits on.
+ *  null = default single-pane layout. */
+export interface SplitState {
+  other: PaneView;
+  focusSide: "left" | "right";
+}
+
 /** Composer target: master, a helper (by child id), or another root (by name).
  *  Changed only via the to ▾ popup — selection in the Agents column never
  *  changes it. */
@@ -193,6 +214,8 @@ export interface AppState {
   selectedAgent: string | null;
   /** Selected other root in the left column (by session name); exclusive with selectedAgent. */
   selectedRoot: string | null;
+  /** Second center pane (user split via tab drag); null = single pane. */
+  split: SplitState | null;
   /** Other root sessions on this daemon (roster behind the "Other" rows). */
   others: RootAgent[];
   /** Per-root timeline (watch_root feed: snapshot replaces, events append). */

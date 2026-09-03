@@ -119,7 +119,7 @@ export function AgentsColumn(props: {
       map.set(`root:${a.name}`, {
         key: `root:${a.name}`,
         label: a.name,
-        avatar: <BotAvatar seed={a.name} ghost={a.state === "inactive" && live === undefined} />,
+        avatar: <BotAvatar seed={a.name} />,
         tag: flavorTag(a.name, word, props.rootWorking[a.name]),
         state: statusIcon(word),
         selectable: null,

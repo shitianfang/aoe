@@ -82,7 +82,7 @@ export function Timeline(props: { items: TimelineItem[] }) {
     if (item.kind === "user") {
       return (
         <div className="msg user" key={item.id}>
-          <span className="chip ghost">Y</span>
+          <span className="chip you">Y</span>
           <span className="body">{item.text}</span>
           <span className="when">{item.at}</span>
         </div>

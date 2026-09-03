@@ -180,7 +180,7 @@ export function Composer(props: {
               {props.others.length > 0 && <div className="h">other agents</div>}
               {props.others.map((a) => (
                 <button className="tr" key={a.name} onClick={() => pick({ kind: "root", name: a.name })}>
-                  <BotAvatar seed={a.name} ghost={a.state === "inactive"} sm />
+                  <BotAvatar seed={a.name} sm />
                   {a.name}
                   <span className="st">{a.state}</span>
                 </button>

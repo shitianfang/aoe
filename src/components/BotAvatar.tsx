@@ -1,13 +1,7 @@
 import { hashSeed, IDENTITY_HUES } from "../helperDisplay";
 
-/** Head geometry variants: some bots run fat, some thin. */
-const HEADS = [
-  { x: 4, y: 8.5, w: 16, h: 9 },
-  { x: 6.5, y: 6.5, w: 11, h: 12 },
-  { x: 6, y: 7.5, w: 12, h: 11 },
-  { x: 4.5, y: 7, w: 15, h: 11.5 },
-  { x: 6, y: 9, w: 12, h: 8 },
-] as const;
+/** One head for everyone — a tidy column; identity lives in eyes, antenna, color. */
+const HEAD = { x: 5, y: 8, w: 14, h: 9 } as const;
 
 type EyeStyle = "dot" | "star" | "diamond" | "sleepy" | "happy" | "wide";
 const EYES: EyeStyle[] = ["dot", "star", "diamond", "sleepy", "happy", "wide"];
@@ -52,29 +46,28 @@ function eye(style: EyeStyle, cx: number, cy: number) {
   }
 }
 
-/** Deterministic generative bot face: same name → same body, eyes, antenna, color.
+/** Deterministic generative bot face: same name → same eyes, antenna, color.
  *  Master keeps its fixed white-block face (.chip.master) — this is for everyone else. */
-export function BotAvatar(props: { seed: string; ghost?: boolean; sm?: boolean }) {
+export function BotAvatar(props: { seed: string; sm?: boolean }) {
   const h = hashSeed(props.seed);
-  const head = HEADS[h % HEADS.length];
   const eyeStyle = EYES[Math.floor(h / 7) % EYES.length];
   const antenna = Math.floor(h / 41) % 3; // 0 none · 1 stub · 2 stub+tip
   const hue = IDENTITY_HUES[Math.floor(h / 13) % IDENTITY_HUES.length];
 
-  const cx = head.x + head.w / 2;
-  const eyeY = head.y + head.h * 0.48;
-  const eyeDx = Math.max(2.6, head.w * 0.24);
-  const cls = `chip bot ${props.ghost ? "ghost" : hue}${props.sm ? " sm" : ""}`;
+  const cx = HEAD.x + HEAD.w / 2;
+  const eyeY = HEAD.y + HEAD.h * 0.48;
+  const eyeDx = 3.4;
+  const cls = `chip bot ${hue}${props.sm ? " sm" : ""}`;
 
   return (
     <span className={cls}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x={head.x} y={head.y} width={head.w} height={head.h} fill="none" stroke="currentColor" strokeWidth={2} />
+        <rect x={HEAD.x} y={HEAD.y} width={HEAD.w} height={HEAD.h} fill="none" stroke="currentColor" strokeWidth={2} />
         {antenna > 0 && (
-          <rect x={cx - 0.6} y={head.y - 3} width={1.2} height={3} fill="currentColor" stroke="none" />
+          <rect x={cx - 0.6} y={HEAD.y - 3} width={1.2} height={3} fill="currentColor" stroke="none" />
         )}
         {antenna === 2 && (
-          <rect x={cx - 1.1} y={head.y - 5} width={2.2} height={2.2} fill="currentColor" stroke="none" />
+          <rect x={cx - 1.1} y={HEAD.y - 5} width={2.2} height={2.2} fill="currentColor" stroke="none" />
         )}
         {eye(eyeStyle, cx - eyeDx, eyeY)}
         {eye(eyeStyle, cx + eyeDx, eyeY)}

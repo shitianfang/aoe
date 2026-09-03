@@ -13,6 +13,7 @@ import type {
   HelperToolRow,
   HistoryMessage,
   LessonResult,
+  PaneView,
   RootAgent,
   Theme,
   TimelineItem,
@@ -57,6 +58,108 @@ function upsertFile(files: FileActivity[], path: string, who: string): FileActiv
   const name = path.split(/[\\/]/).pop() ?? path;
   const row: FileActivity = { path, name, who, at: clock() };
   return [row, ...files.filter((f) => f.path !== path)];
+}
+
+/* ---- center split layout helpers ----
+ * The canonical fields (view/selectedAgent/selectedRoot) describe the FOCUSED
+ * pane; split.other is the second pane. See SplitState in types.ts. */
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode */
+  }
+}
+
+/** The focused pane's content, mirroring center()'s render precedence
+ *  (learned/preview sit on top of a lingering agent selection). */
+function currentPane(s: AppState): PaneView {
+  if (s.view === "learned") return { kind: "learned" };
+  if (s.view === "preview") return { kind: "preview" };
+  if (s.selectedAgent && s.children.some((c) => c.id === s.selectedAgent))
+    return { kind: "helper", childId: s.selectedAgent };
+  if (s.selectedRoot) return { kind: "root", name: s.selectedRoot };
+  return { kind: "timeline" };
+}
+
+/** State patch that makes `p` the focused pane's content. learned/preview keep
+ *  the agent selection underneath, exactly like the plain setView did. */
+function panePatch(p: PaneView): Partial<AppState> {
+  if (p.kind === "learned") return { view: "learned" };
+  if (p.kind === "preview") return { view: "preview" };
+  if (p.kind === "helper") return { view: "timeline", selectedAgent: p.childId, selectedRoot: null };
+  if (p.kind === "root") return { view: "timeline", selectedAgent: null, selectedRoot: p.name };
+  return { view: "timeline", selectedAgent: null, selectedRoot: null };
+}
+
+function sameView(a: PaneView, b: PaneView): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "helper" && b.kind === "helper") return a.childId === b.childId;
+  if (a.kind === "root" && b.kind === "root") return a.name === b.name;
+  return true;
+}
+
+/** Show `v` in the focused pane. If the OTHER pane already shows it, don't
+ *  duplicate — move focus to that pane instead (net render unchanged). */
+function showFocused(s: AppState, v: PaneView): AppState {
+  if (s.split && sameView(v, s.split.other)) {
+    return {
+      ...s,
+      ...panePatch(v),
+      split: { other: currentPane(s), focusSide: s.split.focusSide === "left" ? "right" : "left" },
+    };
+  }
+  return { ...s, ...panePatch(v) };
+}
+
+/** Drop stale pane content after a roster update (only the roster that is
+ *  fresh — flags say which), and never keep two panes showing the same thing:
+ *  a stale pane falls back to the master timeline, a duplicate collapses the
+ *  split back to single pane. */
+function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolean } = {}): AppState {
+  if (!s.split) return s;
+  const o = s.split.other;
+  let other: PaneView = o;
+  if (fresh.children && o.kind === "helper" && !s.children.some((c) => c.id === o.childId)) {
+    other = { kind: "timeline" };
+  } else if (fresh.roots && o.kind === "root" && !s.others.some((a) => a.name === o.name)) {
+    other = { kind: "timeline" };
+  }
+  if (sameView(other, currentPane(s))) return { ...s, split: null };
+  if (other !== o) return { ...s, split: { ...s.split, other } };
+  return s;
+}
+
+/** Persisted-layout shape guard (localStorage may hold anything). */
+function sanePane(p: unknown): PaneView | null {
+  if (!p || typeof p !== "object") return null;
+  const v = p as { kind?: unknown; childId?: unknown; name?: unknown };
+  if (v.kind === "timeline" || v.kind === "learned" || v.kind === "preview") return { kind: v.kind };
+  if (v.kind === "helper" && typeof v.childId === "string") return { kind: "helper", childId: v.childId };
+  if (v.kind === "root" && typeof v.name === "string") return { kind: "root", name: v.name };
+  return null;
+}
+
+/** Restore a saved split layout (per-workspace key). Stale helper/root panes
+ *  are tolerated here and reconciled once the real rosters arrive. */
+function restoreSplit(key: string): Partial<AppState> {
+  const raw = loadJson<{ left?: unknown; right?: unknown; focus?: unknown } | null>(key, null);
+  const left = sanePane(raw?.left);
+  const right = sanePane(raw?.right);
+  if (!left || !right || sameView(left, right)) return {};
+  const focusSide = raw?.focus === "right" ? ("right" as const) : ("left" as const);
+  const focused = focusSide === "left" ? left : right;
+  const other = focusSide === "left" ? right : left;
+  return { ...panePatch(focused), split: { other, focusSide } };
 }
 
 function hhmm(at?: number): string {
@@ -131,6 +234,7 @@ export function App() {
     column: "agents",
     selectedAgent: null,
     selectedRoot: null,
+    split: null,
     others: [],
     rootTimelines: {},
     rootLoad: {},
@@ -177,6 +281,13 @@ export function App() {
   // Last live timeline append; long silences get one dashed time rule.
   const lastAtRef = useRef(Date.now());
   const [setOpen, setSetOpen] = useState(false);
+  // The tab being dragged (drag data is unreadable during dragover) + the
+  // half of the center that would be taken on drop.
+  const dragViewRef = useRef<PaneView | null>(null);
+  const [dropHint, setDropHint] = useState<"left" | "right" | null>(null);
+  // Per-workspace persistence key for the split layout; set at hello so the
+  // save effect never writes before the restore ran.
+  const splitKeyRef = useRef<string | null>(null);
 
   const toggleTheme = useCallback(() => {
     setState((s) => {
@@ -199,12 +310,15 @@ export function App() {
       const others: RootAgent[] = Array.isArray(r.agents) ? (r.agents as RootAgent[]) : [];
       setState((s) => {
         const has = (n: string | null) => n !== null && others.some((a) => a.name === n);
-        return {
-          ...s,
-          others,
-          selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
-          target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
-        };
+        return reconcileSplit(
+          {
+            ...s,
+            others,
+            selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
+            target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
+          },
+          { roots: true },
+        );
       });
     } catch {
       /* bridge offline */
@@ -618,7 +732,15 @@ export function App() {
             // preview_published (declared previews); absent = inference only.
             previewEvents: (m.daemon.capabilities ?? []).includes("preview_events"),
           };
-          if (!switched) return { ...s, bridge: bridgeState };
+          // Split layout is per workspace; restore once per key so a
+          // reconnect hello never clobbers the user's in-session layout.
+          const splitKey = `center-split:${ws ?? "general"}`;
+          if (!switched) {
+            if (splitKeyRef.current === splitKey) return { ...s, bridge: bridgeState };
+            splitKeyRef.current = splitKey;
+            return { ...s, bridge: bridgeState, ...restoreSplit(splitKey) };
+          }
+          splitKeyRef.current = splitKey;
           // A workspace is its own master, helpers, other roots, files, history.
           daemonMsgRef.current = null;
           historyRef.current = [];
@@ -635,6 +757,7 @@ export function App() {
             view: "timeline",
             selectedAgent: null,
             selectedRoot: null,
+            split: null,
             others: [],
             rootTimelines: {},
             rootLoad: {},
@@ -653,6 +776,7 @@ export function App() {
             target: { kind: "master" },
             error: undefined,
             timeline: [{ kind: "divider", id: id(), text: `workspace ${ws} · ${clock()}` }],
+            ...restoreSplit(splitKey),
           };
         });
         if (m.daemon.connected) {
@@ -736,15 +860,18 @@ export function App() {
             return { ...prev, ...c, activeSessionId: c.activeSessionId ?? prev?.activeSessionId };
           });
           const has = (cid: string | null) => cid !== null && children.some((c) => c.id === cid);
-          return {
-            ...s,
-            goal: (m.state.goal as GoalInfo) ?? null,
-            children,
-            timeline: history.length > 0 ? [...s.timeline, ...history] : s.timeline,
-            selectedAgent: has(s.selectedAgent) ? s.selectedAgent : null,
-            target:
-              s.target.kind === "helper" && !has(s.target.childId) ? { kind: "master" } : s.target,
-          };
+          return reconcileSplit(
+            {
+              ...s,
+              goal: (m.state.goal as GoalInfo) ?? null,
+              children,
+              timeline: history.length > 0 ? [...s.timeline, ...history] : s.timeline,
+              selectedAgent: has(s.selectedAgent) ? s.selectedAgent : null,
+              target:
+                s.target.kind === "helper" && !has(s.target.childId) ? { kind: "master" } : s.target,
+            },
+            { children: true },
+          );
         });
       } else if (m.type === "event") {
         onEvent(m.event);
@@ -754,17 +881,25 @@ export function App() {
   }, [refreshOthers]);
 
   const setColumn = useCallback((column: ColumnView) => setState((s) => ({ ...s, column })), []);
-  const setView = useCallback((view: AppState["view"]) => setState((s) => ({ ...s, view })), []);
+  // Tabs and the Learned shortcut drive the FOCUSED pane (showFocused: if the
+  // other pane already shows it, focus moves there instead of duplicating).
+  const setView = useCallback(
+    (view: AppState["view"]) =>
+      setState((s) =>
+        showFocused(s, view === "learned" ? { kind: "learned" } : view === "preview" ? { kind: "preview" } : { kind: "timeline" }),
+      ),
+    [],
+  );
   // Selecting an agent in the column never changes the composer target —
   // helpers and other roots alike; the target moves only via the to ▾ popup.
+  // It changes what the focused pane shows.
   const selectAgent = useCallback(
     (childId: string | null) =>
-      setState((s) => ({ ...s, selectedAgent: childId, selectedRoot: null, view: "timeline" })),
+      setState((s) => showFocused(s, childId ? { kind: "helper", childId } : { kind: "timeline" })),
     [],
   );
   const selectRoot = useCallback(
-    (name: string) =>
-      setState((s) => ({ ...s, selectedRoot: name, selectedAgent: null, view: "timeline" })),
+    (name: string) => setState((s) => showFocused(s, { kind: "root", name })),
     [],
   );
   const setTarget = useCallback((target: ComposerTarget) => setState((s) => ({ ...s, target })), []);
@@ -778,10 +913,56 @@ export function App() {
               (p) => p.path === file.path || file.path.endsWith(`/${p.path}`) || p.name === file.name,
             )
           : undefined;
-        return { ...s, view: "preview", selectedAgent: null, previewPath: match?.path ?? s.previewPath };
+        return {
+          ...showFocused(s, { kind: "preview" }),
+          selectedAgent: null,
+          previewPath: match?.path ?? s.previewPath,
+        };
       }),
     [],
   );
+  // Clicking anywhere in the unfocused pane moves focus there (model swap:
+  // canonical fields take that pane's content, `other` takes the old one).
+  const focusPane = useCallback(
+    (side: "left" | "right") =>
+      setState((s) => {
+        if (!s.split || s.split.focusSide === side) return s;
+        return { ...s, ...panePatch(s.split.other), split: { other: currentPane(s), focusSide: side } };
+      }),
+    [],
+  );
+  // reset layout: back to the default single pane — the selected agent's
+  // timeline (master when nothing is selected). The save effect clears the key.
+  const resetLayout = useCallback(
+    () => setState((s) => ({ ...s, split: null, view: "timeline" })),
+    [],
+  );
+  /** A tab dropped on the left/right half of the center area. */
+  const dropPane = useCallback((v: PaneView, side: "left" | "right") => {
+    setState((s) => {
+      const cur = currentPane(s);
+      if (!s.split) {
+        // Same view as the only pane — nothing to pair it with.
+        if (sameView(v, cur)) return s;
+        // Open the split: dropped view on the chosen side, focused.
+        return { ...s, ...panePatch(v), split: { other: cur, focusSide: side } };
+      }
+      const other = s.split.other;
+      const sideView = side === s.split.focusSide ? cur : other;
+      const awayView = side === s.split.focusSide ? other : cur;
+      if (sameView(v, sideView)) {
+        // Already there — just focus that pane.
+        if (side === s.split.focusSide) return s;
+        return { ...s, ...panePatch(sideView), split: { other: cur, focusSide: side } };
+      }
+      if (sameView(v, awayView)) {
+        // It lives on the other side — move it across (panes swap), focused.
+        return { ...s, ...panePatch(v), split: { other: sideView, focusSide: side } };
+      }
+      // Replace whatever the drop side showed; the other pane stays.
+      return { ...s, ...panePatch(v), split: { other: awayView, focusSide: side } };
+    });
+  }, []);
   const selectPreviewFile = useCallback(
     (previewPath: string) => setState((s) => ({ ...s, previewPath })),
     [],
@@ -907,18 +1088,18 @@ export function App() {
         const name = current.target.name;
         const busy = (current.rootStates[name] ?? "idle") === "working";
         const op = busy ? "root_steer" : "root_prompt";
-        setState((s) => ({
-          ...s,
-          view: "timeline",
-          selectedAgent: null,
-          selectedRoot: name,
-          error: undefined,
-          rootStates: busy ? s.rootStates : { ...s.rootStates, [name]: "working" },
-          rootTimelines: {
-            ...s.rootTimelines,
-            [name]: [...(s.rootTimelines[name] ?? []), userItem],
-          },
-        }));
+        setState((s) => {
+          const jumped = showFocused(s, { kind: "root", name });
+          return {
+            ...jumped,
+            error: undefined,
+            rootStates: busy ? jumped.rootStates : { ...jumped.rootStates, [name]: "working" },
+            rootTimelines: {
+              ...jumped.rootTimelines,
+              [name]: [...(jumped.rootTimelines[name] ?? []), userItem],
+            },
+          };
+        });
         try {
           await bridgeCmd(op, text, { target: name });
         } catch (e) {
@@ -932,15 +1113,15 @@ export function App() {
       if (bridgeRef.current) {
         const busy = current.master === "working";
         const op = busy ? "steer" : "prompt";
-        setState((s) => ({
-          ...s,
-          master: "working",
-          view: "timeline",
-          selectedAgent: null,
-          selectedRoot: null,
-          error: undefined,
-          timeline: [...s.timeline, userItem],
-        }));
+        setState((s) => {
+          const jumped = showFocused(s, { kind: "timeline" });
+          return {
+            ...jumped,
+            master: "working",
+            error: undefined,
+            timeline: [...jumped.timeline, userItem],
+          };
+        });
         try {
           if (op === "steer") await steer(text);
           else await bridgeCmd("prompt", text);
@@ -954,15 +1135,19 @@ export function App() {
       }
       const masterId = id();
       historyRef.current.push({ role: "user", content: text });
-      setState((s) => ({
-        ...s,
-        master: "working",
-        view: "timeline",
-        selectedAgent: null,
-        selectedRoot: null,
-        error: undefined,
-        timeline: [...s.timeline, userItem, { kind: "master", id: masterId, text: "", at: clock(), streaming: true }],
-      }));
+      setState((s) => {
+        const jumped = showFocused(s, { kind: "timeline" });
+        return {
+          ...jumped,
+          master: "working",
+          error: undefined,
+          timeline: [
+            ...jumped.timeline,
+            userItem,
+            { kind: "master", id: masterId, text: "", at: clock(), streaming: true },
+          ],
+        };
+      });
       await sendViaNim(text, masterId);
     },
     [sendViaNim, sendToHelper],
@@ -973,32 +1158,80 @@ export function App() {
     : null;
   const needsYou = state.children.filter((c) => c.status === "done" && !c.repliedSinceTask).length;
 
-  // Watch the selected helper's live session while its view is open (a second
-  // attach on the same daemon socket). Attach can fail when the helper ran
-  // inline or was deleted — no retry; the view then shows observed events only.
-  const watchTarget = selectedChild?.activeSessionId ?? null;
-  useEffect(() => {
-    if (!watchTarget) return;
-    bridgeCmd("watch_helper", undefined, { target: watchTarget }).catch(() => undefined);
-    return () => {
-      bridgeCmd("unwatch_helper", undefined, { target: watchTarget }).catch(() => undefined);
-    };
-  }, [watchTarget]);
+  // Either pane can hold a helper or root view now — watch whatever is open.
+  const otherPane = state.split?.other ?? null;
+  const otherHelper =
+    otherPane?.kind === "helper" ? state.children.find((c) => c.id === otherPane.childId) ?? null : null;
 
-  // Watch the selected other root while its view is open (another attach on
-  // the same daemon socket, mirroring watch_helper). Detaches on switch-away;
-  // an attach failure means the root is gone — fall back to master honestly.
-  const watchRoot = state.selectedRoot;
+  // Watch open helpers' live sessions (second attaches on the same daemon
+  // socket). Attach can fail when the helper ran inline or was deleted — no
+  // retry; the view then shows observed events only.
+  const helperWatchKey = [
+    ...new Set(
+      [selectedChild?.activeSessionId, otherHelper?.activeSessionId].filter((x): x is string => Boolean(x)),
+    ),
+  ]
+    .sort()
+    .join("\n");
   useEffect(() => {
-    if (!watchRoot) return;
-    bridgeCmd("watch_root", undefined, { target: watchRoot }).catch(() => {
-      refreshOthers();
-      setState((s) => (s.selectedRoot === watchRoot ? { ...s, selectedRoot: null } : s));
-    });
+    if (!helperWatchKey) return;
+    const targets = helperWatchKey.split("\n");
+    for (const t of targets) bridgeCmd("watch_helper", undefined, { target: t }).catch(() => undefined);
     return () => {
-      bridgeCmd("unwatch_root", undefined, { target: watchRoot }).catch(() => undefined);
+      for (const t of targets) bridgeCmd("unwatch_helper", undefined, { target: t }).catch(() => undefined);
     };
-  }, [watchRoot, refreshOthers]);
+  }, [helperWatchKey]);
+
+  // Watch open other roots (another attach, mirroring watch_helper). Detaches
+  // on switch-away; an attach failure means the root is gone — fall back to
+  // master honestly (the roster re-pull also reconciles a stale pane).
+  const rootWatchKey = [
+    ...new Set(
+      [state.selectedRoot, otherPane?.kind === "root" ? otherPane.name : null].filter(
+        (x): x is string => Boolean(x),
+      ),
+    ),
+  ]
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    if (!rootWatchKey) return;
+    const names = rootWatchKey.split("\n");
+    for (const name of names) {
+      bridgeCmd("watch_root", undefined, { target: name }).catch(() => {
+        refreshOthers();
+        setState((s) => reconcileSplit(s.selectedRoot === name ? { ...s, selectedRoot: null } : s));
+      });
+    }
+    return () => {
+      for (const name of names) bridgeCmd("unwatch_root", undefined, { target: name }).catch(() => undefined);
+    };
+  }, [rootWatchKey, refreshOthers]);
+
+  // Persist the split layout per workspace; single pane clears the key (reset
+  // included). Guarded by splitKeyRef so nothing writes before the restore.
+  const split = state.split;
+  const splitSave = split
+    ? (() => {
+        const focused = currentPane(state);
+        const left = split.focusSide === "left" ? focused : split.other;
+        const right = split.focusSide === "left" ? split.other : focused;
+        return JSON.stringify({ left, right, focus: split.focusSide });
+      })()
+    : null;
+  useEffect(() => {
+    const key = splitKeyRef.current;
+    if (!key) return;
+    if (splitSave === null) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        /* private mode */
+      }
+      return;
+    }
+    saveJson(key, JSON.parse(splitSave));
+  }, [splitSave]);
 
   // A root's run state: its own event stream once attached, else the roster word.
   const rootStateOf = (name: string): AgentState =>
@@ -1028,9 +1261,51 @@ export function App() {
     />
   );
 
-  const center = () => {
-    if (state.view === "learned") return <LearnedView />;
-    if (state.view === "preview") {
+  // Another root session's timeline — same replay/fold shape as master's;
+  // header + transcript only (the composer is placed by the caller).
+  const renderRootPane = (name: string) => {
+    const other = state.others.find((a) => a.name === name);
+    const items = state.rootTimelines[name] ?? [];
+    const load = state.rootLoad[name];
+    const rs = rootStateOf(name);
+    // Honest empty states: attaching, mid-run catch-up, or truly nothing.
+    const placeholder: TimelineItem = {
+      kind: "divider",
+      id: `rload-${name}`,
+      text:
+        load === undefined
+          ? "attaching · loading history…"
+          : load === "partial"
+            ? "attached mid-run · catching up…"
+            : "no conversation yet",
+    };
+    return (
+      <>
+        <div className="ahead">
+          <div className="r1">
+            <BotAvatar seed={name} />
+            <span className="nm">{name}</span>
+            <span className="rel">root agent · runs on its own</span>
+          </div>
+          <div className="r2">
+            {rs === "working" ? (
+              <span className="run">running</span>
+            ) : other?.state === "inactive" && load === undefined ? (
+              <>inactive · a message wakes it</>
+            ) : (
+              <>idle</>
+            )}
+          </div>
+        </div>
+        <Timeline items={items.length > 0 ? items : [placeholder]} />
+      </>
+    );
+  };
+
+  /** One pane's content (no composer — the composer stays singular). */
+  const paneBody = (p: PaneView) => {
+    if (p.kind === "learned") return <LearnedView />;
+    if (p.kind === "preview") {
       return (
         <PreviewView
           files={state.previewFiles}
@@ -1040,66 +1315,142 @@ export function App() {
         />
       );
     }
-    if (selectedChild) {
+    if (p.kind === "helper") {
+      const child = state.children.find((c) => c.id === p.childId) ?? null;
+      if (!child) {
+        // Restored pane whose helper is gone; the roster snapshot reconciles
+        // it away — until then, say so instead of inventing content.
+        return (
+          <div className="transcript">
+            <div className="div">helper no longer here</div>
+          </div>
+        );
+      }
       return (
         <HelperView
-          child={selectedChild}
-          events={state.helperEvents[selectedChild.id] ?? []}
-          transcript={state.helperTranscripts[selectedChild.id] ?? []}
-          working={state.helperWorking[selectedChild.id] || undefined}
+          child={child}
+          events={state.helperEvents[child.id] ?? []}
+          transcript={state.helperTranscripts[child.id] ?? []}
+          working={state.helperWorking[child.id] || undefined}
           onStop={stopHelperById}
           onRemove={removeHelperById}
           onSend={sendToHelper}
         />
       );
     }
-    if (state.selectedRoot) {
-      // Another root session's timeline — same replay/fold shape as master's.
-      const name = state.selectedRoot;
-      const other = state.others.find((a) => a.name === name);
-      const items = state.rootTimelines[name] ?? [];
-      const load = state.rootLoad[name];
-      const rs = rootStateOf(name);
-      // Honest empty states: attaching, mid-run catch-up, or truly nothing.
-      const placeholder: TimelineItem = {
-        kind: "divider",
-        id: `rload-${name}`,
-        text:
-          load === undefined
-            ? "attaching · loading history…"
-            : load === "partial"
-              ? "attached mid-run · catching up…"
-              : "no conversation yet",
-      };
+    if (p.kind === "root") return renderRootPane(p.name);
+    return <Timeline items={state.timeline} />;
+  };
+
+  const focusedPane = currentPane(state);
+  const focusedRootInfo =
+    focusedPane.kind === "root"
+      ? {
+          name: focusedPane.name,
+          state: rootStateOf(focusedPane.name),
+          working: state.rootWorking[focusedPane.name] || undefined,
+        }
+      : undefined;
+
+  const center = () => {
+    if (state.split) {
+      // Two panes, fixed 50/50, separated by the recessed gutter color. The
+      // one composer sits below both, bound to the focused pane when that
+      // pane is a conversation (root header case), else to the to ▾ target.
+      const fs = state.split.focusSide;
+      const leftP = fs === "left" ? focusedPane : state.split.other;
+      const rightP = fs === "left" ? state.split.other : focusedPane;
       return (
-        <div className="view">
-          <div className="ahead">
-            <div className="r1">
-              <BotAvatar seed={name} />
-              <span className="nm">{name}</span>
-              <span className="rel">root agent · runs on its own</span>
+        <>
+          <div className="panes">
+            <div
+              className={fs === "left" ? "pane" : "pane away"}
+              onMouseDownCapture={() => focusPane("left")}
+            >
+              {paneBody(leftP)}
             </div>
-            <div className="r2">
-              {rs === "working" ? (
-                <span className="run">running</span>
-              ) : other?.state === "inactive" && load === undefined ? (
-                <>inactive · a message wakes it</>
-              ) : (
-                <>idle</>
-              )}
+            <div
+              className={fs === "right" ? "pane" : "pane away"}
+              onMouseDownCapture={() => focusPane("right")}
+            >
+              {paneBody(rightP)}
             </div>
           </div>
-          <Timeline items={items.length > 0 ? items : [placeholder]} />
-          {composer({ name, state: rs, working: state.rootWorking[name] || undefined })}
+          {composer(focusedRootInfo)}
+        </>
+      );
+    }
+    if (focusedPane.kind === "root") {
+      return (
+        <div className="view">
+          {renderRootPane(focusedPane.name)}
+          {composer(focusedRootInfo)}
         </div>
       );
     }
-    return (
-      <div className="view">
-        <Timeline items={state.timeline} />
-        {composer()}
-      </div>
-    );
+    if (focusedPane.kind === "timeline") {
+      return (
+        <div className="view">
+          <Timeline items={state.timeline} />
+          {composer()}
+        </div>
+      );
+    }
+    return paneBody(focusedPane);
+  };
+
+  /* ---- tab drag → split (drop on a half), tab bar drop = plain switch ---- */
+  const tabDragStart = (v: PaneView) => (e: React.DragEvent) => {
+    dragViewRef.current = v;
+    e.dataTransfer.setData("text/plain", v.kind);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const tabDragEnd = () => {
+    dragViewRef.current = null;
+    setDropHint(null);
+  };
+  const dropSide = (e: React.DragEvent<HTMLDivElement>): "left" | "right" => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientX < r.left + r.width / 2 ? "left" : "right";
+  };
+  const bodyDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    const v = dragViewRef.current;
+    if (!v) return;
+    const s = stateRef.current;
+    // Single pane showing exactly this view: a drop would change nothing.
+    if (!s.split && sameView(v, currentPane(s))) {
+      setDropHint(null);
+      return;
+    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const side = dropSide(e);
+    setDropHint((h) => (h === side ? h : side));
+  };
+  const bodyDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDropHint(null);
+  };
+  const bodyDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const v = dragViewRef.current;
+    dragViewRef.current = null;
+    setDropHint(null);
+    if (!v) return;
+    e.preventDefault();
+    dropPane(v, dropSide(e));
+  };
+  const tabsDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!dragViewRef.current) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+  const tabsDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    const v = dragViewRef.current;
+    dragViewRef.current = null;
+    setDropHint(null);
+    if (!v) return;
+    e.preventDefault();
+    setState((s) => showFocused(s, v));
   };
 
   const timelineTabOn = state.view === "timeline" && !selectedChild && !state.selectedRoot;
@@ -1150,18 +1501,44 @@ export function App() {
           <FilesColumn files={state.files} onOpenPreview={openPreview} />
         )}
         <div className="center">
-          <div className="tabs">
-            <button className={timelineTabOn ? "tab on" : "tab"} onClick={() => selectAgent(null)}>
+          <div className="tabs" onDragOver={tabsDragOver} onDrop={tabsDrop}>
+            <button
+              className={timelineTabOn ? "tab on" : "tab"}
+              draggable
+              onDragStart={tabDragStart({ kind: "timeline" })}
+              onDragEnd={tabDragEnd}
+              onClick={() => selectAgent(null)}
+            >
               master · timeline
             </button>
-            <button className={state.view === "learned" ? "tab on" : "tab"} onClick={() => setView("learned")}>
+            <button
+              className={state.view === "learned" ? "tab on" : "tab"}
+              draggable
+              onDragStart={tabDragStart({ kind: "learned" })}
+              onDragEnd={tabDragEnd}
+              onClick={() => setView("learned")}
+            >
               Learned
             </button>
-            <button className={state.view === "preview" ? "tab on" : "tab"} onClick={() => setView("preview")}>
+            <button
+              className={state.view === "preview" ? "tab on" : "tab"}
+              draggable
+              onDragStart={tabDragStart({ kind: "preview" })}
+              onDragEnd={tabDragEnd}
+              onClick={() => setView("preview")}
+            >
               Preview
             </button>
+            {state.split && (
+              <button className="reset" onClick={resetLayout}>
+                reset layout
+              </button>
+            )}
           </div>
-          {center()}
+          <div className="cbody" onDragOver={bodyDragOver} onDragLeave={bodyDragLeave} onDrop={bodyDrop}>
+            {center()}
+            {dropHint && <div className={`drophint ${dropHint}`} />}
+          </div>
         </div>
         <Inspector
           master={state.master}

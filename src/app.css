@@ -256,23 +256,30 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
-/* Split layout: everything under the tab bar. Two content surfaces separated
-   by the recessed gutter color showing through a small gap (background
-   separation, no divider lines); the unfocused pane reads slightly muted.
-   The drop hint is a quiet ink tint over the half a drag would take. */
+/* Pane grid: everything under the tab bar. Up to four content surfaces on a
+   2x2 grid, separated by the recessed gutter color showing through the 5px
+   tracks (background separation, no divider lines); the unfocused panes read
+   slightly muted. Column/row tracks collapse to one when nothing occupies the
+   other side, so one pane is full-bleed and two are simply side by side or
+   stacked. The drop hint is a quiet ink tint over the region a drag would
+   take — the whole pane, or the edge band that would split it. */
 .cbody { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.panes { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--soft); }
-.pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--win); transition: opacity 120ms ease; }
-.gutter { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--soft); }
+.panes { flex: 1; display: grid; min-height: 0; min-width: 0; background: var(--soft); }
+.pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--win); transition: opacity 120ms ease; }
+.gutter { cursor: col-resize; background: var(--soft); }
+.gutter.h { cursor: row-resize; }
 .gutter:hover { background: var(--hair-hi); }
 body.resizing { cursor: col-resize; user-select: none; }
+body.resizing.rows { cursor: row-resize; }
 body.resizing iframe { pointer-events: none; }
 .pane.away { opacity: .8; }
 .pbody { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.drophint { position: absolute; top: 0; bottom: 0; width: 50%; background: var(--hair); pointer-events: none; }
-.drophint.left { left: 0; }
-.drophint.right { right: 0; }
-/* reset layout — small muted text at the right end of the tab bar, split only */
+.drophint { position: absolute; z-index: 3; background: var(--hair); pointer-events: none; }
+.drophint.center { inset: 0; }
+.drophint.left { top: 0; bottom: 0; left: 0; width: 22%; }
+.drophint.right { top: 0; bottom: 0; right: 0; width: 22%; }
+.drophint.top { left: 0; right: 0; top: 0; height: 22%; }
+.drophint.bottom { left: 0; right: 0; bottom: 0; height: 22%; }
 
 /* agent header (helper views) */
 .ahead { padding: 14px 18px 6px; flex-shrink: 0; }

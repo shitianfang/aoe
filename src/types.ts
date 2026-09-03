@@ -282,15 +282,19 @@ export type PaneView =
   /** No tab open (the master tab was closed); single-pane only. */
   | { kind: "empty" };
 
-/** Split layout for the center area (two panes max — the mockup's freedom,
- *  bounded). The canonical view fields (view/selectedAgent/selectedRoot)
- *  always describe the FOCUSED pane, so every existing action — tabs, agent
- *  column, composer view-jumps — drives the focused pane for free; `other` is
- *  the second pane, `focusSide` says which side the focused pane sits on.
- *  null = default single-pane layout. */
-export interface SplitState {
-  other: PaneView;
-  focusSide: "left" | "right";
+/** One cell of the center's 2x2 grid. The layout is DERIVED from which slots
+ *  are occupied, never stored: tl alone is one full-bleed pane, tl+tr two
+ *  columns, tl+bl two rows, and a column holding only one of its two slots
+ *  spans the whole height beside a column that holds both. */
+export type Slot = "tl" | "tr" | "bl" | "br";
+
+/** One occupied slot: the tabs open in it and the one it shows. For every
+ *  slot but the focused one `active` is the truth (exactly what split.other
+ *  used to be); for the focused slot it mirrors the canonical view fields,
+ *  which win on read. See the pane-model note at the top of App.tsx. */
+export interface PaneGroup {
+  tabs: PaneView[];
+  active: PaneView;
 }
 
 /** Composer target: master, a helper (by child id), or another root (by name).
@@ -311,13 +315,14 @@ export interface AppState {
   selectedAgent: string | null;
   /** Selected other root in the left column (by session name); exclusive with selectedAgent. */
   selectedRoot: string | null;
-  /** Second center pane (user split via tab drag); null = single pane. */
-  split: SplitState | null;
-  /** Open tabs per pane side (single-pane layout uses left, right stays
-   *  empty). The focused side's ACTIVE tab is what view/selectedAgent/
-   *  selectedRoot describe; the other side's active tab is split.other. */
-  tabsL: PaneView[];
-  tabsR: PaneView[];
+  /** The center panes, by grid slot — four at most, and tl is always taken
+   *  (a lone pane is compacted there). Every action that used to drive the
+   *  single center — tabs, the agent column, composer view-jumps — drives the
+   *  focused pane for free, because the FOCUSED slot's active tab is what
+   *  view/selectedAgent/selectedRoot describe. */
+  panes: Partial<Record<Slot, PaneGroup>>;
+  /** Which slot the canonical view fields belong to. */
+  focus: Slot;
   /** Other root sessions on this daemon (roster behind the "Other" rows). */
   others: RootAgent[];
   /** Per-root timeline (watch_root feed: snapshot replaces, events append). */

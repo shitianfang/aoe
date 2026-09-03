@@ -1,0 +1,1 @@
+- Added the bundled `preview` skill so the agent can declare work products via `preview.publish(source, label=None)`; publications are recorded in the transcript and announced to attached clients through the capability-gated `preview_published` session event (`preview_events`).

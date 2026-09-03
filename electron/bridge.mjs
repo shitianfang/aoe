@@ -46,6 +46,8 @@ let daemon = { connected: false, master: null, error: null, workspace: currentWo
 /** @type {Map<string, any>} */ const childConns = new Map();
 /** @type {string|null} */ let masterSessionId = null;
 /** @type {string|null} */ let sessionDir = null;
+/** Master's session uuid — the session-artifacts directory name. */
+/** @type {string|null} */ let masterUuid = null;
 
 /** Continual-harness state: lessons live in harness_state.json (local per
  *  session, global under ~/.prime/agent/harness). Read-only surface. */
@@ -57,7 +59,21 @@ function readHarness(file) {
   }
 }
 function learnedPayload() {
-  const local = sessionDir ? readHarness(path.join(sessionDir, "harness", "harness_state.json")) : null;
+  // Local harness lives under the session's artifact dir, keyed by session uuid
+  // (state.sessionDir is the sessions root, not this session's artifacts).
+  const local = masterUuid
+    ? readHarness(
+        path.join(
+          os.homedir(),
+          ".prime",
+          "agent",
+          "session-artifacts",
+          masterUuid,
+          "harness",
+          "harness_state.json",
+        ),
+      )
+    : null;
   const global_ = readHarness(
     path.join(os.homedir(), ".prime", "agent", "harness", "harness_state.json"),
   );
@@ -249,6 +265,12 @@ async function attachMaster() {
     }
   }
   const activeSessionId = master.activeSessionId ?? master.id;
+  masterUuid = master.sessionId ?? null;
+  if (!masterUuid) {
+    const relisted = await client.request({ type: "list", all: true }).catch(() => null);
+    masterUuid =
+      relisted?.data?.sessions?.find((s) => s.activeSessionId === activeSessionId)?.sessionId ?? null;
+  }
 
   masterConn = await sdkRef.DaemonAgentConnection.attach(client, activeSessionId, {
     closeClientOnDispose: false,

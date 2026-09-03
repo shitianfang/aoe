@@ -5,12 +5,15 @@ export type AgentState = "idle" | "working";
 export type CenterView = "timeline" | "learned" | "preview";
 export type ColumnView = "agents" | "files";
 
-/** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]). */
+/** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]).
+ *  Live results carry action/content for creates; applied may be absent. */
 export interface LessonEdit {
   id: string;
   kind: string;
   title: string;
-  applied: boolean;
+  applied?: boolean;
+  action?: string;
+  content?: string;
   before?: string;
   after?: string;
   error?: string;

@@ -68,9 +68,13 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
             : (r.appliedEdits ?? []).map((e) => (
                 <span className="edit" key={e.id}>
                   {e.kind} · {e.title}
-                  {!e.applied ? <span className="dim"> — not applied{e.error ? ` · ${e.error}` : ""}</span> : null}
+                  {/* real results may omit `applied`; only an explicit false means failure */}
+                  {e.applied === false ? (
+                    <span className="dim"> — not applied{e.error ? ` · ${e.error}` : ""}</span>
+                  ) : null}
                   {e.before ? <span className="dl del">− {e.before}</span> : null}
                   {e.after ? <span className="dl add">+ {e.after}</span> : null}
+                  {!e.before && !e.after && e.content ? <span className="dl add">+ {e.content}</span> : null}
                 </span>
               ))}
         </span>

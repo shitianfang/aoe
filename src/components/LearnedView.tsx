@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
+import type { LearnedSel } from "../types";
+import { lessonSourceText } from "../helperDisplay";
 import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
 
-interface HarnessRefinement {
+export interface HarnessRefinement {
   id: string;
   trigger?: string;
+  /** Machine origin (schema 27): "auto" | "manual" | "agent"; absent on older rows. */
+  source?: string;
   changes?: string[];
   evidence?: string;
   outcome?: string;
   created_at?: string;
 }
-interface HarnessEntry {
+export interface HarnessEntry {
   id: string;
   kind: string;
   title?: string;
@@ -18,18 +22,28 @@ interface HarnessEntry {
   updated_at?: string;
   source?: string;
 }
-interface HarnessState {
+export interface HarnessState {
   refinements?: HarnessRefinement[];
   entries?: Record<string, Record<string, HarnessEntry>>;
 }
-type Scope = "this workspace" | "everywhere";
+export type Scope = LearnedSel["scope"];
+export interface LearnedData {
+  local: HarnessState | null;
+  global: HarnessState | null;
+}
 
-function flatEntries(state: HarnessState | null, scope: Scope) {
+export function flatEntries(state: HarnessState | null, scope: Scope) {
   const out: Array<HarnessEntry & { scope: Scope }> = [];
   for (const [kind, byId] of Object.entries(state?.entries ?? {})) {
     for (const e of Object.values(byId)) out.push({ ...e, kind, scope });
   }
   return out;
+}
+
+export function fetchLearned(): Promise<LearnedData> {
+  return fetch(bridgeUrl("/bridge/learned"))
+    .then((r) => r.json())
+    .catch(() => ({ local: null, global: null }));
 }
 
 function when(iso?: string): string {
@@ -52,20 +66,23 @@ function lastChangedBy(refs: HarnessRefinement[], e: HarnessEntry): HarnessRefin
   return hits[0] ?? null;
 }
 
-export function LearnedView() {
-  const [data, setData] = useState<{ local: HarnessState | null; global: HarnessState | null } | null>(null);
-  const [selected, setSelected] = useState<{ scope: Scope; kind: string; id: string } | null>(null);
+/** Learned pane: the entry the Learned column selected (detail), else the
+ *  lesson history. The catalog itself lives in the left column. */
+export function LearnedView(props: {
+  sel: LearnedSel | null;
+  /** Bumped when a new lesson lands — re-pulls the harness state. */
+  epoch: number;
+  onSelect: (s: LearnedSel | null) => void;
+}) {
+  const [data, setData] = useState<LearnedData | null>(null);
   const [rolled, setRolled] = useState<Record<string, "pending" | "done">>({});
   const [globalRun, setGlobalRun] = useState<"idle" | "pending" | "done">("idle");
   const [err, setErr] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    fetch(bridgeUrl("/bridge/learned"))
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => setData({ local: null, global: null }));
+    fetchLearned().then(setData);
   }, []);
-  useEffect(refresh, [refresh]);
+  useEffect(refresh, [refresh, props.epoch]);
 
   const rollBack = async (key: string, refinementId: string) => {
     setRolled((m) => ({ ...m, [key]: "pending" }));
@@ -104,8 +121,8 @@ export function LearnedView() {
   ].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   const entries = [...flatEntries(data?.local ?? null, "this workspace"), ...flatEntries(data?.global ?? null, "everywhere")];
 
-  const sel = selected
-    ? entries.find((e) => e.scope === selected.scope && e.kind === selected.kind && e.id === selected.id) ?? null
+  const sel = props.sel
+    ? entries.find((e) => e.scope === props.sel?.scope && e.kind === props.sel?.kind && e.id === props.sel?.id) ?? null
     : null;
   const selChangedBy = sel
     ? lastChangedBy(
@@ -113,6 +130,53 @@ export function LearnedView() {
         sel,
       )
     : null;
+
+  if (sel) {
+    return (
+      <div className="learn">
+        <div className="sec">
+          <a className="lk" onClick={() => props.onSelect(null)}>
+            ← history
+          </a>
+        </div>
+        <div className="edetail" style={{ marginTop: 0 }}>
+          <div className="eh">
+            <span className="id">
+              {sel.kind} · {sel.title ?? sel.id}
+            </span>
+            <span className="tm">
+              <span className={sel.scope === "everywhere" ? "scope g" : "scope"}>{sel.scope}</span>
+              {typeof sel.version === "number" ? ` · v${sel.version}` : ""}
+              {sel.updated_at ? ` · updated ${when(sel.updated_at)}` : ""}
+              {selChangedBy
+                ? ` · last changed by ${selChangedBy.id.slice(0, 6)}`
+                : " · no lesson recorded this change"}
+            </span>
+          </div>
+          {sel.content ? (
+            <pre className="econtent">{sel.content}</pre>
+          ) : (
+            <div className="colnote" style={{ padding: "8px 0 0" }}>
+              no content stored for this entry.
+            </div>
+          )}
+          {sel.scope !== "everywhere" ? (
+            <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
+              <button className="btn" onClick={() => applyEverywhere(sel)} disabled={globalRun !== "idle"}>
+                {globalRun === "done" ? "kept everywhere" : globalRun === "pending" ? "reviewing…" : "apply everywhere"}
+              </button>
+              <span className="note">runs a new review — result may differ</span>
+            </div>
+          ) : null}
+        </div>
+        {err ? (
+          <div className="colnote" style={{ padding: "10px 0 0", color: "var(--red)" }}>
+            {err}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="learn">
@@ -132,6 +196,8 @@ export function LearnedView() {
               <span className="tm">{when(r.created_at)}</span>
               <span className="tx">
                 {r.trigger ?? "lesson"} · <span className={r.scope === "everywhere" ? "scope g" : "scope"}>{r.scope}</span>
+                {/* machine source field, never inferred from the trigger text */}
+                {lessonSourceText(r.source) ? ` · from ${lessonSourceText(r.source)}` : ""}
                 {r.changes?.length ? ` · ${r.changes.length} edits` : ""}
               </span>
               <span className="op">
@@ -147,68 +213,6 @@ export function LearnedView() {
           );
         })
       )}
-      <div className="sec" style={{ paddingTop: 22 }}>
-        Entries
-      </div>
-      {entries.length === 0 ? (
-        <div className="colnote" style={{ padding: 0 }}>
-          base instructions are never edited — lessons are appended, and undone one lesson at a time.
-        </div>
-      ) : (
-        entries.map((e) => {
-          const on = sel !== null && sel.scope === e.scope && sel.kind === e.kind && sel.id === e.id;
-          return (
-            <div
-              className={on ? "lrow click on" : "lrow click"}
-              key={`${e.scope}-${e.kind}-${e.id}`}
-              onClick={() => setSelected(on ? null : { scope: e.scope, kind: e.kind, id: e.id })}
-            >
-              <span className="tm">{e.kind}</span>
-              <span className="id">{e.title ?? e.id}</span>
-              <span className="tx">
-                <span className={e.scope === "everywhere" ? "scope g" : "scope"}>{e.scope}</span>
-                {typeof e.version === "number" ? ` · v${e.version}` : ""}
-              </span>
-              <span className="tm">{when(e.updated_at)}</span>
-            </div>
-          );
-        })
-      )}
-      {sel ? (
-        <div className="edetail">
-          <div className="eh">
-            <span className="id">
-              {sel.kind} · {sel.title ?? sel.id}
-            </span>
-            <span className="tm">
-              <span className={sel.scope === "everywhere" ? "scope g" : "scope"}>{sel.scope}</span>
-              {typeof sel.version === "number" ? ` · v${sel.version}` : ""}
-              {sel.updated_at ? ` · updated ${when(sel.updated_at)}` : ""}
-              {selChangedBy
-                ? ` · last changed by ${selChangedBy.id.slice(0, 6)}`
-                : " · no lesson recorded this change"}
-            </span>
-          </div>
-          {sel.content ? (
-            <pre className="econtent">
-              {sel.content.slice(0, 500)}
-              {sel.content.length > 500 ? "…" : ""}
-            </pre>
-          ) : (
-            <div className="colnote" style={{ padding: "8px 0 0" }}>
-              no content stored for this entry.
-            </div>
-          )}
-          {sel.scope !== "everywhere" ? (
-            <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
-              <button className="btn" onClick={() => applyEverywhere(sel)} disabled={globalRun !== "idle"}>
-                {globalRun === "done" ? "kept everywhere" : globalRun === "pending" ? "reviewing…" : "apply everywhere"}
-              </button>
-              <span className="note">runs a new review — result may differ</span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {err ? (
         <div className="colnote" style={{ padding: "10px 0 0", color: "var(--red)" }}>
           {err}

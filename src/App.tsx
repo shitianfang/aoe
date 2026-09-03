@@ -22,8 +22,10 @@ import { SettingsPopup, WorkspacePopup } from "./components/Overlays";
 import { Rail } from "./components/Rail";
 import { AgentsColumn } from "./components/AgentsColumn";
 import { BotAvatar } from "./components/BotAvatar";
-import { helperName } from "./helperDisplay";
+import { ExtensionsColumn, SkillsColumn } from "./components/CatalogColumn";
+import { helperName, injectionReasonText } from "./helperDisplay";
 import { FilesColumn } from "./components/FilesColumn";
+import { LearnedColumn } from "./components/LearnedColumn";
 import { Timeline } from "./components/Timeline";
 import { LearnedView } from "./components/LearnedView";
 import { PreviewView } from "./components/PreviewView";
@@ -40,10 +42,12 @@ import {
   removeHelper,
   extractText,
   bridgeUrl,
+  fetchAutonomous,
   type BridgeMessage,
 } from "./runtime/bridge";
 import { fetchPreviewFiles } from "./runtime/preview";
 import type { ChatMessage } from "./runtime/nim";
+import type { LearnedSel } from "./types";
 
 let nextId = 1;
 const id = () => `t${nextId++}`;
@@ -84,6 +88,7 @@ function saveJson(key: string, value: unknown) {
 /** The focused pane's content, mirroring center()'s render precedence
  *  (learned/preview sit on top of a lingering agent selection). */
 function currentPane(s: AppState): PaneView {
+  if (s.view === "empty") return { kind: "empty" };
   if (s.view === "learned") return { kind: "learned" };
   if (s.view === "preview") return { kind: "preview" };
   if (s.selectedAgent && s.children.some((c) => c.id === s.selectedAgent))
@@ -95,6 +100,7 @@ function currentPane(s: AppState): PaneView {
 /** State patch that makes `p` the focused pane's content. learned/preview keep
  *  the agent selection underneath, exactly like the plain setView did. */
 function panePatch(p: PaneView): Partial<AppState> {
+  if (p.kind === "empty") return { view: "empty", selectedAgent: null, selectedRoot: null };
   if (p.kind === "learned") return { view: "learned" };
   if (p.kind === "preview") return { view: "preview" };
   if (p.kind === "helper") return { view: "timeline", selectedAgent: p.childId, selectedRoot: null };
@@ -109,58 +115,149 @@ function sameView(a: PaneView, b: PaneView): boolean {
   return true;
 }
 
-/** Show `v` in the focused pane. If the OTHER pane already shows it, don't
- *  duplicate — move focus to that pane instead (net render unchanged). */
-function showFocused(s: AppState, v: PaneView): AppState {
-  if (s.split && sameView(v, s.split.other)) {
-    return {
-      ...s,
-      ...panePatch(v),
-      split: { other: currentPane(s), focusSide: s.split.focusSide === "left" ? "right" : "left" },
-    };
-  }
-  return { ...s, ...panePatch(v) };
+/* ---- tab groups ----
+ * Each pane holds a LIST of open tabs (tabsL/tabsR); the visible one is the
+ * pane's active tab. The focused pane's active tab is the canonical fields,
+ * the other pane's is split.other — so watches/composer stay unchanged. */
+
+type Side = "left" | "right";
+const sideKey = (sd: Side) => (sd === "left" ? "tabsL" : "tabsR") as "tabsL" | "tabsR";
+const tabsOf = (s: AppState, sd: Side): PaneView[] => (sd === "left" ? s.tabsL : s.tabsR);
+const focusSideOf = (s: AppState): Side => s.split?.focusSide ?? "left";
+const inList = (list: PaneView[], v: PaneView) => list.some((t) => sameView(t, v));
+const addTab = (list: PaneView[], v: PaneView) => (inList(list, v) ? list : [...list, v]);
+
+/** The view a pane currently shows (null: no second pane). */
+function activeOf(s: AppState, sd: Side): PaneView | null {
+  if (!s.split) return sd === "left" ? currentPane(s) : null;
+  return sd === s.split.focusSide ? currentPane(s) : s.split.other;
 }
 
-/** Drop stale pane content after a roster update (only the roster that is
- *  fresh — flags say which), and never keep two panes showing the same thing:
- *  a stale pane falls back to the master timeline, a duplicate collapses the
- *  split back to single pane. */
-function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolean } = {}): AppState {
-  if (!s.split) return s;
-  const o = s.split.other;
-  let other: PaneView = o;
-  if (fresh.children && o.kind === "helper" && !s.children.some((c) => c.id === o.childId)) {
-    other = { kind: "timeline" };
-  } else if (fresh.roots && o.kind === "root" && !s.others.some((a) => a.name === o.name)) {
-    other = { kind: "timeline" };
+/** Activate one of a pane's open tabs; focus moves to that pane. */
+function activateTab(s: AppState, sd: Side, v: PaneView): AppState {
+  if (!inList(tabsOf(s, sd), v)) return s;
+  if (!s.split || sd === s.split.focusSide) return { ...s, ...panePatch(v) };
+  return { ...s, ...panePatch(v), split: { other: currentPane(s), focusSide: sd } };
+}
+
+/** Open `v` in pane `sd` as its active tab, focused; dropping on the right
+ *  half of a single pane opens the split. */
+function openIn(s: AppState, sd: Side, v: PaneView): AppState {
+  if (!s.split) {
+    const cur = currentPane(s);
+    if (sd === "right" && cur.kind !== "empty" && !sameView(cur, v)) {
+      return { ...s, ...panePatch(v), tabsR: addTab(s.tabsR, v), split: { other: cur, focusSide: "right" } };
+    }
+    return { ...s, ...panePatch(v), tabsL: addTab(s.tabsL, v) };
   }
-  if (sameView(other, currentPane(s))) return { ...s, split: null };
-  if (other !== o) return { ...s, split: { ...s.split, other } };
-  return s;
+  const patch = { [sideKey(sd)]: addTab(tabsOf(s, sd), v) };
+  if (sd === s.split.focusSide) return { ...s, ...panePatch(v), ...patch };
+  return { ...s, ...panePatch(v), ...patch, split: { other: currentPane(s), focusSide: sd } };
+}
+
+/** Remove `v` from pane `sd`'s tab list; a removed active tab hands the pane
+ *  to its neighbor, an emptied pane collapses (split: the other pane stays;
+ *  single: the empty state). */
+function removeTab(s: AppState, sd: Side, v: PaneView): AppState {
+  const list = tabsOf(s, sd);
+  const idx = list.findIndex((t) => sameView(t, v));
+  if (idx < 0) return s;
+  const next = list.filter((t) => !sameView(t, v));
+  const act = activeOf(s, sd);
+  const base = { ...s, [sideKey(sd)]: next } as AppState;
+  if (!act || !sameView(act, v)) return base;
+  if (next.length > 0) {
+    const nv = next[Math.min(idx, next.length - 1)];
+    if (!s.split || sd === s.split.focusSide) return { ...base, ...panePatch(nv) };
+    return { ...base, split: { ...s.split, other: nv } };
+  }
+  if (!s.split) return { ...base, ...panePatch({ kind: "empty" }) };
+  const survTabs = sd === "left" ? base.tabsR : base.tabsL;
+  const survActive = sd === s.split.focusSide ? s.split.other : currentPane(s);
+  return { ...base, ...panePatch(survActive), split: null, tabsL: survTabs, tabsR: [] };
+}
+
+/** A tab (or an agent row) dragged onto a pane: move it there and activate. */
+function moveTab(s: AppState, v: PaneView, sd: Side): AppState {
+  const src: Side | null = inList(s.tabsL, v) ? "left" : inList(s.tabsR, v) ? "right" : null;
+  if (src === sd) return activateTab(s, sd, v);
+  const removed = src ? removeTab(s, src, v) : s;
+  return openIn(removed, sd, v);
+}
+
+/** Auto-pop (preview / learned): show `v` in the pane the user is NOT in,
+ *  without stealing focus; no-op when it is already visible somewhere. */
+function popPane(s: AppState, v: PaneView): AppState {
+  if (sameView(currentPane(s), v) || (s.split && sameView(s.split.other, v))) return s;
+  if (!s.split) {
+    if (currentPane(s).kind === "empty") return openIn(s, "left", v);
+    return { ...s, tabsR: addTab(s.tabsR, v), split: { other: v, focusSide: "left" } };
+  }
+  const os: Side = s.split.focusSide === "left" ? "right" : "left";
+  return { ...s, [sideKey(os)]: addTab(tabsOf(s, os), v), split: { ...s.split, other: v } } as AppState;
+}
+
+/** Show `v` in the focused pane. If the OTHER pane already holds that tab,
+ *  don't duplicate — activate it there (focus follows). */
+function showFocused(s: AppState, v: PaneView): AppState {
+  const os: Side = focusSideOf(s) === "left" ? "right" : "left";
+  if (s.split && inList(tabsOf(s, os), v)) return activateTab(s, os, v);
+  return openIn(s, focusSideOf(s), v);
+}
+
+/** Drop tabs whose helper/root vanished from a fresh roster (flags say which
+ *  roster is fresh); removeTab fixes actives and collapses emptied panes. */
+function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolean } = {}): AppState {
+  const stale = (v: PaneView) =>
+    (fresh.children === true && v.kind === "helper" && !s.children.some((c) => c.id === v.childId)) ||
+    (fresh.roots === true && v.kind === "root" && !s.others.some((a) => a.name === v.name));
+  let out = s;
+  for (let guard = 0; guard < 40; guard++) {
+    const hitL = tabsOf(out, "left").find(stale);
+    const hitR = hitL ? undefined : tabsOf(out, "right").find(stale);
+    if (!hitL && !hitR) break;
+    out = removeTab(out, hitL ? "left" : "right", (hitL ?? hitR) as PaneView);
+  }
+  return out;
 }
 
 /** Persisted-layout shape guard (localStorage may hold anything). */
 function sanePane(p: unknown): PaneView | null {
   if (!p || typeof p !== "object") return null;
   const v = p as { kind?: unknown; childId?: unknown; name?: unknown };
-  if (v.kind === "timeline" || v.kind === "learned" || v.kind === "preview") return { kind: v.kind };
+  if (v.kind === "timeline" || v.kind === "learned" || v.kind === "preview" || v.kind === "empty")
+    return { kind: v.kind };
   if (v.kind === "helper" && typeof v.childId === "string") return { kind: "helper", childId: v.childId };
   if (v.kind === "root" && typeof v.name === "string") return { kind: "root", name: v.name };
   return null;
 }
 
-/** Restore a saved split layout (per-workspace key). Stale helper/root panes
+/** Restore a saved tab layout (per-workspace key). Stale helper/root tabs
  *  are tolerated here and reconciled once the real rosters arrive. */
 function restoreSplit(key: string): Partial<AppState> {
-  const raw = loadJson<{ left?: unknown; right?: unknown; focus?: unknown } | null>(key, null);
-  const left = sanePane(raw?.left);
-  const right = sanePane(raw?.right);
-  if (!left || !right || sameView(left, right)) return {};
+  const raw = loadJson<{
+    tabsL?: unknown[];
+    tabsR?: unknown[];
+    activeL?: unknown;
+    activeR?: unknown;
+    focus?: unknown;
+  } | null>(key, null);
+  const tl = (Array.isArray(raw?.tabsL) ? raw.tabsL : [])
+    .map(sanePane)
+    .filter((x): x is PaneView => x !== null && x.kind !== "empty");
+  const tr = (Array.isArray(raw?.tabsR) ? raw.tabsR : [])
+    .map(sanePane)
+    .filter((x): x is PaneView => x !== null && x.kind !== "empty");
+  if (tl.length === 0) return {};
+  const aL0 = sanePane(raw?.activeL);
+  const aL = aL0 && inList(tl, aL0) ? aL0 : tl[0];
+  if (tr.length === 0) return { ...panePatch(aL), tabsL: tl, tabsR: [], split: null };
+  const aR0 = sanePane(raw?.activeR);
+  const aR = aR0 && inList(tr, aR0) ? aR0 : tr[0];
   const focusSide = raw?.focus === "right" ? ("right" as const) : ("left" as const);
-  const focused = focusSide === "left" ? left : right;
-  const other = focusSide === "left" ? right : left;
-  return { ...panePatch(focused), split: { other, focusSide } };
+  const focused = focusSide === "left" ? aL : aR;
+  const other = focusSide === "left" ? aR : aL;
+  return { ...panePatch(focused), tabsL: tl, tabsR: tr, split: { other, focusSide } };
 }
 
 function hhmm(at?: number): string {
@@ -236,6 +333,8 @@ export function App() {
     selectedAgent: null,
     selectedRoot: null,
     split: null,
+    tabsL: [{ kind: "timeline" }],
+    tabsR: [],
     others: [],
     rootTimelines: {},
     rootLoad: {},
@@ -256,6 +355,10 @@ export function App() {
     timeline: [{ kind: "divider", id: id(), text: `session started · ${clock()}` }],
   }));
   const [wsOpen, setWsOpen] = useState(false);
+  // Learned: the entry the left column selected (detail in the center pane),
+  // and a counter bumped per kept lesson so column + pane re-pull.
+  const [learnedSel, setLearnedSel] = useState<LearnedSel | null>(null);
+  const [lessonEpoch, setLessonEpoch] = useState(0);
   // Bumped when the bridge-pulled rows the inspector owns (scheduled re-entries,
   // lessons) may have moved: attach, heartbeats_changed, refine_complete.
   const [inspectorKey, setInspectorKey] = useState(0);
@@ -284,6 +387,9 @@ export function App() {
   const pendingPreviewRef = useRef<string | null>(null);
   // Last live timeline append; long silences get one dashed time rule.
   const lastAtRef = useRef(Date.now());
+  // Last unattended injection already rendered as a timeline line (its `at`),
+  // so a status refresh never repeats the line for the same continuation.
+  const lastInjectionSeenRef = useRef<number | undefined>(undefined);
   const [setOpen, setSetOpen] = useState(false);
   // The tab being dragged (drag data is unreadable during dragover) + the
   // half of the center that would be taken on drop.
@@ -460,7 +566,10 @@ export function App() {
         if (message.role === "custom") {
           if (t !== "message_end") return;
           if (message.customType === "autonomous_status") {
-            setState((s) => ({ ...s, autonomous: (message.details as AutonomousInfo) ?? null }));
+            const details = (message.details as AutonomousInfo) ?? null;
+            // A status the user asked for covers any continuation it reports.
+            if (details?.lastInjection) lastInjectionSeenRef.current = details.lastInjection.at;
+            setState((s) => ({ ...s, autonomous: details }));
           } else if (message.customType === "agent_message") {
             // details.message is the bare text; content is the model-facing envelope.
             const d = message.details as
@@ -503,6 +612,35 @@ export function App() {
           } else if (message.customType === "prime-agent.refinement") {
             // covered by refine_complete; ignore the transcript echo
           }
+          return;
+        }
+        if (message.role === "user") {
+          // A user message the runtime injected mid-run is how an unattended
+          // continuation surfaces. Confirm against the machine field — a fresh
+          // status pull whose lastInjection moved — never against prompt text,
+          // so steers and check-ins can't fake the line.
+          if (t !== "message_end" || !stateRef.current.autonomous?.enabled) return;
+          void fetchAutonomous()
+            .then(({ autonomous }) => {
+              if (!autonomous) return;
+              const inj = autonomous.lastInjection;
+              setState((s) => ({ ...s, autonomous }));
+              if (inj && inj.at !== lastInjectionSeenRef.current) {
+                lastInjectionSeenRef.current = inj.at;
+                const used = autonomous.continuationsUsed;
+                const max = autonomous.limits?.maxContinuations;
+                const counter =
+                  typeof used === "number" && typeof max === "number" ? ` (${used} of ${max})` : "";
+                push({
+                  kind: "note",
+                  id: id(),
+                  text: `continued unattended · ${injectionReasonText(inj.reason)}${counter}`,
+                  rt: clock(),
+                  ts: Date.now(),
+                });
+              }
+            })
+            .catch(() => {});
           return;
         }
         if (message.role !== "assistant") return;
@@ -596,12 +734,29 @@ export function App() {
         }
       } else if (t === "refine_complete") {
         setInspectorKey((n) => n + 1); // the learned summary in DRIVERS re-pulls
+        setLessonEpoch((n) => n + 1); // Learned column/pane re-pull
         const result = event.result as LessonResult | undefined;
         if (result?.id) {
           push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
         } else {
           push({ kind: "note", id: id(), text: "lesson kept", rt: clock(), ts: Date.now() });
         }
+        // The AI learned something — pop the Learned pane into the second
+        // pane without stealing focus, showing the entry this lesson touched
+        // (falls back to the history list when no edit was recorded, or the
+        // stale selection would otherwise linger).
+        const edit =
+          result?.appliedEdits?.find((e) => e.applied !== false) ?? result?.appliedEdits?.[0];
+        setLearnedSel(
+          edit
+            ? {
+                scope: result?.scope === "global" ? "everywhere" : "this workspace",
+                kind: edit.kind,
+                id: edit.id,
+              }
+            : null,
+        );
+        setState((s) => popPane(s, { kind: "learned" }));
       } else if (t === "refine_failed") {
         const raw = event.error;
         const msg =
@@ -763,6 +918,8 @@ export function App() {
             selectedAgent: null,
             selectedRoot: null,
             split: null,
+            tabsL: [{ kind: "timeline" }],
+            tabsR: [],
             others: [],
             rootTimelines: {},
             rootLoad: {},
@@ -863,6 +1020,10 @@ export function App() {
           ? []
           : foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
         histSeededRef.current = true;
+        // Attach snapshot carries the live unattended status (schema 27) — a
+        // client attaching after a continuation still shows the last reason.
+        const snapAuto = (m.state.autonomous as AutonomousInfo | null | undefined) ?? null;
+        if (snapAuto?.lastInjection) lastInjectionSeenRef.current = snapAuto.lastInjection.at;
         setState((s) => {
           const children = roster.map((c) => {
             const prev = s.children.find((p) => p.id === c.id);
@@ -873,6 +1034,7 @@ export function App() {
             {
               ...s,
               goal: (m.state.goal as GoalInfo) ?? null,
+              autonomous: snapAuto ?? s.autonomous,
               children,
               timeline: history.length > 0 ? [...s.timeline, ...history] : s.timeline,
               selectedAgent: has(s.selectedAgent) ? s.selectedAgent : null,
@@ -890,15 +1052,6 @@ export function App() {
   }, [refreshOthers]);
 
   const setColumn = useCallback((column: ColumnView) => setState((s) => ({ ...s, column })), []);
-  // Tabs and the Learned shortcut drive the FOCUSED pane (showFocused: if the
-  // other pane already shows it, focus moves there instead of duplicating).
-  const setView = useCallback(
-    (view: AppState["view"]) =>
-      setState((s) =>
-        showFocused(s, view === "learned" ? { kind: "learned" } : view === "preview" ? { kind: "preview" } : { kind: "timeline" }),
-      ),
-    [],
-  );
   // Selecting an agent in the column never changes the composer target —
   // helpers and other roots alike; the target moves only via the to ▾ popup.
   // It changes what the focused pane shows.
@@ -911,7 +1064,18 @@ export function App() {
     (name: string) => setState((s) => showFocused(s, { kind: "root", name })),
     [],
   );
-  const setTarget = useCallback((target: ComposerTarget) => setState((s) => ({ ...s, target })), []);
+  // Picking a to ▾ target also jumps the view to that conversation's tab —
+  // the input follows the pane, so the pane follows the pick.
+  const setTarget = useCallback(
+    (target: ComposerTarget) =>
+      setState((s) => {
+        const withTarget = { ...s, target };
+        if (target.kind === "helper") return showFocused(withTarget, { kind: "helper", childId: target.childId });
+        if (target.kind === "root") return showFocused(withTarget, { kind: "root", name: target.name });
+        return showFocused(withTarget, { kind: "timeline" });
+      }),
+    [],
+  );
   // From the Files column: match the tool-arg path (may be absolute) against
   // the workspace-relative preview index.
   const openPreview = useCallback(
@@ -940,55 +1104,27 @@ export function App() {
       }),
     [],
   );
-  /** Close one pane's tab. Split: that pane goes away, the other stays (and
-   *  takes focus if the closed one had it). Single pane: back to the master
-   *  timeline (the timeline tab itself has no ×). */
-  const closePane = useCallback((side: "left" | "right" | null) => {
-    setState((s) => {
-      if (!s.split || side === null) {
-        if (currentPane(s).kind === "timeline") return s;
-        return { ...s, ...panePatch({ kind: "timeline" }), split: null };
-      }
-      const keep = side === s.split.focusSide ? s.split.other : currentPane(s);
-      return { ...s, ...panePatch(keep), split: null };
-    });
+  /** × on a tab. */
+  const closeTab = useCallback((side: "left" | "right" | null, v: PaneView) => {
+    setState((s) => removeTab(s, side ?? "left", v));
   }, []);
-  /** Rail ⚡: open Learned in the focused pane; click again to close it. */
+  /** Click a tab in a pane's strip. */
+  const pickTab = useCallback((side: "left" | "right" | null, v: PaneView) => {
+    setState((s) => activateTab(s, side ?? "left", v));
+  }, []);
+  /** Rail ⚡ toggles the Learned column on the left. */
   const toggleLearned = useCallback(() => {
-    setState((s) => {
-      if (currentPane(s).kind === "learned") {
-        if (!s.split) return { ...s, ...panePatch({ kind: "timeline" }) };
-        return { ...s, ...panePatch(s.split.other), split: null };
-      }
-      if (s.split?.other.kind === "learned") return { ...s, split: null };
-      return showFocused(s, { kind: "learned" });
-    });
+    setState((s) => ({ ...s, column: s.column === "learned" ? "agents" : "learned" }));
   }, []);
-  /** A tab dropped on the left/right half of the center area. */
+  /** A row picked in the Learned column: its detail pops into a center pane
+   *  (split, keeping your focus); picking it again clears back to history. */
+  const selectLearned = useCallback((sel: LearnedSel | null) => {
+    setLearnedSel(sel);
+    if (sel) setState((s) => popPane(s, { kind: "learned" }));
+  }, []);
+  /** A tab (or agent row) dropped on the left/right half of the center area. */
   const dropPane = useCallback((v: PaneView, side: "left" | "right") => {
-    setState((s) => {
-      const cur = currentPane(s);
-      if (!s.split) {
-        // Same view as the only pane — nothing to pair it with.
-        if (sameView(v, cur)) return s;
-        // Open the split: dropped view on the chosen side, focused.
-        return { ...s, ...panePatch(v), split: { other: cur, focusSide: side } };
-      }
-      const other = s.split.other;
-      const sideView = side === s.split.focusSide ? cur : other;
-      const awayView = side === s.split.focusSide ? other : cur;
-      if (sameView(v, sideView)) {
-        // Already there — just focus that pane.
-        if (side === s.split.focusSide) return s;
-        return { ...s, ...panePatch(sideView), split: { other: cur, focusSide: side } };
-      }
-      if (sameView(v, awayView)) {
-        // It lives on the other side — move it across (panes swap), focused.
-        return { ...s, ...panePatch(v), split: { other: sideView, focusSide: side } };
-      }
-      // Replace whatever the drop side showed; the other pane stays.
-      return { ...s, ...panePatch(v), split: { other: awayView, focusSide: side } };
-    });
+    setState((s) => moveTab(s, v, side));
   }, []);
   const selectPreviewFile = useCallback(
     (previewPath: string) => setState((s) => ({ ...s, previewPath })),
@@ -1244,28 +1380,18 @@ export function App() {
     };
   }, [rootWatchKey, refreshOthers]);
 
-  // Persist the split layout per workspace; single pane clears the key (reset
-  // included). Guarded by splitKeyRef so nothing writes before the restore.
-  const split = state.split;
-  const splitSave = split
-    ? (() => {
-        const focused = currentPane(state);
-        const left = split.focusSide === "left" ? focused : split.other;
-        const right = split.focusSide === "left" ? split.other : focused;
-        return JSON.stringify({ left, right, focus: split.focusSide });
-      })()
-    : null;
+  // Persist the tab layout per workspace. Guarded by splitKeyRef so nothing
+  // writes before the restore.
+  const splitSave = JSON.stringify({
+    tabsL: state.tabsL,
+    tabsR: state.tabsR,
+    activeL: activeOf(state, "left"),
+    activeR: activeOf(state, "right"),
+    focus: focusSideOf(state),
+  });
   useEffect(() => {
     const key = splitKeyRef.current;
     if (!key) return;
-    if (splitSave === null) {
-      try {
-        localStorage.removeItem(key);
-      } catch {
-        /* private mode */
-      }
-      return;
-    }
     saveJson(key, JSON.parse(splitSave));
   }, [splitSave]);
 
@@ -1282,11 +1408,7 @@ export function App() {
   useEffect(() => {
     if (!liveSig || liveSig === autoPreviewRef.current) return;
     autoPreviewRef.current = liveSig;
-    setState((s) => {
-      if (currentPane(s).kind === "preview" || s.split?.other.kind === "preview") return s;
-      if (!s.split) return { ...s, split: { other: { kind: "preview" }, focusSide: "left" } };
-      return { ...s, split: { ...s.split, other: { kind: "preview" } } };
-    });
+    setState((s) => popPane(s, { kind: "preview" }));
   }, [liveSig]);
 
   // A root's run state: its own event stream once attached, else the roster word.
@@ -1363,16 +1485,16 @@ export function App() {
           <div className="r1">
             <BotAvatar seed={name} />
             <span className="nm">{name}</span>
-            <span className="rel">root agent · runs on its own</span>
-          </div>
-          <div className="r2">
-            {rs === "working" ? (
-              <span className="run">running</span>
-            ) : other?.state === "inactive" && load === undefined ? (
-              <>inactive · a message wakes it</>
-            ) : (
-              <>idle</>
-            )}
+            <span className="rel">
+              root agent ·{" "}
+              {rs === "working" ? (
+                <span className="run">running</span>
+              ) : other?.state === "inactive" && load === undefined ? (
+                <>inactive · a message wakes it</>
+              ) : (
+                <>idle</>
+              )}
+            </span>
           </div>
         </div>
         <Timeline items={items.length > 0 ? items : [placeholder]} />
@@ -1380,9 +1502,12 @@ export function App() {
     );
   };
 
-  /** One pane's content (no composer — the composer stays singular). */
+  /** One pane's content. */
   const paneBody = (p: PaneView) => {
-    if (p.kind === "learned") return <LearnedView />;
+    if (p.kind === "empty") {
+      return <div className="pnote">nothing open — pick an agent on the left, or drag one here</div>;
+    }
+    if (p.kind === "learned") return <LearnedView sel={learnedSel} epoch={lessonEpoch} onSelect={setLearnedSel} />;
     if (p.kind === "preview") {
       return (
         <PreviewView
@@ -1417,7 +1542,22 @@ export function App() {
       );
     }
     if (p.kind === "root") return renderRootPane(p.name);
-    return <Timeline items={state.timeline} />;
+    // master gets the same one-line agent header as root/helper panes
+    return (
+      <>
+        <div className="ahead">
+          <div className="r1">
+            <span className="chip master" />
+            <span className="nm">master</span>
+            <span className="rel">
+              runs this workspace ·{" "}
+              {state.master === "working" ? <span className="run">running</span> : <>idle</>}
+            </span>
+          </div>
+        </div>
+        <Timeline items={state.timeline} />
+      </>
+    );
   };
 
   const focusedPane = currentPane(state);
@@ -1430,7 +1570,8 @@ export function App() {
       return c ? helperName(c) : "helper";
     }
     if (p.kind === "root") return p.name;
-    return "master · timeline";
+    if (p.kind === "empty") return "";
+    return "master";
   };
 
   /** The chat input follows its pane: master timeline gets the to ▾ composer,
@@ -1444,21 +1585,21 @@ export function App() {
   const center = () => {
     if (state.split) {
       // Two panes, fixed 50/50, separated by the recessed gutter color; each
-      // pane carries its own tab strip and (for conversations) its own input.
+      // pane carries its own tab group and (for conversations) its own input.
       const fs = state.split.focusSide;
-      const leftP = fs === "left" ? focusedPane : state.split.other;
-      const rightP = fs === "left" ? state.split.other : focusedPane;
       return (
         <div className="panes">
-          {renderPane(leftP, "left", fs !== "left")}
-          {renderPane(rightP, "right", fs !== "right")}
+          {renderPane("left", fs !== "left")}
+          {renderPane("right", fs !== "right")}
         </div>
       );
     }
-    return renderPane(focusedPane, null, false);
+    return renderPane(null, false);
   };
 
-  /* ---- tab drag → split (drop on a half), tab bar drop = plain switch ---- */
+  /* ---- drag: tabs and agent rows both land on a half or a strip ---- */
+  const agentKeyToView = (key: string): PaneView =>
+    key === "master" ? { kind: "timeline" } : key.startsWith("root:") ? { kind: "root", name: key.slice(5) } : { kind: "helper", childId: key };
   const tabDragStart = (v: PaneView) => (e: React.DragEvent) => {
     dragViewRef.current = v;
     e.dataTransfer.setData("text/plain", v.kind);
@@ -1468,19 +1609,20 @@ export function App() {
     dragViewRef.current = null;
     setDropHint(null);
   };
+  /** The dragged view: a center tab (ref) or an Agents-column row (dataTransfer). */
+  const draggedView = (e: React.DragEvent): PaneView | null => {
+    if (dragViewRef.current) return dragViewRef.current;
+    const key = e.dataTransfer.getData("text/agent-key");
+    return key ? agentKeyToView(key) : null;
+  };
+  const dragIsRelevant = (e: React.DragEvent) =>
+    dragViewRef.current !== null || e.dataTransfer.types.includes("text/agent-key");
   const dropSide = (e: React.DragEvent<HTMLDivElement>): "left" | "right" => {
     const r = e.currentTarget.getBoundingClientRect();
     return e.clientX < r.left + r.width / 2 ? "left" : "right";
   };
   const bodyDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    const v = dragViewRef.current;
-    if (!v) return;
-    const s = stateRef.current;
-    // Single pane showing exactly this view: a drop would change nothing.
-    if (!s.split && sameView(v, currentPane(s))) {
-      setDropHint(null);
-      return;
-    }
+    if (!dragIsRelevant(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     const side = dropSide(e);
@@ -1491,7 +1633,7 @@ export function App() {
     setDropHint(null);
   };
   const bodyDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    const v = dragViewRef.current;
+    const v = draggedView(e);
     dragViewRef.current = null;
     setDropHint(null);
     if (!v) return;
@@ -1499,58 +1641,67 @@ export function App() {
     dropPane(v, dropSide(e));
   };
   const tabsDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!dragViewRef.current) return;
+    if (!dragIsRelevant(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
-  /** A tab dropped on a pane's own strip moves the view into that pane. */
+  /** A drop on a pane's own strip moves the view into that pane. */
   const tabsDropOn = (side: "left" | "right" | null) => (e: React.DragEvent<HTMLDivElement>) => {
-    const v = dragViewRef.current;
+    const v = draggedView(e);
     dragViewRef.current = null;
     setDropHint(null);
     if (!v) return;
     e.preventDefault();
     e.stopPropagation();
-    if (side) dropPane(v, side);
-    else setState((s) => showFocused(s, v));
+    dropPane(v, side ?? "left");
   };
 
-  /** One pane's tab strip: the pane's view as its (active) tab, closable with
-   *  ×. The strip follows the pane — there is no global tab bar. */
-  const paneTabs = (p: PaneView, side: "left" | "right" | null) => {
-    const closable = side !== null || p.kind !== "timeline";
+  /** One pane's tab group: every open tab, active highlighted, each closable
+   *  and draggable. The strip follows the pane — there is no global tab bar. */
+  const paneTabs = (side: "left" | "right" | null, active: PaneView) => {
+    const list = side === "right" ? state.tabsR : state.tabsL;
     return (
       <div className="tabs" onDragOver={tabsDragOver} onDrop={tabsDropOn(side)}>
-        <div className="tab on" draggable onDragStart={tabDragStart(p)} onDragEnd={tabDragEnd}>
-          {paneTitle(p)}
-          {closable && (
+        {list.map((t) => (
+          <div
+            key={`${t.kind}:${t.kind === "helper" ? t.childId : t.kind === "root" ? t.name : ""}`}
+            className={sameView(t, active) ? "tab on" : "tab"}
+            draggable
+            onDragStart={tabDragStart(t)}
+            onDragEnd={tabDragEnd}
+            onClick={() => pickTab(side, t)}
+          >
+            {paneTitle(t)}
             <button
               className="tx"
               title="close"
               onClick={(e) => {
                 e.stopPropagation();
-                closePane(side);
+                closeTab(side, t);
               }}
             >
               ✕
             </button>
-          )}
-        </div>
+          </div>
+        ))}
       </div>
     );
   };
 
-  const renderPane = (p: PaneView, side: "left" | "right" | null, away: boolean) => (
-    <div
-      key={side ?? "solo"}
-      className={away ? "pane away" : "pane"}
-      onMouseDownCapture={side ? () => focusPane(side) : undefined}
-    >
-      {paneTabs(p, side)}
-      <div className="pbody">{paneBody(p)}</div>
-      {paneComposer(p)}
-    </div>
-  );
+  const renderPane = (side: "left" | "right" | null, away: boolean) => {
+    const p = side === null ? focusedPane : (activeOf(state, side) ?? { kind: "empty" as const });
+    return (
+      <div
+        key={side ?? "solo"}
+        className={away ? "pane away" : "pane"}
+        onMouseDownCapture={side ? () => focusPane(side) : undefined}
+      >
+        {paneTabs(side, p)}
+        <div className="pbody">{paneBody(p)}</div>
+        {paneComposer(p)}
+      </div>
+    );
+  };
 
   return (
     <div className="app">
@@ -1575,13 +1726,19 @@ export function App() {
           column={state.column}
           workspace={state.bridge?.workspace || "general"}
           bridge={state.bridge}
-          learnedOn={focusedPane.kind === "learned" || state.split?.other.kind === "learned" || false}
+          learnedOn={state.column === "learned"}
           onColumn={setColumn}
           onLearned={toggleLearned}
           onLogo={() => setWsOpen((v) => !v)}
           onSettings={() => setSetOpen((v) => !v)}
         />
-        {state.column === "agents" ? (
+        {state.column === "learned" ? (
+          <LearnedColumn selected={learnedSel} epoch={lessonEpoch} onSelect={selectLearned} />
+        ) : state.column === "skills" ? (
+          <SkillsColumn />
+        ) : state.column === "extensions" ? (
+          <ExtensionsColumn />
+        ) : state.column === "agents" ? (
           <AgentsColumn
             master={state.master}
             workspace={state.bridge?.workspace || "general"}
@@ -1613,7 +1770,7 @@ export function App() {
           heartbeats={state.heartbeats}
           autonomous={state.autonomous}
           refreshKey={inspectorKey}
-          onOpenLearn={() => setView("learned")}
+          onOpenLearn={() => setState((s) => popPane({ ...s, column: "learned" }, { kind: "learned" }))}
         />
       </div>
     </div>

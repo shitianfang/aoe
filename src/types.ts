@@ -2,8 +2,23 @@ export type Theme = "light" | "dark";
 
 export type AgentState = "idle" | "working";
 
-export type CenterView = "timeline" | "learned" | "preview";
-export type ColumnView = "agents" | "files";
+export type CenterView = "timeline" | "learned" | "preview" | "empty";
+export type ColumnView = "agents" | "files" | "learned" | "skills" | "extensions";
+
+/** One read-only row in the Skills / Extensions columns
+ *  (GET /bridge/skills, GET /bridge/extensions). */
+export interface CatalogItem {
+  name: string;
+  /** One line of small text: a skill's summary, an extension's kind. */
+  detail?: string;
+}
+
+/** Selected entry in the Learned column/view (scope words match the bridge). */
+export interface LearnedSel {
+  scope: "this workspace" | "everywhere";
+  kind: string;
+  id: string;
+}
 
 /** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]).
  *  Live results carry action/content for creates; applied may be absent. */
@@ -19,6 +34,10 @@ export interface LessonEdit {
   error?: string;
 }
 
+/** Machine-readable origin of a lesson (RefinementResult.source, schema 27).
+ *  Absent on lessons recorded before the field existed. */
+export type LessonSource = "auto" | "manual" | "agent";
+
 /** RefinementResult subset we render (refine_complete { result }). */
 export interface LessonResult {
   id: string;
@@ -28,6 +47,7 @@ export interface LessonResult {
   appliedEdits?: LessonEdit[];
   rollbackOf?: string;
   scope?: string;
+  source?: LessonSource;
 }
 
 /** One rendered row in the master timeline. */
@@ -84,6 +104,9 @@ export interface ChildInfo {
   answerPreview?: string;
   recap?: string;
   error?: string;
+  /** Epoch ms when the helper reached its terminal status (schema 27);
+   *  absent on older daemons and on helpers rehydrated after a restart. */
+  completedAt?: number;
 }
 
 /** One line in a helper's observed-events list (from master's timeline + child updates). */
@@ -165,7 +188,8 @@ export interface HeartbeatInfo {
   nextRunAt?: string;
 }
 
-/** AgentAutonomousStatus subset (read from autonomous_status custom messages). */
+/** AgentAutonomousStatus subset (autonomous_status custom messages, the attach
+ *  snapshot's state.autonomous, and GET /bridge/autonomous). */
 export interface AutonomousInfo {
   enabled: boolean;
   continuationsUsed?: number;
@@ -176,6 +200,21 @@ export interface AutonomousInfo {
   startedAt?: number;
   limits?: { maxContinuations?: number; maxTurns?: number; maxTokens?: number; timeoutMs?: number };
   lastGateFailure?: { command?: string; attempt?: number };
+  /** Why the last unattended continuation was injected (schema 27):
+   *  "gate_failed" = after a failed check, "missing_terminal_evidence" =
+   *  a turn ended without evidence. Absent before the first continuation. */
+  lastInjection?: { reason: "gate_failed" | "missing_terminal_evidence"; at: number };
+}
+
+/** Auto-refine scheduling status (connection state autoRefine block, schema 27).
+ *  lastReviewAt + cooldownMs bound the next possible auto lesson review. */
+export interface AutoRefineInfo {
+  enabled: boolean;
+  turnInterval?: number;
+  compact?: boolean;
+  cooldownMs?: number;
+  /** Epoch ms of the last auto-refine review; absent before the first one. */
+  lastReviewAt?: number;
 }
 
 /** AgentCronJob subset for the schedule rows in Re-entry (GET /bridge/crons).
@@ -197,7 +236,9 @@ export type PaneView =
   | { kind: "learned" }
   | { kind: "preview" }
   | { kind: "helper"; childId: string }
-  | { kind: "root"; name: string };
+  | { kind: "root"; name: string }
+  /** No tab open (the master tab was closed); single-pane only. */
+  | { kind: "empty" };
 
 /** Split layout for the center area (two panes max — the mockup's freedom,
  *  bounded). The canonical view fields (view/selectedAgent/selectedRoot)
@@ -230,6 +271,11 @@ export interface AppState {
   selectedRoot: string | null;
   /** Second center pane (user split via tab drag); null = single pane. */
   split: SplitState | null;
+  /** Open tabs per pane side (single-pane layout uses left, right stays
+   *  empty). The focused side's ACTIVE tab is what view/selectedAgent/
+   *  selectedRoot describe; the other side's active tab is split.other. */
+  tabsL: PaneView[];
+  tabsR: PaneView[];
   /** Other root sessions on this daemon (roster behind the "Other" rows). */
   others: RootAgent[];
   /** Per-root timeline (watch_root feed: snapshot replaces, events append). */

@@ -89,3 +89,24 @@ export function flavorTag(name: string, word: string, working?: string): string 
 export function reachable(c: ChildInfo): boolean {
   return Boolean(c.activeSessionId);
 }
+
+/** Unattended injection reason → product words (HANDOFF §4: check, unattended). */
+export function injectionReasonText(reason: "gate_failed" | "missing_terminal_evidence"): string {
+  return reason === "gate_failed" ? "after a failed check" : "no evidence in the turn";
+}
+
+/** Lesson source → product words ("who asked for this lesson"). */
+export function lessonSourceText(source: string | undefined): string | null {
+  if (source === "auto") return "auto";
+  if (source === "manual") return "you asked";
+  if (source === "agent") return "the agent";
+  return null; // unknown/older record — say nothing rather than guess
+}
+
+/** Epoch ms → HH:MM for compact status rows. */
+export function hhmmEpoch(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}

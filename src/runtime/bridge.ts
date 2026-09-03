@@ -4,7 +4,7 @@
  * hosted by Electron main.
  */
 
-import type { HelperFeedEvent } from "../types";
+import type { AutoRefineInfo, AutonomousInfo, HelperFeedEvent } from "../types";
 
 export interface BridgeHello {
   connected: boolean;
@@ -18,7 +18,12 @@ export interface BridgeHello {
 
 export type BridgeMessage =
   | { type: "hello"; daemon: BridgeHello }
-  | { type: "snapshot"; state: { goal: unknown; heartbeat: unknown }; children: unknown[]; messages: unknown[] }
+  | {
+      type: "snapshot";
+      state: { goal: unknown; heartbeat: unknown; autonomous?: unknown; autoRefine?: unknown };
+      children: unknown[];
+      messages: unknown[];
+    }
   | { type: "event"; event: Record<string, unknown> }
   | { type: "heartbeats_changed" }
   | { type: "preview_update" }
@@ -118,6 +123,18 @@ export async function switchWorkspace(name: string): Promise<void> {
 /** Absolute-ify a /bridge/* path for the current host (dev proxy or packaged). */
 export function bridgeUrl(p: string): string {
   return `${BRIDGE_BASE}${p}`;
+}
+
+/** Fresh unattended + auto-refine status (read-only get_connection_state pull;
+ *  both null on pre-schema-27 daemons or while the bridge is detached). */
+export async function fetchAutonomous(): Promise<{
+  autonomous: AutonomousInfo | null;
+  autoRefine: AutoRefineInfo | null;
+}> {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/autonomous`);
+  if (!r.ok) throw new Error(`autonomous status failed (${r.status})`);
+  const data = (await r.json()) as { autonomous?: AutonomousInfo | null; autoRefine?: AutoRefineInfo | null };
+  return { autonomous: data.autonomous ?? null, autoRefine: data.autoRefine ?? null };
 }
 
 /** Pull readable text out of an AgentMessage-shaped object. */

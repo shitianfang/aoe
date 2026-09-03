@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { LessonResult } from "../types";
+import { lessonSourceText } from "../helperDisplay";
 import { bridgeCmd } from "../runtime/bridge";
 
 /** Expanded view of one kept lesson (RefinementResult). Everything shown is
@@ -13,6 +14,8 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
   const [err, setErr] = useState<string | null>(null);
 
   const scopeLabel = r.scope === "global" ? "kept everywhere" : "kept for this workspace";
+  // Machine source field (schema 27) — older lessons carry none; say nothing then.
+  const sourceLabel = lessonSourceText(r.source);
 
   const doRollback = async () => {
     setRollback("pending");
@@ -47,6 +50,7 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
         <span>
           {props.at ? `${props.at} · ` : ""}
           {scopeLabel}
+          {sourceLabel ? ` · from ${sourceLabel}` : ""}
           {r.rollbackOf ? ` · rolls back ${r.rollbackOf}` : ""}
         </span>
       </div>

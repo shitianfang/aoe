@@ -14,6 +14,10 @@
  *                             text?, target? }
  *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
  *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
+ *   GET  /bridge/autonomous { autonomous, autoRefine } — read-only status blocks
+ *                         (get_connection_state; null on pre-schema-27 daemons)
+ *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
+ *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -76,6 +80,21 @@ function readHarness(file) {
     return null;
   }
 }
+/** Master's autonomous + auto-refine status blocks, read-only via
+ *  get_connection_state (schema 27: lastInjection, autoRefine.lastReviewAt).
+ *  Older daemons return a state without the blocks — both come back null. */
+async function statusPayload() {
+  if (!daemonClient || !masterSessionId) return { autonomous: null, autoRefine: null };
+  const r = await daemonClient
+    .request({ type: "get_connection_state", activeSessionId: masterSessionId })
+    .catch(() => null);
+  if (!r?.success) return { autonomous: null, autoRefine: null };
+  return {
+    autonomous: r.data?.autonomous ?? null,
+    autoRefine: r.data?.autoRefine ?? null,
+  };
+}
+
 function learnedPayload() {
   // Local harness lives under the session's artifact dir, keyed by session uuid
   // (state.sessionDir is the sessions root, not this session's artifacts).
@@ -96,6 +115,174 @@ function learnedPayload() {
     path.join(os.homedir(), ".prime", "agent", "harness", "harness_state.json"),
   );
   return { local, global: global_ };
+}
+
+// ---- skills / extensions (read-only catalogs) ------------------------------
+// Both columns only report what the runtime already has on disk; nothing here
+// installs, enables or edits anything. Credentials are never read as values —
+// auth.json is opened for its KEY NAMES only (they say which integrations are
+// connected), never for the secrets behind them.
+
+const AGENT_HOME = path.join(os.homedir(), ".prime", "agent");
+
+function readJsonFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Global agent settings (~/.prime/agent/settings.json); {} when absent. */
+function agentSettings() {
+  const s = readJsonFile(path.join(AGENT_HOME, "settings.json"));
+  return s && typeof s === "object" ? s : {};
+}
+
+/** Where the kernel actually bootstrapped its python skills from — the daemon
+ *  may run out of a fork, so trust the venv's record over PRIME_AGENT_DIR. */
+function bundledSkillsDir() {
+  const boot = readJsonFile(path.join(AGENT_HOME, "kernel-venv", ".bootstrap-version"));
+  const first = boot?.pythonSkills?.[0]?.packagePath;
+  if (typeof first === "string" && first) return path.dirname(first);
+  return path.join(PRIME_AGENT_DIR, "packages", "coding-agent", "skills");
+}
+
+/** name + description out of a SKILL.md YAML frontmatter block. `name` is
+ *  optional in the runtime (it falls back to the directory), `description`
+ *  is required — a skill without one is dropped by the loader too. */
+function readSkillMd(file, dirName) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!fm) return null;
+  const field = (key) => {
+    const m = new RegExp(`^${key}:[ \\t]*(.*)$`, "m").exec(fm[1]);
+    return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+  };
+  const description = field("description");
+  if (!description) return null;
+  return { name: field("name") || dirName, description };
+}
+
+/** Collect skill dirs under a root: a directory holding SKILL.md IS a skill
+ *  and recursion stops there (same rule the runtime's loader uses). */
+function collectSkills(root, out, depth = 0) {
+  if (depth > 3) return;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules") continue;
+    const dir = path.join(root, e.name);
+    const md = path.join(dir, "SKILL.md");
+    if (fs.existsSync(md)) {
+      const s = readSkillMd(md, e.name);
+      if (s && !out.has(s.name)) out.set(s.name, s);
+    } else {
+      collectSkills(dir, out, depth + 1);
+    }
+  }
+}
+
+/** First sentence of a description, capped — the column shows one small line. */
+function oneLine(s, cap = 90) {
+  const t = String(s ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const stop = t.search(/\.(\s|$)/);
+  const first = stop > 0 ? t.slice(0, stop) : t;
+  return first.length > cap ? `${first.slice(0, cap - 1)}…` : first;
+}
+
+/** GET /bridge/skills — skills the runtime can load, project first, then the
+ *  user dir, then what the runtime bundles. Empty when nothing is on disk. */
+function skillsPayload() {
+  const settings = agentSettings();
+  const roots = [
+    path.join(WORKSPACE_DIR, ".prime", "agent", "skills"),
+    path.join(AGENT_HOME, "skills"),
+    bundledSkillsDir(),
+    // settings.skills may be the array of extra paths, or the legacy object form.
+    ...(Array.isArray(settings.skills) ? settings.skills : []).map((p) =>
+      path.resolve(AGENT_HOME, String(p).replace(/^[+-]/, "")),
+    ),
+  ];
+  const found = new Map();
+  for (const r of roots) collectSkills(r, found);
+  const items = [...found.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => {
+      const detail = oneLine(s.description);
+      return detail ? { name: s.name, detail } : { name: s.name };
+    });
+  return { items };
+}
+
+/** GET /bridge/extensions — what the agent is wired into: model providers,
+ *  MCP servers, connected integrations, local extension modules. */
+function extensionsPayload() {
+  const settings = agentSettings();
+  const items = [];
+
+  // Model providers (~/.prime/agent/models.json).
+  const models = readJsonFile(path.join(AGENT_HOME, "models.json"));
+  for (const [id, p] of Object.entries(models?.providers ?? {})) {
+    const n = Array.isArray(p?.models) ? p.models.length : 0;
+    const bits = ["provider", `${n} model${n === 1 ? "" : "s"}`];
+    if (settings.defaultProvider === id) bits.push("default");
+    items.push({ name: p?.name || id, detail: bits.join(" · ") });
+  }
+
+  // User-declared MCP servers (settings.mcpServers: name → { type: http|stdio }).
+  for (const [name, cfg] of Object.entries(settings.mcpServers ?? {})) {
+    items.push({ name, detail: `mcp · ${cfg?.type || "server"}` });
+  }
+
+  // Built-in integrations that have been logged in: auth.json keys are
+  // "mcp:<server>". Key names only — no credential value is ever read here.
+  const auth = readJsonFile(path.join(AGENT_HOME, "auth.json"));
+  for (const k of Object.keys(auth ?? {})) {
+    if (k.startsWith("mcp:")) items.push({ name: k.slice(4), detail: "mcp · connected" });
+  }
+
+  // Local extension modules (~/.prime/agent/extensions and the project dir).
+  const extRoots = [
+    path.join(WORKSPACE_DIR, ".prime", "agent", "extensions"),
+    path.join(AGENT_HOME, "extensions"),
+  ];
+  const seen = new Set();
+  for (const root of extRoots) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const name = e.isFile() ? e.name.replace(/\.(t|j)s$/, "") : e.name;
+      if (e.isFile() && !/\.(t|j)s$/.test(e.name)) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      items.push({ name, detail: "extension" });
+    }
+  }
+  for (const p of Array.isArray(settings.extensions) ? settings.extensions : []) {
+    const name = path.basename(String(p).replace(/^[+-]/, "")).replace(/\.(t|j)s$/, "");
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      items.push({ name, detail: "extension" });
+    }
+  }
+
+  return { items };
 }
 
 function broadcast(payload) {
@@ -357,6 +544,9 @@ async function attachMaster() {
       goal: snapshot.state?.goal ?? null,
       heartbeat: snapshot.state?.heartbeat ?? null,
       sessionDir: snapshot.state?.sessionDir ?? null,
+      // schema 27 status blocks; null on older daemons (renderer omits).
+      autonomous: snapshot.state?.autonomous ?? null,
+      autoRefine: snapshot.state?.autoRefine ?? null,
     },
     children: snapshot.children ?? [],
     messages: slimHistory(snapshot.messages),
@@ -786,8 +976,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.url === "/bridge/learned") {
+    // autoRefine rides along so the Learned surfaces can render
+    // "next review not before" without a second pull; null on old daemons.
+    statusPayload()
+      .then(({ autoRefine }) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ...learnedPayload(), autoRefine }));
+      })
+      .catch(() => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ...learnedPayload(), autoRefine: null }));
+      });
+    return;
+  }
+  if (req.url === "/bridge/autonomous") {
+    // Read-only unattended status (counters, limits, lastInjection) via
+    // get_connection_state — no transcript write, unlike "/autonomous status".
+    statusPayload()
+      .then((p) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(p));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
+  }
+  if (req.url === "/bridge/skills") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });
-    return res.end(JSON.stringify(learnedPayload()));
+    return res.end(JSON.stringify(skillsPayload()));
+  }
+  if (req.url === "/bridge/extensions") {
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    return res.end(JSON.stringify(extensionsPayload()));
   }
   if (req.url === "/bridge/heartbeats") {
     if (!masterConn) {

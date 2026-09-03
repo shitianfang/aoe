@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
-import { helperName, reachable } from "../helperDisplay";
+import { helperName, hhmmEpoch, reachable } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 
 function hhmm(iso: string | null | undefined): string {
@@ -12,6 +12,9 @@ function hhmm(iso: string | null | undefined): string {
 }
 
 function stateLine(c: ChildInfo): JSX.Element {
+  // Real terminal timestamp (schema 27); absent on older daemons or on
+  // helpers rehydrated after a restart — then the word stands alone.
+  const done = typeof c.completedAt === "number" ? ` ${hhmmEpoch(c.completedAt)}` : "";
   if (c.status === "queued") return <>queued · not yet started</>;
   if (c.status === "running") {
     return (
@@ -21,10 +24,10 @@ function stateLine(c: ChildInfo): JSX.Element {
     );
   }
   if (c.status === "done") {
-    if (c.repliedSinceTask) return <>finished · replied</>;
+    if (c.repliedSinceTask) return <>finished{done} · replied</>;
     return (
       <>
-        finished · <span className="need">no reply yet</span> ·{" "}
+        finished{done} · <span className="need">no reply yet</span> ·{" "}
         {reachable(c) ? "still reachable" : "ran inline, not reachable"}
       </>
     );
@@ -32,12 +35,12 @@ function stateLine(c: ChildInfo): JSX.Element {
   if (c.status === "error") {
     return (
       <>
-        <span className="need">failed</span>
+        <span className="need">failed{done}</span>
         {c.error ? <> · {c.error}</> : null}
       </>
     );
   }
-  return <>stopped</>;
+  return <>stopped{done}</>;
 }
 
 function stripLine(c: ChildInfo): string {
@@ -79,7 +82,7 @@ export function HelperView(props: {
         <div className="r1">
           <BotAvatar seed={name} />
           <span className="nm">{name}</span>
-          <span className="rel">helper of master</span>
+          <span className="rel">helper · {stateLine(c)}</span>
           <span className="act">
             {running ? (
               <button className="btn" onClick={() => props.onStop(c.id)}>
@@ -92,7 +95,6 @@ export function HelperView(props: {
             )}
           </span>
         </div>
-        <div className="r2">{stateLine(c)}</div>
         {c.label && <div className="r3">Task — “{c.label}”</div>}
       </div>
       <div className="transcript hevents">

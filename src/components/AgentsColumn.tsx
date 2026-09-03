@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentState, ChildInfo, RootAgent } from "../types";
-import { flavorTag, helperName, statusIcon, statusWord } from "../helperDisplay";
+import { flavorTag, helperName, hhmmEpoch, statusIcon, statusWord } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { bridgeCmd } from "../runtime/bridge";
 
@@ -97,16 +97,20 @@ export function AgentsColumn(props: {
       tag: flavorTag("master", masterWord, props.working),
       state: statusIcon(masterWord),
       selectable: null,
-      draggable: false, // the commander stays pinned
+      draggable: true, // draggable into a center pane; still pinned in this list
     });
     visibleChildren.forEach((c) => {
       const word = statusWord(c);
       const name = helperName(c);
+      // Real finished time (schema 27) rides on terminal rows; running/queued
+      // helpers and older daemons show the tag alone.
+      const terminal = c.status === "done" || c.status === "error" || c.status === "cancelled";
+      const doneAt = terminal && typeof c.completedAt === "number" ? ` · ${hhmmEpoch(c.completedAt)}` : "";
       map.set(c.id, {
         key: c.id,
         label: name,
         avatar: <BotAvatar seed={name} />,
-        tag: flavorTag(name, word, props.helperWorking[c.id]),
+        tag: `${flavorTag(name, word, props.helperWorking[c.id])}${doneAt}`,
         state: statusIcon(word),
         selectable: c.id,
         draggable: true,
@@ -175,6 +179,7 @@ export function AgentsColumn(props: {
 
   const drop = (childKey: string, parentKey: string | "__top") => {
     setDropOn(null);
+    if (childKey === "master") return; // the commander stays pinned in this list
     if (childKey === parentKey) return;
     if (parentKey !== "__top" && wouldCycle(childKey, parentKey)) return;
     const next = { ...group, [childKey]: parentKey };

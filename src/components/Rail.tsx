@@ -44,19 +44,27 @@ export function Rail(props: {
           <path d="M13 3 5 14h5l-1 7 8-11h-5l1-7Z" />
         </svg>
       </button>
-      <div className="rbtn" title="Skills — placeholder">
+      <button
+        className={props.column === "skills" ? "rbtn on" : "rbtn"}
+        title="Skills"
+        onClick={() => props.onColumn("skills")}
+      >
         <svg viewBox="0 0 24 24">
           <rect x="7" y="7" width="10" height="10" transform="rotate(45 12 12)" />
         </svg>
-      </div>
-      <div className="rbtn" title="Extensions — placeholder">
+      </button>
+      <button
+        className={props.column === "extensions" ? "rbtn on" : "rbtn"}
+        title="Extensions"
+        onClick={() => props.onColumn("extensions")}
+      >
         <svg viewBox="0 0 24 24">
           <rect x="4" y="4" width="7" height="7" />
           <rect x="13" y="4" width="7" height="7" />
           <rect x="4" y="13" width="7" height="7" />
           <rect x="13" y="13" width="7" height="7" />
         </svg>
-      </div>
+      </button>
       <div className="sp" />
       <button className="uav" title="you · settings" onClick={props.onSettings}>
         Y<span className={props.bridge?.connected ? "udot" : "udot bad"} />

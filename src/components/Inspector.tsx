@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
   AgentState,
+  AutoRefineInfo,
   AutonomousInfo,
   BridgeState,
   CronInfo,
   GoalInfo,
   HeartbeatInfo,
 } from "../types";
+import { hhmmEpoch, injectionReasonText } from "../helperDisplay";
 import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
 
 function hhmm(d: Date): string {
@@ -97,6 +99,7 @@ export function Inspector(props: {
   const [hbErr, setHbErr] = useState<string | null>(null);
   const [crons, setCrons] = useState<CronInfo[]>([]);
   const [learned, setLearned] = useState<LearnedSummary | null>(null);
+  const [autoRefine, setAutoRefine] = useState<AutoRefineInfo | null>(null);
   // Elapsed unattended time is derived from startedAt; re-render it on the minute.
   const [, setTick] = useState(0);
 
@@ -113,8 +116,15 @@ export function Inspector(props: {
     loadCrons();
     fetch(bridgeUrl("/bridge/learned"))
       .then((r) => r.json())
-      .then((d) => setLearned(summarizeLearned(d)))
-      .catch(() => setLearned(null));
+      .then((d) => {
+        setLearned(summarizeLearned(d));
+        // autoRefine rides along (schema 27); null on older daemons.
+        setAutoRefine((d as { autoRefine?: AutoRefineInfo | null })?.autoRefine ?? null);
+      })
+      .catch(() => {
+        setLearned(null);
+        setAutoRefine(null);
+      });
   }, [loadCrons, refreshKey]);
 
   const startedAt = auto?.enabled ? auto.startedAt : undefined;
@@ -298,6 +308,14 @@ export function Inspector(props: {
               </span>
             </div>
           )}
+          {auto.lastInjection && (
+            <div className="kv">
+              <span className="k">Last continued</span>
+              <span className="v faint">
+                {injectionReasonText(auto.lastInjection.reason)} · {hhmmEpoch(auto.lastInjection.at)}
+              </span>
+            </div>
+          )}
           {auto.lastGateFailure?.command && (
             <div className="ierr">last check failed · {trunc(auto.lastGateFailure.command, 40)}</div>
           )}
@@ -408,6 +426,18 @@ export function Inspector(props: {
             </div>
           </>
         )}
+        {/* last review + cooldown bound the next auto review (schema 27);
+            without both numbers there is nothing honest to show. */}
+        {autoRefine?.enabled &&
+          typeof autoRefine.lastReviewAt === "number" &&
+          typeof autoRefine.cooldownMs === "number" && (
+            <div className="kv">
+              <span className="k">Next review</span>
+              <span className="v faint">
+                not before {stamp(new Date(autoRefine.lastReviewAt + autoRefine.cooldownMs))}
+              </span>
+            </div>
+          )}
         <button className="open" onClick={props.onOpenLearn}>
           open learned →
         </button>

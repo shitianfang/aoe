@@ -62,6 +62,17 @@ export interface GoalInfo {
   continuationsUsed?: number;
 }
 
+/** Another root session on this daemon ("Other" in the Agents column,
+ *  GET /bridge/agents) — selectable and conversable via the root_* bridge ops. */
+export interface RootAgent {
+  name: string;
+  state: "running" | "idle" | "inactive";
+}
+
+/** How much of a watched root's transcript we hold: "partial" = attached
+ *  mid-run with an empty first snapshot (session_resynced backfills). */
+export type RootLoad = "partial" | "full";
+
 /** RlmChildAgentSnapshot subset we render. */
 export interface ChildInfo {
   id: string;
@@ -153,10 +164,13 @@ export interface AutonomousInfo {
   lastGateFailure?: { command?: string; attempt?: number };
 }
 
-/** Composer target: master, or a helper (addressed by child id). */
-export type ComposerTarget = { kind: "master" } | { kind: "helper"; childId: string };
-
-export type DeliveryMode = "now" | "after";
+/** Composer target: master, a helper (by child id), or another root (by name).
+ *  Changed only via the to ▾ popup — selection in the Agents column never
+ *  changes it. */
+export type ComposerTarget =
+  | { kind: "master" }
+  | { kind: "helper"; childId: string }
+  | { kind: "root"; name: string };
 
 export interface AppState {
   theme: Theme;
@@ -166,6 +180,18 @@ export interface AppState {
   column: ColumnView;
   /** Selected agent in the left column: null = master (timeline), else child id. */
   selectedAgent: string | null;
+  /** Selected other root in the left column (by session name); exclusive with selectedAgent. */
+  selectedRoot: string | null;
+  /** Other root sessions on this daemon (roster behind the "Other" rows). */
+  others: RootAgent[];
+  /** Per-root timeline (watch_root feed: snapshot replaces, events append). */
+  rootTimelines: Record<string, TimelineItem[]>;
+  /** Snapshot progress per root; absent = still attaching. */
+  rootLoad: Record<string, RootLoad>;
+  /** Live run state per root, from its own agent_start/agent_end stream. */
+  rootStates: Record<string, AgentState>;
+  /** Root runtime's setWorkingMessage copy per root ("" = cleared). */
+  rootWorking: Record<string, string>;
   bridge: BridgeState | null;
   goal: GoalInfo | null;
   children: ChildInfo[];
@@ -181,7 +207,6 @@ export interface AppState {
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
   target: ComposerTarget;
-  delivery: DeliveryMode;
   /** Runtime's own "what am I doing" line (setWorkingMessage), shown while working. */
   working?: string;
   /** Last error surfaced to the strip, if any. */

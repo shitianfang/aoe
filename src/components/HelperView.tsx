@@ -147,7 +147,7 @@ export function HelperView(props: {
       </div>
       <div className="strip">{stripLine(c)}</div>
       <div className="composer">
-        <div className="inwrap">
+        <div className="cbox">
           <input
             ref={inputRef}
             value={text}
@@ -156,14 +156,16 @@ export function HelperView(props: {
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <span className="to">to {name}</span>
+          <div className="crow">
+            <div className="dmode">
+              <span className="static">delivered now</span>
+            </div>
+            <span className="to">to {name}</span>
+            <button className="send" onClick={submit} disabled={!canMessage}>
+              SEND
+            </button>
+          </div>
         </div>
-        <div className="dmode">
-          <span className="static">delivered now</span>
-        </div>
-        <button className="send" onClick={submit} disabled={!canMessage}>
-          SEND
-        </button>
       </div>
     </div>
   );

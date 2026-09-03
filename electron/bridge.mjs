@@ -8,7 +8,10 @@
  *                               |"heartbeat_set"|"heartbeat_update"
  *                               |"refine_rollback"|"refine_global"
  *                               |"agent_message"|"stop_helper"|"remove_helper"
- *                               |"watch_helper"|"unwatch_helper", text?, target? }
+ *                               |"watch_helper"|"unwatch_helper"
+ *                               |"watch_root"|"unwatch_root"|"root_prompt"
+ *                               |"root_steer"|"root_follow_up"|"root_abort",
+ *                             text?, target? }
  *   GET  /bridge/health   { connected, master }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -44,6 +47,10 @@ let daemon = { connected: false, master: null, error: null, workspace: currentWo
 /** Live child-session attaches for the helper view, keyed by activeSessionId.
  *  Same socket as master (multi-attach is verified, findings §5). */
 /** @type {Map<string, any>} */ const childConns = new Map();
+/** Live attaches to other root sessions ("Other" in the Agents column),
+ *  keyed by session name (top-level names are unique). Same socket as master.
+ *  @type {Map<string, { conn: any, activeSessionId: string }>} */
+const rootConns = new Map();
 /** @type {string|null} */ let masterSessionId = null;
 /** @type {string|null} */ let sessionDir = null;
 /** Master's session uuid — the session-artifacts directory name. */
@@ -342,6 +349,7 @@ async function switchWorkspace(name) {
   if (!daemonClient) throw new Error("daemon not connected");
   if (name === currentWorkspace && masterConn) return;
   await disposeChildConns(); // helper attaches belong to the old workspace's master
+  await disposeRootConns(); // root attaches are per-view; drop them with the workspace
   if (masterConn) {
     try {
       await masterConn.dispose(); // resident worker keeps running; this only detaches
@@ -388,14 +396,14 @@ async function workspacesPayload() {
 /** An aborted run leaves the session input pump suspended and it never
  *  self-heals; resume_queue restores it (even when it answers "No queued work
  *  to resume"), after which the retried command succeeds. */
-async function withResumeRetry(fn) {
+async function withResumeRetry(fn, activeSessionId = masterSessionId) {
   try {
     return await fn();
   } catch (e) {
     if (!/queued session input is suspended/i.test(e?.message || "")) throw e;
-    if (daemonClient && masterSessionId) {
+    if (daemonClient && activeSessionId) {
       await daemonClient
-        .request({ type: "resume_queue", activeSessionId: masterSessionId })
+        .request({ type: "resume_queue", activeSessionId })
         .catch(() => undefined);
     }
     return await fn();
@@ -506,6 +514,101 @@ async function disposeChildConns() {
   for (const target of targets) await unwatchHelper(target);
 }
 
+/** Resolve another root session (rlmDepth 0, non-master) by name to a live
+ *  activeSessionId. A root whose worker is down is resumed from disk first —
+ *  normal daemon behavior; a later prompt is what wakes it into a turn. */
+async function resolveRoot(name) {
+  if (!name) throw new Error("missing target");
+  if (!daemonClient) throw new Error("daemon not connected");
+  if (name.startsWith("master")) throw new Error("master names are reserved");
+  const listed = await daemonClient.request({ type: "list", all: true });
+  if (!listed.success) throw new Error(listed.error || "list failed");
+  const s = (listed.data.sessions || []).find(
+    (x) => (x.rlmDepth ?? 0) === 0 && x.sessionName === name,
+  );
+  if (!s) throw new Error(`agent ${name} not found`);
+  if (s.activeSessionId) return s.activeSessionId;
+  const created = await daemonClient.request({
+    type: "create",
+    ...(s.sessionFile ? { sessionPath: s.sessionFile } : { name }),
+    lifecycle: "resident",
+    config: { cwd: s.cwd || WORKSPACE_DIR },
+    launchEnv: { ...process.env },
+  });
+  if (created.success) return created.data.activeSessionId ?? created.data.id;
+  if (created.errorInfo?.code === "session_already_active" && created.errorInfo.activeSessionId) {
+    return created.errorInfo.activeSessionId;
+  }
+  throw new Error(created.error || "resume failed");
+}
+
+/** Attach to another root session (idempotent) and stream its events to the
+ *  renderer tagged with the root's name. The initial snapshot is replayed as a
+ *  root_snapshot; attached mid-run it can be empty — flagged partial so the
+ *  renderer shows loading, never "nothing happened" (session_resynced backfills). */
+async function ensureRootConn(name) {
+  const existing = rootConns.get(name);
+  if (existing) return existing;
+  if (!sdkRef) throw new Error("daemon not connected");
+  const activeSessionId = await resolveRoot(name);
+  const conn = await sdkRef.DaemonAgentConnection.attach(daemonClient, activeSessionId, {
+    closeClientOnDispose: false,
+    sendClientEnv: false,
+    directTransport: false,
+  });
+  const entry = { conn, activeSessionId };
+  rootConns.set(name, entry);
+  const resync = (messages, { partial = false, running } = {}) =>
+    broadcast({
+      type: "root_snapshot",
+      root: name,
+      messages: slimHistory(messages),
+      partial,
+      ...(running === undefined ? {} : { running }),
+    });
+  conn.subscribe((event) => {
+    if (event?.type === "session_event") {
+      const inner = event.event;
+      if (inner?.type === "agent_end") {
+        // agent_end carries the full message history — the renderer only needs the mark
+        broadcast({ type: "root_event", root: name, event: { type: "agent_end" } });
+        return;
+      }
+      broadcast({ type: "root_event", root: name, event: inner });
+    } else if (event?.type === "session_resynced") {
+      // Canonical transcript after a mid-run attach; replace wholesale.
+      resync(event.snapshot?.messages, {
+        running: Boolean(event.snapshot?.state?.isStreaming),
+      });
+    } else if (event?.type === "extension_ui_request") {
+      const req = event.request;
+      if (req?.method === "setWorkingMessage") {
+        broadcast({ type: "root_working", root: name, text: req.payload?.message ?? "" });
+      }
+    }
+  });
+  const snapshot = await conn.getInitialSnapshot().catch(() => null);
+  const running = Boolean(snapshot?.state?.isStreaming);
+  const messages = snapshot?.messages ?? [];
+  resync(messages, { partial: messages.length === 0 && running, running });
+  return entry;
+}
+
+async function unwatchRoot(name) {
+  const entry = rootConns.get(name);
+  if (!entry) return;
+  rootConns.delete(name);
+  try {
+    await entry.conn.dispose(); // master connection stays usable (findings §5)
+  } catch {
+    /* best-effort detach */
+  }
+}
+
+async function disposeRootConns() {
+  for (const name of [...rootConns.keys()]) await unwatchRoot(name);
+}
+
 async function handleCmd(body) {
   if (!masterConn) throw new Error("daemon not connected");
   switch (body.op) {
@@ -574,6 +677,34 @@ async function handleCmd(body) {
     case "unwatch_helper":
       await unwatchHelper(String(body.target ?? ""));
       return {};
+    case "watch_root":
+      await ensureRootConn(String(body.target ?? ""));
+      return {};
+    case "unwatch_root":
+      await unwatchRoot(String(body.target ?? ""));
+      return {};
+    case "root_prompt":
+    case "root_steer":
+    case "root_follow_up": {
+      // Converse with another root session. Attach lazily — the composer can
+      // target a root the user is not viewing. A prompt to an idle root wakes it.
+      const { conn, activeSessionId } = await ensureRootConn(String(body.target ?? ""));
+      const text = String(body.text ?? "");
+      const call =
+        body.op === "root_prompt"
+          ? () => conn.prompt(text)
+          : body.op === "root_steer"
+            ? () => conn.steer(text)
+            : () => conn.followUp(text);
+      await withResumeRetry(call, activeSessionId);
+      return {};
+    }
+    case "root_abort": {
+      const entry = rootConns.get(String(body.target ?? ""));
+      if (!entry) throw new Error("agent not attached");
+      await entry.conn.abort();
+      return {};
+    }
     case "remove_helper": {
       if (!daemonClient || !masterSessionId) throw new Error("daemon not connected");
       const r = await daemonClient.request({

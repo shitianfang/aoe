@@ -23,7 +23,12 @@ export type BridgeMessage =
   | { type: "working_message"; text: string }
   // Watched helper sessions: sessionId is the helper's activeSessionId.
   | { type: "helper_event"; sessionId: string; event: HelperFeedEvent }
-  | { type: "helper_working"; sessionId: string; text: string };
+  | { type: "helper_working"; sessionId: string; text: string }
+  // Watched other-root sessions, keyed by session name. root_snapshot replaces
+  // the transcript (partial = attached mid-run, still catching up).
+  | { type: "root_snapshot"; root: string; messages: unknown[]; partial?: boolean; running?: boolean }
+  | { type: "root_event"; root: string; event: Record<string, unknown> }
+  | { type: "root_working"; root: string; text: string };
 
 // Packaged app: Electron main hosts the daemon bridge and hands its port over
 // via the page query. Dev: same-origin Vite proxy.

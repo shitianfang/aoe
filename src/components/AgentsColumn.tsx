@@ -1,15 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentState, ChildInfo } from "../types";
+import type { AgentState, ChildInfo, RootAgent } from "../types";
 import { chipGlyph, chipHue, helperName, statusWord } from "../helperDisplay";
-import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
+import { bridgeCmd } from "../runtime/bridge";
 
 const ACTIVE = new Set(["queued", "running", "done"]);
-
-/** Other root sessions on this daemon (GET /bridge/agents) — read-only rows. */
-interface RootAgent {
-  name: string;
-  state: "running" | "idle" | "inactive";
-}
 
 /** Display node: real family stays real; dragging only regroups the view. */
 interface Node {
@@ -42,14 +36,19 @@ export function AgentsColumn(props: {
   master: AgentState;
   workspace: string;
   children: ChildInfo[];
+  /** Other root sessions (roster owned by App — shared with the composer popup). */
+  others: RootAgent[];
   selected: string | null;
+  selectedRoot: string | null;
+  /** Live run state per attached root; overrides the roster word when known. */
+  rootStates: Record<string, AgentState>;
   onSelect: (childId: string | null) => void;
-  onWorkspaces: () => void;
+  onSelectRoot: (name: string) => void;
+  onRefreshOthers: () => void;
 }) {
   const groupKey = `agents-group:${props.workspace}`;
   const foldKey = `agents-fold:${props.workspace}`;
   const [showInactive, setShowInactive] = useState(false);
-  const [others, setOthers] = useState<RootAgent[]>([]);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [addErr, setAddErr] = useState<string | null>(null);
@@ -57,23 +56,12 @@ export function AgentsColumn(props: {
   const [group, setGroup] = useState<Record<string, string>>(() => loadJson(groupKey, {}));
   const [folded, setFolded] = useState<Record<string, boolean>>(() => loadJson(foldKey, {}));
   const [dropOn, setDropOn] = useState<string | null>(null);
+  const others = props.others;
 
   useEffect(() => {
     setGroup(loadJson(groupKey, {}));
     setFolded(loadJson(foldKey, {}));
   }, [groupKey, foldKey]);
-
-  const refreshOthers = useCallback(() => {
-    fetch(bridgeUrl("/bridge/agents"))
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.agents)) setOthers(d.agents as RootAgent[]);
-      })
-      .catch(() => {
-        /* bridge offline */
-      });
-  }, []);
-  useEffect(refreshOthers, [refreshOthers]);
 
   const createAgent = async () => {
     const name = draft.trim().toLowerCase().replace(/\s+/g, "-");
@@ -83,7 +71,7 @@ export function AgentsColumn(props: {
       await bridgeCmd("create_agent", name);
       setDraft("");
       setAdding(false);
-      refreshOthers();
+      props.onRefreshOthers();
     } catch (e) {
       setAddErr(e instanceof Error ? e.message : "create failed");
     }
@@ -117,18 +105,21 @@ export function AgentsColumn(props: {
       });
     });
     others.forEach((a) => {
+      // Live event stream is truth once attached; the roster word otherwise.
+      const live = props.rootStates[a.name];
+      const stateLabel = live !== undefined ? (live === "working" ? "running" : "idle") : a.state;
       map.set(`root:${a.name}`, {
         key: `root:${a.name}`,
         label: a.name,
         chip: { cls: "chip ghost", glyph: a.name.slice(0, 1).toUpperCase() },
-        stateLabel: a.state,
-        stateCls: a.state === "running" ? "st run" : "st",
+        stateLabel,
+        stateCls: stateLabel === "running" ? "st run" : "st",
         selectable: null,
         draggable: true,
       });
     });
     return map;
-  }, [props.master, props.children, visibleChildren, others]);
+  }, [props.master, props.children, visibleChildren, others, props.rootStates]);
 
   /** parent of a node in the displayed tree (grouping override, else real family). */
   const parentOf = useCallback(
@@ -186,7 +177,13 @@ export function AgentsColumn(props: {
   const renderNode = (n: Node, depth: number): React.ReactNode => {
     const kids = childrenOf(n.key);
     const isFolded = Boolean(folded[n.key]);
-    const selected = n.selectable !== null ? props.selected === n.selectable : props.selected === null && n.key === "master";
+    const rootName = n.key.startsWith("root:") ? n.key.slice(5) : null;
+    const selected =
+      rootName !== null
+        ? props.selectedRoot === rootName
+        : n.selectable !== null
+          ? props.selected === n.selectable
+          : props.selected === null && props.selectedRoot === null && n.key === "master";
     return (
       <div key={n.key}>
         <div
@@ -205,7 +202,8 @@ export function AgentsColumn(props: {
             if (key) drop(key, n.key);
           }}
           onClick={() => {
-            if (n.key === "master") props.onSelect(null);
+            if (rootName !== null) props.onSelectRoot(rootName);
+            else if (n.key === "master") props.onSelect(null);
             else if (n.selectable) props.onSelect(n.selectable);
           }}
           role="button"
@@ -246,9 +244,6 @@ export function AgentsColumn(props: {
         if (key) drop(key, "__top");
       }}
     >
-      <button className="wslabel" onClick={props.onWorkspaces}>
-        {props.workspace} <span className="car">▾</span>
-      </button>
       <div className="sec row">
         <span>Agents</span>
         <button className="plus" title="new agent" onClick={() => setAdding((v) => !v)}>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AgentState,
   AppState,
   AutonomousInfo,
   ChildInfo,
   ColumnView,
   ComposerTarget,
-  DeliveryMode,
   FileActivity,
   GoalInfo,
   HeartbeatInfo,
@@ -13,6 +13,7 @@ import type {
   HelperToolRow,
   HistoryMessage,
   LessonResult,
+  RootAgent,
   Theme,
   TimelineItem,
 } from "./types";
@@ -31,7 +32,6 @@ import {
   openBridge,
   bridgeCmd,
   steer,
-  followUp,
   sendAgentMessage,
   stopHelper,
   removeHelper,
@@ -129,6 +129,12 @@ export function App() {
     view: "timeline",
     column: "agents",
     selectedAgent: null,
+    selectedRoot: null,
+    others: [],
+    rootTimelines: {},
+    rootLoad: {},
+    rootStates: {},
+    rootWorking: {},
     bridge: null,
     goal: null,
     children: [],
@@ -141,7 +147,6 @@ export function App() {
     heartbeats: [],
     autonomous: null,
     target: { kind: "master" },
-    delivery: "now",
     timeline: [{ kind: "divider", id: id(), text: `session started · ${clock()}` }],
   }));
   const [wsOpen, setWsOpen] = useState(false);
@@ -154,6 +159,11 @@ export function App() {
   const daemonMsgRef = useRef<{ itemId: string; key: unknown } | null>(null);
   // One turn can push ~90 message_update events — coalesce them to ~50ms flushes.
   const pendingRef = useRef<{ itemId: string; text: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  // Per-root equivalents of the two refs above, keyed by root session name.
+  const rootMsgRef = useRef<Record<string, { itemId: string; key: unknown }>>({});
+  const rootPendingRef = useRef<
+    Record<string, { itemId: string; text: string; timer: ReturnType<typeof setTimeout> }>
+  >({});
   const bridgeRef = useRef(false);
   // Snapshots repeat on bridge reconnect (same workspace) — seed history once.
   const histSeededRef = useRef(false);
@@ -173,6 +183,30 @@ export function App() {
       return { ...s, theme };
     });
   }, []);
+
+  /** Re-pull the other-roots roster; a root gone from it falls back to master
+   *  (honest empty state — no invented rows, no stale selection or target). */
+  const refreshOthers = useCallback(async () => {
+    try {
+      const r = await fetch(bridgeUrl("/bridge/agents")).then((x) => x.json());
+      const others: RootAgent[] = Array.isArray(r.agents) ? (r.agents as RootAgent[]) : [];
+      setState((s) => {
+        const has = (n: string | null) => n !== null && others.some((a) => a.name === n);
+        return {
+          ...s,
+          others,
+          selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
+          target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
+        };
+      });
+    } catch {
+      /* bridge offline */
+    }
+  }, []);
+  useEffect(() => {
+    const t = setInterval(refreshOthers, 30_000);
+    return () => clearInterval(t);
+  }, [refreshOthers]);
 
   /* ---- daemon bridge ingestion ---- */
   useEffect(() => {
@@ -415,6 +449,110 @@ export function App() {
       }
     };
 
+    /* ---- other-root event stream (watch_root feed) ---- */
+    const patchRootItems = (root: string, fn: (items: TimelineItem[]) => TimelineItem[]) =>
+      setState((s) => ({
+        ...s,
+        rootTimelines: { ...s.rootTimelines, [root]: fn(s.rootTimelines[root] ?? []) },
+      }));
+    const clearRootStream = (root: string) => {
+      delete rootMsgRef.current[root];
+      const p = rootPendingRef.current[root];
+      if (p) {
+        clearTimeout(p.timer);
+        delete rootPendingRef.current[root];
+      }
+    };
+
+    /** Mirror of onEvent for another root's session, scoped to that root's own
+     *  timeline and run state (no goal/lesson/preview side effects — those
+     *  panels stay master's). */
+    const onRootEvent = (root: string, event: Record<string, unknown>) => {
+      const t = event.type as string;
+      if (t === "agent_start" || t === "turn_start") {
+        setState((s) => ({ ...s, rootStates: { ...s.rootStates, [root]: "working" } }));
+      } else if (t === "agent_end") {
+        clearRootStream(root);
+        setState((s) => ({
+          ...s,
+          rootStates: { ...s.rootStates, [root]: "idle" },
+          rootWorking: { ...s.rootWorking, [root]: "" },
+          rootTimelines: {
+            ...s.rootTimelines,
+            [root]: (s.rootTimelines[root] ?? [])
+              .map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x))
+              .filter((x) => !(x.kind === "master" && !x.streaming && x.text === "")),
+          },
+        }));
+      } else if (t === "message_start" || t === "message_update" || t === "message_end") {
+        const message = event.message as { role?: string; id?: unknown } | undefined;
+        if (!message || message.role !== "assistant") return;
+        const text = extractText(message);
+        const cur = rootMsgRef.current[root];
+        if (text === "" && !cur) return;
+        const key = message.id ?? "assistant";
+        const applyText = (itemId: string, value: string, streaming: boolean) =>
+          patchRootItems(root, (items) =>
+            items.map((x) => (x.id === itemId && x.kind === "master" ? { ...x, text: value, streaming } : x)),
+          );
+        if (!cur || cur.key !== key) {
+          const itemId = id();
+          rootMsgRef.current[root] = { itemId, key };
+          patchRootItems(root, (items) => [
+            ...items,
+            { kind: "master", id: itemId, text, at: clock(), streaming: true },
+          ]);
+        } else if (t === "message_end") {
+          const p = rootPendingRef.current[root];
+          if (p) {
+            clearTimeout(p.timer);
+            delete rootPendingRef.current[root];
+          }
+          applyText(cur.itemId, text, false);
+          delete rootMsgRef.current[root];
+        } else {
+          const p = rootPendingRef.current[root];
+          if (p?.itemId === cur.itemId) {
+            p.text = text;
+          } else {
+            if (p) clearTimeout(p.timer);
+            rootPendingRef.current[root] = {
+              itemId: cur.itemId,
+              text,
+              timer: setTimeout(() => {
+                const q = rootPendingRef.current[root];
+                delete rootPendingRef.current[root];
+                if (q) applyText(q.itemId, q.text, true);
+              }, 50),
+            };
+          }
+        }
+      } else if (t === "tool_execution_start") {
+        const raw = String(event.toolName ?? "tool");
+        const toolName = raw === "ipython" ? "python" : raw;
+        const path = filePathFromArgs(event.args);
+        const label = path ? `${toolName} · ${path.split(/[\\/]/).pop()}` : toolName;
+        patchRootItems(root, (items) => [
+          ...items,
+          {
+            kind: "tool",
+            id: `rtool-${root}-${String(event.toolCallId ?? id())}`,
+            name: label,
+            status: "running",
+            at: clock(),
+            ts: Date.now(),
+          },
+        ]);
+      } else if (t === "tool_execution_end") {
+        const toolId = `rtool-${root}-${String(event.toolCallId ?? "")}`;
+        patchRootItems(root, (items) =>
+          items.map((x) =>
+            x.id === toolId && x.kind === "tool" ? { ...x, status: event.isError ? "error" : "done" } : x,
+          ),
+        );
+      }
+    };
+
     const bridge = openBridge((m: BridgeMessage) => {
       if (m.type === "hello") {
         bridgeRef.current = m.daemon.connected;
@@ -423,16 +561,25 @@ export function App() {
           const switched = ws !== null && s.bridge?.workspace != null && ws !== s.bridge.workspace;
           const bridgeState = { connected: m.daemon.connected, error: m.daemon.error ?? null, workspace: ws };
           if (!switched) return { ...s, bridge: bridgeState };
-          // A workspace is its own master, helpers, files, and history.
+          // A workspace is its own master, helpers, other roots, files, history.
           daemonMsgRef.current = null;
           historyRef.current = [];
           histSeededRef.current = false;
+          rootMsgRef.current = {};
+          for (const p of Object.values(rootPendingRef.current)) clearTimeout(p.timer);
+          rootPendingRef.current = {};
           return {
             ...s,
             bridge: bridgeState,
             master: "idle",
             view: "timeline",
             selectedAgent: null,
+            selectedRoot: null,
+            others: [],
+            rootTimelines: {},
+            rootLoad: {},
+            rootStates: {},
+            rootWorking: {},
             goal: null,
             children: [],
             helperEvents: {},
@@ -444,7 +591,6 @@ export function App() {
             heartbeats: [],
             autonomous: null,
             target: { kind: "master" },
-            delivery: "now",
             error: undefined,
             timeline: [{ kind: "divider", id: id(), text: `workspace ${ws} · ${clock()}` }],
           };
@@ -452,6 +598,7 @@ export function App() {
         if (m.daemon.connected) {
           refreshHeartbeats();
           refreshPreview();
+          refreshOthers();
         }
       } else if (m.type === "heartbeats_changed") {
         refreshHeartbeats();
@@ -490,6 +637,24 @@ export function App() {
           if (!child) return s;
           return { ...s, helperWorking: { ...s.helperWorking, [child.id]: m.text } };
         });
+      } else if (m.type === "root_snapshot") {
+        // Canonical transcript for a watched root: same slim/replay/fold shape
+        // as master's attach history. Replaces wholesale (resync semantics).
+        const items = foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
+        clearRootStream(m.root);
+        setState((s) => ({
+          ...s,
+          rootTimelines: { ...s.rootTimelines, [m.root]: items },
+          rootLoad: { ...s.rootLoad, [m.root]: m.partial ? "partial" : "full" },
+          rootStates:
+            m.running === undefined
+              ? s.rootStates
+              : { ...s.rootStates, [m.root]: m.running ? "working" : "idle" },
+        }));
+      } else if (m.type === "root_event") {
+        onRootEvent(m.root, m.event);
+      } else if (m.type === "root_working") {
+        setState((s) => ({ ...s, rootWorking: { ...s.rootWorking, [m.root]: m.text } }));
       } else if (m.type === "snapshot") {
         // The snapshot roster is authoritative: helpers can vanish (the agent
         // may delete its own). Merge by id, keep cached session ids, drop the
@@ -523,17 +688,23 @@ export function App() {
       }
     });
     return () => bridge.close();
-  }, []);
+  }, [refreshOthers]);
 
   const setColumn = useCallback((column: ColumnView) => setState((s) => ({ ...s, column })), []);
   const setView = useCallback((view: AppState["view"]) => setState((s) => ({ ...s, view })), []);
-  // Selecting an agent in the column never changes the composer target.
+  // Selecting an agent in the column never changes the composer target —
+  // helpers and other roots alike; the target moves only via the to ▾ popup.
   const selectAgent = useCallback(
-    (childId: string | null) => setState((s) => ({ ...s, selectedAgent: childId, view: "timeline" })),
+    (childId: string | null) =>
+      setState((s) => ({ ...s, selectedAgent: childId, selectedRoot: null, view: "timeline" })),
+    [],
+  );
+  const selectRoot = useCallback(
+    (name: string) =>
+      setState((s) => ({ ...s, selectedRoot: name, selectedAgent: null, view: "timeline" })),
     [],
   );
   const setTarget = useCallback((target: ComposerTarget) => setState((s) => ({ ...s, target })), []);
-  const setDelivery = useCallback((delivery: DeliveryMode) => setState((s) => ({ ...s, delivery })), []);
   // From the Files column: match the tool-arg path (may be absolute) against
   // the workspace-relative preview index.
   const openPreview = useCallback(
@@ -554,6 +725,11 @@ export function App() {
   );
 
   const stop = useCallback(() => {
+    const target = stateRef.current.target;
+    if (target.kind === "root") {
+      bridgeCmd("root_abort", undefined, { target: target.name }).catch(() => undefined);
+      return;
+    }
     if (bridgeRef.current) {
       bridgeCmd("abort").catch(() => undefined);
     } else {
@@ -662,26 +838,48 @@ export function App() {
         return;
       }
       const userItem: TimelineItem = { kind: "user", id: id(), text, at: clock() };
-      if (bridgeRef.current) {
-        const busy = current.master === "working";
-        const op = busy ? (current.delivery === "after" ? "follow_up" : "steer") : "prompt";
+      if (current.target.kind === "root") {
+        // Another root session: prompt when idle (wakes it — normal daemon
+        // behavior), steer when running. Jump the view to it, like master's send.
+        const name = current.target.name;
+        const busy = (current.rootStates[name] ?? "idle") === "working";
+        const op = busy ? "root_steer" : "root_prompt";
         setState((s) => ({
           ...s,
-          master: op === "prompt" ? "working" : s.master,
           view: "timeline",
           selectedAgent: null,
+          selectedRoot: name,
           error: undefined,
-          timeline: [
-            ...s.timeline,
-            userItem,
-            ...(op === "follow_up"
-              ? [{ kind: "note", id: id(), text: "queued · lands after it finishes" } as TimelineItem]
-              : []),
-          ],
+          rootStates: busy ? s.rootStates : { ...s.rootStates, [name]: "working" },
+          rootTimelines: {
+            ...s.rootTimelines,
+            [name]: [...(s.rootTimelines[name] ?? []), userItem],
+          },
+        }));
+        try {
+          await bridgeCmd(op, text, { target: name });
+        } catch (e) {
+          setState((s) => ({
+            ...s,
+            error: e instanceof Error ? e.message : "bridge command failed",
+          }));
+        }
+        return;
+      }
+      if (bridgeRef.current) {
+        const busy = current.master === "working";
+        const op = busy ? "steer" : "prompt";
+        setState((s) => ({
+          ...s,
+          master: "working",
+          view: "timeline",
+          selectedAgent: null,
+          selectedRoot: null,
+          error: undefined,
+          timeline: [...s.timeline, userItem],
         }));
         try {
           if (op === "steer") await steer(text);
-          else if (op === "follow_up") await followUp(text);
           else await bridgeCmd("prompt", text);
         } catch (e) {
           setState((s) => ({
@@ -698,6 +896,7 @@ export function App() {
         master: "working",
         view: "timeline",
         selectedAgent: null,
+        selectedRoot: null,
         error: undefined,
         timeline: [...s.timeline, userItem, { kind: "master", id: masterId, text: "", at: clock(), streaming: true }],
       }));
@@ -722,6 +921,49 @@ export function App() {
       bridgeCmd("unwatch_helper", undefined, { target: watchTarget }).catch(() => undefined);
     };
   }, [watchTarget]);
+
+  // Watch the selected other root while its view is open (another attach on
+  // the same daemon socket, mirroring watch_helper). Detaches on switch-away;
+  // an attach failure means the root is gone — fall back to master honestly.
+  const watchRoot = state.selectedRoot;
+  useEffect(() => {
+    if (!watchRoot) return;
+    bridgeCmd("watch_root", undefined, { target: watchRoot }).catch(() => {
+      refreshOthers();
+      setState((s) => (s.selectedRoot === watchRoot ? { ...s, selectedRoot: null } : s));
+    });
+    return () => {
+      bridgeCmd("unwatch_root", undefined, { target: watchRoot }).catch(() => undefined);
+    };
+  }, [watchRoot, refreshOthers]);
+
+  // A root's run state: its own event stream once attached, else the roster word.
+  const rootStateOf = (name: string): AgentState =>
+    state.rootStates[name] ??
+    (state.others.find((a) => a.name === name)?.state === "running" ? "working" : "idle");
+  // Busy-ness the composer acts on — the current target's, not the view's.
+  const targetState: AgentState =
+    state.target.kind === "root" ? rootStateOf(state.target.name) : state.master;
+
+  const composer = (viewRoot?: { name: string; state: AgentState; working?: string }) => (
+    <Composer
+      master={state.master}
+      targetState={targetState}
+      goal={state.goal}
+      autonomous={state.autonomous}
+      heartbeats={state.heartbeats}
+      bridge={state.bridge}
+      children={state.children}
+      others={state.others}
+      target={state.target}
+      working={state.working}
+      error={state.error}
+      viewRoot={viewRoot}
+      onTarget={setTarget}
+      onSend={send}
+      onStop={stop}
+    />
+  );
 
   const center = () => {
     if (state.view === "learned") return <LearnedView />;
@@ -749,30 +991,56 @@ export function App() {
         />
       );
     }
+    if (state.selectedRoot) {
+      // Another root session's timeline — same replay/fold shape as master's.
+      const name = state.selectedRoot;
+      const other = state.others.find((a) => a.name === name);
+      const items = state.rootTimelines[name] ?? [];
+      const load = state.rootLoad[name];
+      const rs = rootStateOf(name);
+      // Honest empty states: attaching, mid-run catch-up, or truly nothing.
+      const placeholder: TimelineItem = {
+        kind: "divider",
+        id: `rload-${name}`,
+        text:
+          load === undefined
+            ? "attaching · loading history…"
+            : load === "partial"
+              ? "attached mid-run · catching up…"
+              : "no conversation yet",
+      };
+      return (
+        <div className="view">
+          <div className="ahead">
+            <div className="r1">
+              <span className="chip ghost">{name.slice(0, 1).toUpperCase()}</span>
+              <span className="nm">{name}</span>
+              <span className="rel">root agent · runs on its own</span>
+            </div>
+            <div className="r2">
+              {rs === "working" ? (
+                <span className="run">running</span>
+              ) : other?.state === "inactive" && load === undefined ? (
+                <>inactive · a message wakes it</>
+              ) : (
+                <>idle</>
+              )}
+            </div>
+          </div>
+          <Timeline items={items.length > 0 ? items : [placeholder]} />
+          {composer({ name, state: rs, working: state.rootWorking[name] || undefined })}
+        </div>
+      );
+    }
     return (
       <div className="view">
         <Timeline items={state.timeline} />
-        <Composer
-          master={state.master}
-          goal={state.goal}
-          autonomous={state.autonomous}
-          heartbeats={state.heartbeats}
-          bridge={state.bridge}
-          children={state.children}
-          target={state.target}
-          delivery={state.delivery}
-          working={state.working}
-          error={state.error}
-          onTarget={setTarget}
-          onDelivery={setDelivery}
-          onSend={send}
-          onStop={stop}
-        />
+        {composer()}
       </div>
     );
   };
 
-  const timelineTabOn = state.view === "timeline" && !selectedChild;
+  const timelineTabOn = state.view === "timeline" && !selectedChild && !state.selectedRoot;
   return (
     <div className="app">
       {wsOpen && (
@@ -804,9 +1072,13 @@ export function App() {
             master={state.master}
             workspace={state.bridge?.workspace || "general"}
             children={state.children}
+            others={state.others}
             selected={state.selectedAgent}
+            selectedRoot={state.selectedRoot}
+            rootStates={state.rootStates}
             onSelect={selectAgent}
-            onWorkspaces={() => setWsOpen(true)}
+            onSelectRoot={selectRoot}
+            onRefreshOthers={refreshOthers}
           />
         ) : (
           <FilesColumn files={state.files} onOpenPreview={openPreview} />

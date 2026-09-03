@@ -5,9 +5,9 @@ import type {
   BridgeState,
   ChildInfo,
   ComposerTarget,
-  DeliveryMode,
   GoalInfo,
   HeartbeatInfo,
+  RootAgent,
 } from "../types";
 import { chipGlyph, chipHue, helperName } from "../helperDisplay";
 
@@ -27,36 +27,47 @@ function hhmm(iso?: string): string {
 
 export function Composer(props: {
   master: AgentState;
+  /** Run state of the current composer target (a root target has its own). */
+  targetState: AgentState;
   goal: GoalInfo | null;
   autonomous: AutonomousInfo | null;
   heartbeats: HeartbeatInfo[];
   bridge: BridgeState | null;
   children: ChildInfo[];
+  /** Other root sessions — third group in the to ▾ popup. */
+  others: RootAgent[];
   target: ComposerTarget;
-  delivery: DeliveryMode;
   working?: string;
   error?: string;
+  /** Set when the center shows another root's timeline; the strip then
+   *  reflects that root's state (where known), not master's. */
+  viewRoot?: { name: string; state: AgentState; working?: string };
   onTarget: (t: ComposerTarget) => void;
-  onDelivery: (d: DeliveryMode) => void;
   onSend: (text: string) => void;
   onStop: () => void;
 }) {
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const busy = props.master === "working";
+  // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
+  const busy = props.targetState === "working";
   const targetChild =
     props.target.kind === "helper"
       ? props.children.find((c) => c.id === (props.target as { childId: string }).childId)
       : undefined;
-  const targetName = targetChild ? helperName(targetChild) : "master";
+  const targetName =
+    props.target.kind === "root"
+      ? props.target.name
+      : targetChild
+        ? helperName(targetChild)
+        : "master";
 
-  // Hand focus back to the input whenever master finishes.
+  // Hand focus back to the input whenever the target finishes.
   useEffect(() => {
     if (!busy) inputRef.current?.focus();
   }, [busy]);
 
-  // The NIM fallback has no steer/follow-up; while busy it can only stop.
+  // The NIM fallback has no steer; while busy it can only stop.
   const canSendBusy = Boolean(props.bridge?.connected);
   const submit = () => {
     const t = text.trim();
@@ -68,6 +79,18 @@ export function Composer(props: {
 
   const strip = () => {
     if (props.error) return <span className="err">{props.error}</span>;
+    if (props.viewRoot) {
+      // Viewing another root: its state where known, nothing invented.
+      const segs: string[] = [
+        `${props.viewRoot.name} ${props.viewRoot.state === "working" ? "running" : "idle"}`,
+      ];
+      if (props.viewRoot.state === "working" && props.viewRoot.working) {
+        segs.push(props.viewRoot.working.toLowerCase());
+      }
+      if (props.bridge && !props.bridge.connected) segs.push("runtime offline · model only");
+      return <>{segs.join(" · ")}</>;
+    }
+    const masterBusy = props.master === "working";
     const segs: Array<string | JSX.Element> = [];
     if (props.goal?.active) segs.push("objective");
     const auto = props.autonomous;
@@ -88,9 +111,9 @@ export function Composer(props: {
     if (nextAt) segs.push(`next check-in ${nextAt}`);
     if (props.bridge && !props.bridge.connected) segs.push("runtime offline · model only");
     const helpersRunning = props.children.some((c) => c.status === "running" || c.status === "queued");
-    if (busy && props.working) segs.push(props.working.toLowerCase());
-    else if (!busy && helpersRunning) segs.push("waiting on helpers");
-    if (segs.length === 0) segs.push(busy ? "master running" : "master idle");
+    if (masterBusy && props.working) segs.push(props.working.toLowerCase());
+    else if (!masterBusy && helpersRunning) segs.push("waiting on helpers");
+    if (segs.length === 0) segs.push(masterBusy ? "master running" : "master idle");
     return (
       <>
         {segs.map((s, i) => (
@@ -113,7 +136,7 @@ export function Composer(props: {
     <>
       <div className="strip">{strip()}</div>
       <div className="composer">
-        <div className="inwrap">
+        <div className="cbox">
           <input
             ref={inputRef}
             value={text}
@@ -121,51 +144,49 @@ export function Composer(props: {
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
-          <span className="to" onClick={() => setPopOpen((v) => !v)}>
-            to {targetName} ▾
-          </span>
-        </div>
-        {props.target.kind === "master" ? (
-          <div className="dmode">
-            <span className={props.delivery === "now" ? "on" : ""} onClick={() => props.onDelivery("now")}>
-              now
+          <div className="crow">
+            {props.target.kind === "helper" && (
+              <div className="dmode">
+                <span className="static">delivered now</span>
+              </div>
+            )}
+            <span className="to" onClick={() => setPopOpen((v) => !v)}>
+              to {targetName} ▾
             </span>
-            <span
-              className={props.delivery === "after" ? "on" : ""}
-              onClick={() => props.onDelivery("after")}
-            >
-              after it finishes
-            </span>
-          </div>
-        ) : (
-          <div className="dmode">
-            <span className="static">delivered now</span>
-          </div>
-        )}
-        {busy ? (
-          <button className="send" onClick={canSendBusy && text.trim() ? submit : props.onStop}>
-            {canSendBusy && text.trim() ? "SEND" : "STOP"}
-          </button>
-        ) : (
-          <button className="send" onClick={submit}>
-            SEND
-          </button>
-        )}
-        {popOpen && (
-          <div className="topop">
-            <button className="tr" onClick={() => pick({ kind: "master" })}>
-              <span className="chip master sm" />
-              master
-            </button>
-            {props.children.map((c, i) => (
-              <button className="tr" key={c.id} onClick={() => pick({ kind: "helper", childId: c.id })}>
-                <span className={`chip ${chipHue(i)} sm`}>{chipGlyph(c)}</span>
-                {helperName(c)}
-                <span className="st">{popupStatus(c)}</span>
+            {busy ? (
+              <button className="send" onClick={canSendBusy && text.trim() ? submit : props.onStop}>
+                {canSendBusy && text.trim() ? "SEND" : "STOP"}
               </button>
-            ))}
+            ) : (
+              <button className="send" onClick={submit}>
+                SEND
+              </button>
+            )}
           </div>
-        )}
+          {popOpen && (
+            <div className="topop">
+              <button className="tr" onClick={() => pick({ kind: "master" })}>
+                <span className="chip master sm" />
+                master
+              </button>
+              {props.children.map((c, i) => (
+                <button className="tr sub" key={c.id} onClick={() => pick({ kind: "helper", childId: c.id })}>
+                  <span className={`chip ${chipHue(i)} sm`}>{chipGlyph(c)}</span>
+                  {helperName(c)}
+                  <span className="st">{popupStatus(c)}</span>
+                </button>
+              ))}
+              {props.others.length > 0 && <div className="h">other agents</div>}
+              {props.others.map((a) => (
+                <button className="tr" key={a.name} onClick={() => pick({ kind: "root", name: a.name })}>
+                  <span className="chip ghost sm">{a.name.slice(0, 1).toUpperCase()}</span>
+                  {a.name}
+                  <span className="st">{a.state}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

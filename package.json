@@ -1,6 +1,6 @@
 {
   "name": "prime-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Prime Agent desktop client — a calm workspace for proactive, self-improving, multi-agent work",
   "author": "shitianfang",
@@ -29,8 +29,18 @@
   "build": {
     "appId": "ai.primeintellect.desktop",
     "productName": "Prime Agent",
-    "files": ["dist/**", "electron/**"],
-    "directories": { "output": "release" },
-    "win": { "target": ["zip"], "signAndEditExecutable": false }
+    "files": [
+      "dist/**",
+      "electron/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "zip"
+      ],
+      "signAndEditExecutable": false
+    }
   }
 }

@@ -371,6 +371,62 @@ export function Inspector(props: {
     <aside className="insp">
       {subjectHeader}
 
+      {/* Self-evolution: the /refine mechanism, surfaced. "Learn now" runs a
+          real refine on this agent's own session (helpers have none — this
+          panel never renders for them); the muted line is the auto rhythm's
+          honest readout (last review checkpoint + cooldown). The on/off
+          switch lives at the top of the ⚡ column — the setting is global. */}
+      {online &&
+        (() => {
+          const ar = root ? props.rootAutoRefine : props.autoRefine;
+          const busy = Boolean(learnBusy[subjectName]);
+          const last = ar?.lastReviewAt !== undefined ? hhmmEpoch(ar.lastReviewAt) : null;
+          const next =
+            ar?.enabled && ar.lastReviewAt !== undefined && typeof ar.cooldownMs === "number"
+              ? hhmmEpoch(ar.lastReviewAt + ar.cooldownMs)
+              : null;
+          return (
+            <div className="panel">
+              <div className="phead">
+                <span>{t("Self-evolution")}</span>
+              </div>
+              {busy ? (
+                <div className="rule">{t("learning… this can take a few minutes.")}</div>
+              ) : learnOpen ? (
+                <div className="hbnew" style={{ marginTop: 0 }}>
+                  <input
+                    className="iin"
+                    placeholder={t("anything to focus on? (optional)")}
+                    value={learnText}
+                    onChange={(e) => setLearnText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitLearn();
+                    }}
+                  />
+                  <button className="btn" onClick={submitLearn}>
+                    {t("start learning")}
+                  </button>
+                </div>
+              ) : (
+                <div className="brow" style={{ marginTop: 0 }}>
+                  <button className="btn" onClick={() => setLearnOpen(true)}>
+                    {t("learn now")}
+                  </button>
+                </div>
+              )}
+              {last !== null && (
+                <div className="rule" style={{ paddingTop: 8 }}>
+                  {t("last auto review {at}", { at: last })}
+                  {next !== null
+                    ? ` · ${t("next auto learn no earlier than {at}", { at: next })}`
+                    : ""}
+                </div>
+              )}
+              {learnErr && <div className="ierr">{learnErr}</div>}
+            </div>
+          );
+        })()}
+
       {/* Who drives sits in the header above; this panel is the objective itself. */}
       <div className="panel">
         {goalActive ? (
@@ -575,62 +631,6 @@ export function Inspector(props: {
           </div>
         )
       )}
-
-      {/* Self-evolution: the /refine mechanism, surfaced. "Learn now" runs a
-          real refine on this agent's own session (helpers have none — this
-          panel never renders for them); the muted line is the auto rhythm's
-          honest readout (last review checkpoint + cooldown). The on/off
-          switch lives at the top of the ⚡ column — the setting is global. */}
-      {online &&
-        (() => {
-          const ar = root ? props.rootAutoRefine : props.autoRefine;
-          const busy = Boolean(learnBusy[subjectName]);
-          const last = ar?.lastReviewAt !== undefined ? hhmmEpoch(ar.lastReviewAt) : null;
-          const next =
-            ar?.enabled && ar.lastReviewAt !== undefined && typeof ar.cooldownMs === "number"
-              ? hhmmEpoch(ar.lastReviewAt + ar.cooldownMs)
-              : null;
-          return (
-            <div className="panel">
-              <div className="phead">
-                <span>{t("Self-evolution")}</span>
-              </div>
-              {busy ? (
-                <div className="rule">{t("learning… this can take a few minutes.")}</div>
-              ) : learnOpen ? (
-                <div className="hbnew" style={{ marginTop: 0 }}>
-                  <input
-                    className="iin"
-                    placeholder={t("anything to focus on? (optional)")}
-                    value={learnText}
-                    onChange={(e) => setLearnText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") submitLearn();
-                    }}
-                  />
-                  <button className="btn" onClick={submitLearn}>
-                    {t("start learning")}
-                  </button>
-                </div>
-              ) : (
-                <div className="brow" style={{ marginTop: 0 }}>
-                  <button className="btn" onClick={() => setLearnOpen(true)}>
-                    {t("learn now")}
-                  </button>
-                </div>
-              )}
-              {last !== null && (
-                <div className="rule" style={{ paddingTop: 8 }}>
-                  {t("last auto review {at}", { at: last })}
-                  {next !== null
-                    ? ` · ${t("next auto learn no earlier than {at}", { at: next })}`
-                    : ""}
-                </div>
-              )}
-              {learnErr && <div className="ierr">{learnErr}</div>}
-            </div>
-          );
-        })()}
 
       {(heartbeats.length > 0 || crons.length > 0 || online) && (
         <div className="panel">

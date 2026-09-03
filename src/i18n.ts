@@ -215,8 +215,8 @@ const ZH: Record<string, string> = {
   STOP: "停止",
   "other agents": "其他智能体",
   objective: "目标",
-  "unattended {used} of {max}": "无人值守 {used}/{max}",
-  "unattended on": "无人值守已开",
+  "unattended {used} of {max}": "自动运行 {used}/{max}",
+  "unattended on": "自动运行已开",
   "check failed": "检查失败",
   "next check-in {at}": "下次跟进 {at}",
   "runtime offline · model only": "后台服务离线 · 仅模型",
@@ -302,12 +302,12 @@ const ZH: Record<string, string> = {
 
   /* inspector */
   "check-in": "定时跟进",
-  unattended: "无人值守",
+  unattended: "自动运行",
   "driven by you": "由你推进",
   "driven by objective": "目标推进中",
   Status: "状态",
   Budget: "预算",
-  Objective: "目标",
+  Objective: "开启目标",
   none: "无",
   resume: "继续",
   pause: "暂停",
@@ -322,7 +322,7 @@ const ZH: Record<string, string> = {
     "你发消息时 {name} 才行动。设定目标可让它自行推进。",
   "{name} acts when you message it. Objectives and check-ins need the runtime (bridge offline).":
     "你发消息时 {name} 才行动。目标与定时跟进需要运行时(bridge 离线)。",
-  Unattended: "无人值守",
+  Unattended: "自动运行",
   "Turns on with these limits. It steps in only after a failed check or a turn without evidence.":
     "按下面这些上限开启。仅在检查失败、或某轮没有交付证据时才续跑。",
   "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.":
@@ -337,7 +337,7 @@ const ZH: Record<string, string> = {
   "Last continued": "上次续跑",
   "last check failed · {command}": "上次检查失败 · {command}",
   "turn off": "关闭",
-  "turn unattended on": "开启无人值守",
+  "turn unattended on": "开启自动运行",
   turns: "轮数",
   tokens: "用量",
   time: "时长",

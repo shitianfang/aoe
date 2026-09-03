@@ -56,42 +56,135 @@ or a file manager to see your work. Publish a finished piece:
 await preview.publish("poster-v2.html", label="Poster · sparse")
 ```
 
-## 3 Blind review by subagents
+## 3 A round is one named change, judged blind
 
-Before you call something done, have it judged blind.
-
-1. Copy the finalists to neutral names inside `.review/` — `a.html`, `b.html`,
-   `c.html`, `d.html` — shuffled, with no provenance: no `-2` in the name, no
-   comment saying which is newest or yours. `.review/` is dot-prefixed on
-   purpose: the client's file scan ignores it, so the scratch copies never
-   reach Preview.
-2. Spawn one judge per lens, each blind:
+A round starts from the version it means to beat. Read that version, and name
+what you are changing before you write:
 
 ```python
-goal = "<the user's request, verbatim>"
-await rlm(f"Read .review/a.html … d.html. Score each 1-10 against this goal: "
-          f"{goal}. Judge only whether it does the job. One line of reasoning "
-          f"per file. Reply with the table.",
-          name="judge-job")
-await rlm(..., name="judge-craft")   # reads well, holds together, no jank
-await rlm(..., name="judge-break")   # what fails first, edge cases, missing states
+from pathlib import Path
+prev = Path("poster.html").read_text()
+targets = {"版心": ("980px", "680px"),
+           "标题字号": ("34px", "56px"),
+           "正文行距": ("1.4", "1.75")}
 ```
 
-3. `rlm()` returns at admission, not completion — the judges' answers arrive in
-   later turns as messages. Collect them, tally, take the majority.
-4. Iterate: fix what the low scores name, re-run the panel on the revision, and
-   stop when the top choice is stable across two rounds. Never hint to a judge
-   which file is the new one.
+Three to five properties, each with the before value you just read out of
+`prev` and the after value you are choosing now. A property you cannot quote a
+before value for is one you did not read. And the change has to land where the
+eye already is: a colour round that repaints a 10px dot moved nothing a person
+will notice, however true the hex diff is.
 
-## 4 Report what can be checked
+Edit `prev` into the candidate; never regenerate the page from the brief — that
+is how three rounds end where they started. The candidate lives under
+`.review/` until it wins, so the real file is never left worse than it was:
+
+```python
+import difflib
+cand = Path(".review/next.html")
+cand.parent.mkdir(parents=True, exist_ok=True)
+cand.write_text(prev.replace("980px", "680px")…)   # your real edit
+keep = lambda t: [l.strip() for l in t.splitlines()
+                  if l.strip() and not l.strip().startswith(("<!--", "/*", "//", "*"))]
+diff = [l for l in difflib.unified_diff(keep(prev), keep(cand.read_text()), n=0)
+        if l[0] in "+-" and not l.startswith(("---", "+++"))]
+landed = [k for k, (_, after) in targets.items() if any(after in l for l in diff)]
+assert len(diff) >= 12 and len(landed) == len(targets), (len(diff), landed)
+```
+
+Under twelve changed lines, or an after value that never appears, means you
+moved whitespace and renamed classes: redo it in the same turn. A round that
+fails this gate is not published and is not a version.
+
+Then the judges. Ask them to choose, not to score — an absolute 1-10 comes back
+flat and names nothing to fix.
+
+```python
+import json, random, shutil
+pair = [("old", "poster.html"), ("new", ".review/next.html")]
+random.shuffle(pair)
+Path(".review/votes").mkdir(parents=True, exist_ok=True)
+for slot, (origin, src) in enumerate(pair, 1):
+    shutil.copyfile(src, f".review/{slot}.html")
+Path(".review/key.json").write_text(
+    json.dumps({str(i): o for i, (o, _) in enumerate(pair, 1)}))
+ask = ("Open .review/1.html and .review/2.html, nothing else. Goal: " + goal +
+       ". Line 1: WINNER=1 or WINNER=2. Line 2: GLANCE=yes or GLANCE=no — is the "
+       "difference visible in two seconds, with no side-by-side? Line 3: the one "
+       "thing that decided it. Write those three lines to "
+       ".review/votes/<your-name>.txt, then send the same text to your parent.")
+for n, lens in {"job": "does it do the job", "craft": "reads well, holds together",
+                "break": "what fails first"}.items():
+    await rlm(f"{ask} Your lens: {lens}.", name=f"judge-{n}")
+```
+
+Blank any version number a page prints about itself, in both copies. Then end
+the turn: `rlm()` returns at admission and the answers arrive in later turns —
+the reply wakes you, the file carries the vote.
+
+```python
+votes = {p.stem: p.read_text() for p in Path(".review/votes").glob("*.txt")}
+key = json.loads(Path(".review/key.json").read_text())
+slot = next(s for s, o in key.items() if o == "new")
+won = sum(f"WINNER={slot}" in v for v in votes.values())
+seen = sum("GLANCE=yes" in v for v in votes.values())
+```
+
+Two votes decide. With fewer, nudge the silent ones once — `await
+rlm.list_subagents()` for handles, then `await agent_message.send(ask,
+receiver_role="child", receiver_name=c.session_name)` — and end the turn again.
+If that turn brings nothing, write "no quorum" in the log and move on. Never
+poll, and never wait a third time.
+
+The candidate wins only when a majority of the votes in hand picks it and a
+majority answers GLANCE=yes. Then it becomes the file and gets published:
+
+```python
+Path("poster.html").write_text(cand.read_text())
+await preview.publish("poster.html",
+    label="第 2 版 · 版心 980→680px,标题 34→56px(盲评 2:1 选新版,一眼可见)")
+```
+
+A win with GLANCE=no is a real change nobody can see: keep it, and spend the
+next round where the eye lands. A loss publishes nothing — the file still holds
+the version that won last time, and the next round picks different properties.
+Never publish the old bytes again under a new name; the client marks that as a
+round that changed nothing, which is exactly what it is.
+
+Append one line per round to `.review/scores.md`: round, targets with
+before→after, changed lines, each judge's WINNER and GLANCE, kept or reverted.
+Everything under `.review/` is dot-prefixed on purpose — the client's scan skips
+dot names, so the candidate, the copies, the votes and the log never reach
+Preview, while you and the user can still open them.
+
+## 4 Every version has to read as a decision
+
+The client keeps every published version as a card, newest first, with your
+label under it and your opening sentence between one version and the next. So
+those two strings are the record of the work — write them for the person who
+will read them a day later:
+
+```python
+await preview.publish("poster.html",
+    label="第 3 版 · 字体:标题 34→56px 衬线,正文 1.4→1.7 行距(盲评 3:0 选新版)")
+```
+
+- Label: `第 N 版 · <这轮定了什么>:<具体改动>(<证据>)`. The round's subject, the
+  change, and what makes it better — a score, a measurement, a count.
+- Opening sentence of the turn: the choice and what it beats. "第三轮定字体:
+  标题换衬线,和正文的对比更明确;上一版标题和正文太像,三个盲评里两个都点了这一条。"
+- Never narrate the mechanics. Reading a file, importing a library, listing
+  subagents — none of that is a decision, and the client does not show it.
+
+## 5 Report what can be checked
 
 Trust comes from the observable, not from confidence. Hand back:
 
-- the score table — judge, file, score, one-line reason;
+- the vote table — judge, winner, glance, one-line reason, and `.review/scores.md`;
 - what you changed between rounds, and what you compared against;
 - the files themselves, and how to re-run the check.
 
-## 5 One step beyond the ask
+## 6 One step beyond the ask
 
 Add the one thing they did not ask for but will need — the empty state, the
 print stylesheet, the failure path. Label it, keep it separable, one line on

@@ -54,6 +54,9 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
   let index = loadIndex();
   /** Workspace-relative paths written by tools since the last agent_end. */
   const touched = new Set();
+  /** Keys that gained a version in the most recent flush — what `live` means
+   *  once the turn has ended and `touched` is empty again. */
+  let lastFlush = new Set();
 
   function loadIndex() {
     try {
@@ -102,30 +105,68 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
    *  bridge also calls this for an agent nothing is attached to, where the
    *  roster's running → idle edge is the only turn end it ever sees. */
   function flush() {
-    const changed = snapshotTouched();
+    const { changed, same } = snapshotTouched();
     touched.clear();
-    if (changed.length > 0 && typeof onUpdate === "function") onUpdate(changed);
+    lastFlush = new Set(changed);
+    // A same-bytes round notifies too, with an empty `changed`: the client
+    // re-pulls so the card can say the round moved nothing, but Preview only
+    // opens itself for a real change.
+    if ((changed.length > 0 || same.length > 0) && typeof onUpdate === "function") onUpdate(changed);
     return changed;
+  }
+
+  /** Changed-line count against the previous snapshot: the only "what moved"
+   *  an inferred version can carry, and enough to tell a real round from a
+   *  cosmetic one. Text only; binary versions get nothing. */
+  function lineDelta(prev, buf) {
+    if (!prev) return null;
+    let before;
+    try {
+      before = fs.readFileSync(path.join(root, prev.file));
+    } catch {
+      return null;
+    }
+    if (before.includes(0) || buf.includes(0)) return null;
+    const a = before.toString("utf8").split("\n");
+    const b = buf.toString("utf8").split("\n");
+    const counts = new Map();
+    for (const l of a) counts.set(l, (counts.get(l) ?? 0) + 1);
+    let add = 0;
+    for (const l of b) {
+      const n = counts.get(l) ?? 0;
+      if (n > 0) counts.set(l, n - 1);
+      else add += 1;
+    }
+    let del = 0;
+    for (const n of counts.values()) del += n;
+    return { add, del };
   }
 
   /** Add one version snapshot for `key` unless the content already matches the
    *  last version (the path+hash dedupe both sources share). */
-  function snapshotKey(key, buf, { declared = false, label, at } = {}) {
+  function snapshotKey(key, buf, { declared = false, label, at, quiet = false } = {}) {
     const hash = crypto.createHash("sha1").update(buf).digest("hex");
     const entry = (index.files[key] ??= { versions: [] });
     if (declared) entry.declared = true;
     if (label) entry.label = String(label);
     const last = entry.versions[entry.versions.length - 1];
     if (last && last.hash === hash) {
-      // Same content re-declared: keep one version, tag it declared, and take
-      // the label — a re-publish is usually the agent naming what it decided.
-      if (declared && (!last.declared || (label && last.note !== String(label)))) {
+      // A catch-up pass is not a round: an app restart over an unchanged file
+      // must not be counted as an iteration that moved nothing.
+      if (quiet) return false;
+      // A round that produced the same bytes is a fact about the run, not a
+      // non-event: dropping it is what makes "it iterated and nothing changed"
+      // look like the client hiding turns. Count it on the version it
+      // re-affirms, and keep what that round CLAIMED apart from the label this
+      // version was actually made with — overwriting `note` would put a
+      // no-op's account on an earlier round's work.
+      last.same = (last.same ?? 0) + 1;
+      if (declared) {
         last.declared = true;
-        if (label) last.note = String(label);
-        saveIndex();
-        return true;
+        if (label) last.saidAgain = String(label);
       }
-      return false;
+      saveIndex();
+      return "same";
     }
     const v = (last?.v ?? 0) + 1;
     const file = `${key.replace(/[\\/]/g, "__")}.v${v}${path.extname(key)}`;
@@ -135,11 +176,13 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     } catch {
       return false;
     }
+    const delta = lineDelta(last, buf);
     entry.versions.push({
       v,
       at: at || new Date().toISOString(),
       hash,
       file,
+      ...(delta ? { add: delta.add, del: delta.del } : {}),
       ...(declared ? { declared: true } : {}),
       // The label belongs to this version, not just to the file: it is the
       // agent's account of what this round changed, and the client shows it
@@ -154,6 +197,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
    *  returns the keys that actually gained one. */
   function snapshotTouched() {
     const changed = [];
+    const same = [];
     for (const rel of touched) {
       let buf;
       try {
@@ -161,9 +205,11 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       } catch {
         continue; // deleted or unreadable — nothing to snapshot
       }
-      if (snapshotKey(rel, buf)) changed.push(rel);
+      const r = snapshotKey(rel, buf);
+      if (r === true) changed.push(rel);
+      else if (r === "same") same.push(rel);
     }
-    return changed;
+    return { changed, same };
   }
 
   /** Declared preview from a preview_published session event ({source, kind,
@@ -188,15 +234,18 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       return false; // declared but unreadable — nothing to snapshot
     }
     const changed = snapshotKey(key, buf, { declared: true, label: p.label, at: p.timestamp });
-    if (changed && typeof onUpdate === "function") onUpdate([key]);
-    return changed;
+    if (changed === true) lastFlush = new Set([key]);
+    // Same bytes as the last version: still worth a re-pull (the card now says
+    // the round changed nothing), but nothing to open Preview for.
+    if (changed && typeof onUpdate === "function") onUpdate(changed === true ? [key] : []);
+    return changed !== false;
   }
 
   function list() {
     const files = Object.entries(index.files).map(([rel, entry]) => ({
       path: rel,
       name: path.basename(rel),
-      live: touched.has(rel),
+      live: touched.has(rel) || lastFlush.has(rel),
       ...(entry.declared ? { declared: true } : {}),
       ...(entry.label ? { label: entry.label } : {}),
       versions: entry.versions.map((s) => ({
@@ -204,6 +253,9 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
         at: s.at,
         ...(s.declared ? { declared: true } : {}),
         ...(s.note ? { note: s.note } : {}),
+        ...(s.saidAgain ? { saidAgain: s.saidAgain } : {}),
+        ...(s.same ? { same: s.same } : {}),
+        ...(s.add !== undefined ? { add: s.add, del: s.del } : {}),
       })),
     }));
     for (const rel of touched) {
@@ -234,5 +286,21 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     return { buffer: fs.readFileSync(path.join(root, snap.file)), contentType };
   }
 
-  return { observe, touch, flush, declare, list, read };
+  /** Re-check every file already in the index against its live bytes. The
+   *  bridge rebuilds its mtime baseline at attach, so a change made while the
+   *  app was closed — or while another workspace was open — is already baked
+   *  into that baseline and no turn-end scan will ever report it. This store
+   *  compares content, so it can still see it. Silent by design. */
+  function reconcile() {
+    for (const key of Object.keys(index.files)) {
+      const live = path.isAbsolute(key) ? key : path.join(workspaceDir, key);
+      try {
+        snapshotKey(key, fs.readFileSync(live), { quiet: true });
+      } catch {
+        /* moved or deleted since its last version — keep the history */
+      }
+    }
+  }
+
+  return { observe, touch, flush, declare, list, read, reconcile };
 }

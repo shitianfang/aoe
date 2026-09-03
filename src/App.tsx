@@ -671,6 +671,9 @@ export function App() {
   const declaredRef = useRef<Set<string>>(new Set());
   // Declared path waiting to be selected once the preview list re-pull lands.
   const pendingPreviewRef = useRef<string | null>(null);
+  // The most recent "published · …" row, so an unchanged republish can be told
+  // apart from one that moved the work.
+  const publishedNoteRef = useRef<{ id: string; at: number } | null>(null);
   // Last live timeline append; long silences get one dashed time rule.
   const lastAtRef = useRef(Date.now());
   // Last unattended injection already rendered as a timeline line (its `at`),
@@ -1052,9 +1055,13 @@ export function App() {
         if (!p) return;
         const resolved = p.path ?? p.source ?? "";
         const base = resolved.split(/[\\/]/).pop() || "file";
+        const noteId = id();
+        // Kept so the row can be amended: the publish event says nothing about
+        // whether the bytes moved, and the preview_update right behind it does.
+        publishedNoteRef.current = { id: noteId, at: Date.now() };
         push({
           kind: "note",
-          id: id(),
+          id: noteId,
           text: tr("published · {label}", { label: p.label || base }),
           rt: clock(),
           ts: Date.now(),
@@ -1320,6 +1327,22 @@ export function App() {
         if (changed.length > 0) {
           pendingPreviewRef.current = changed[0];
           setState((s) => popPane(s, { kind: "preview" }));
+        } else {
+          // Nothing moved. If a publish just claimed a new version, say on its
+          // own row that the round left the file exactly as it was — a silent
+          // "published" is how three rounds of nothing read as progress.
+          const pn = publishedNoteRef.current;
+          if (pn && Date.now() - pn.at < 15000) {
+            publishedNoteRef.current = null;
+            setState((s) => ({
+              ...s,
+              timeline: s.timeline.map((x) =>
+                x.id === pn.id && x.kind === "note" && !x.text.includes(tr("no change"))
+                  ? { ...x, text: `${x.text} · ${tr("no change")}` }
+                  : x,
+              ),
+            }));
+          }
         }
         refreshPreview();
       } else if (m.type === "file_activity") {

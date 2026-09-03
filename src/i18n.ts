@@ -380,6 +380,19 @@ const ZH: Record<string, string> = {
   "changed nothing": "其中没改动",
   "{n} rounds": "{n} 次",
   "where it came from": "怎么来的",
+  /* the worked example the ⚡ surface stands in when nothing has been learned */
+  "nothing has been learned in this workspace yet.": "这个工作区还没学到东西。",
+  "Lead with what changed": "汇报先写结论",
+  "End every turn with what changed first, then the detail.": "每轮结束先写改了什么,再展开过程。",
+  "Never start a web server": "不要起服务器",
+  "Writing the file is what shows the work. Do not send anyone to a browser.":
+    "写文件本身就是展示,不要让人去开浏览器。",
+  "Show variants before building": "先给变体再开做",
+  "For anything with a shape, put up a few versions and stop for a pick.":
+    "有形状的东西,先摆几版出来让人挑,别直接开做。",
+  "Judge candidates blind": "盲评候选",
+  "Strip the authorship, score each candidate separately, take the majority.":
+    "去掉来源,几个候选分别打分,取多数。",
   /* whether an entry is earning its place — counted at refine time, not at load */
   "helped ×{n}": "帮上忙 {n} 次",
   "got in the way ×{n}": "帮倒忙 {n} 次",
@@ -412,6 +425,8 @@ const ZH: Record<string, string> = {
   "{n} versions kept": "留了 {n} 版",
   "{n} takes to pick from": "{n} 版方案待选",
   "click to shrink": "点一下缩回",
+  "republished unchanged as": "原样重发为",
+  "no preview for this kind of file": "这种文件没法预览",
 
   /* inspector */
   "check-in": "定时跟进",

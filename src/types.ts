@@ -201,6 +201,16 @@ export interface PreviewVersion {
   /** The label the agent published THIS version under — its own account of
    *  what this round decided. The file-level `label` is only the latest one. */
   note?: string;
+  /** Rounds that re-wrote the file to these same bytes after this version was
+   *  taken: the run iterated, the artifact did not move. */
+  same?: number;
+  /** What a same-bytes republish claimed, kept apart from `note` so a no-op's
+   *  account never displaces the round that did the work. */
+  saidAgain?: string;
+  /** Lines added/removed against the previous version (text files only) — the
+   *  only "what moved" an inferred version can carry. */
+  add?: number;
+  del?: number;
 }
 export interface PreviewFile {
   path: string;

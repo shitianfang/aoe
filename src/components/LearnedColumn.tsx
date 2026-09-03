@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { LearnedSel } from "../types";
 import { lessonRowSourceText, lessonRowTitle } from "../helperDisplay";
 import { getLang, useT } from "../i18n";
+import { SAMPLE_HARNESS } from "../sampleHarness";
 import {
   fetchHarness,
   isNoop,
@@ -180,10 +181,32 @@ export function LearnedColumn(props: {
           {t("learning log")} {lessons.length}
         </button>
       </div>
-      {data !== null && total === 0 && (
+      {/* Nothing learned here yet: stand in the same worked example the overview
+          shows, dimmed and inert, so the list demonstrates what a lesson looks
+          like instead of demonstrating emptiness. Rows retire together with the
+          overview's, the instant one real entry exists. */}
+      {data !== null && mode === "know" && entries.length === 0 && (
+        <>
+          {SAMPLE_HARNESS.entries.map((e) => (
+            <div className="lsn eg" key={`eg-${e.id}`}>
+              <span className="ttl">
+                <span className="tx">{t(e.title ?? "")}</span>
+              </span>
+              <span className="pv">{t(e.content ?? "")}</span>
+              <span className="meta">{[t(e.kind), e.owner].filter((p) => p !== null).join(" · ")}</span>
+            </div>
+          ))}
+          <div className="colnote">
+            {t("example · real records replace this")}
+            <br />
+            {t("agents keep small improvements as they work — they appear here on their own.")}
+          </div>
+        </>
+      )}
+      {data !== null && mode === "log" && total === 0 && (
         <>
           <div className="colnote">
-            {mode === "know" ? t("nothing learned yet.") : t("it has not run a round yet.")}
+            {t("it has not run a round yet.")}
             <br />
             {t("agents keep small improvements as they work — they appear here on their own.")}
           </div>

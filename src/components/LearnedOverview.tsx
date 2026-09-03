@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { AutoRefineInfo } from "../types";
 import { getLang, useT } from "../i18n";
-import { ENTRY_KINDS, hasVerdicts, type HarnessData, type HarnessStats } from "../runtime/learned";
+import { ENTRY_KINDS, harnessStats, hasVerdicts, type HarnessData, type HarnessStats } from "../runtime/learned";
+import { SAMPLE_HARNESS } from "../sampleHarness";
 import { LearnedCurve } from "./LearnedCurve";
 
 /** Days the activity strip covers. Fixed, so the strip means the same thing
@@ -35,7 +36,12 @@ export function LearnedOverview(props: {
 }) {
   const t = useT();
   const [pending, setPending] = useState(false);
-  const s = props.stats;
+  // A workspace that has learned nothing shows four zeroes and no curve, which
+  // demonstrates nothing. Stand in the worked example instead — dimmed, said out
+  // loud, and gone the instant one real entry exists.
+  const eg = props.data.entries.length === 0;
+  const s = eg ? harnessStats(SAMPLE_HARNESS) : props.stats;
+  const entries = eg ? SAMPLE_HARNESS.entries : props.data.entries;
 
   // Right-align the window on the last round so the newest column is always
   // the rightmost one, and pad the left with quiet days.
@@ -80,7 +86,17 @@ export function LearnedOverview(props: {
   return (
     <div className="ovw">
       <div className="ohead">{t("what agents pick up while working — later work uses it.")}</div>
+      {/* Said before the numbers, not after: everything under this line is
+          written copy, and a reader must know that before reading it. */}
+      {eg && (
+        <div className="egnote">
+          {t("example · real records replace this")}
+          <br />
+          {t("nothing has been learned in this workspace yet.")}
+        </div>
+      )}
 
+      <div className={eg ? "egblock" : undefined}>
       <div className="kpi">
         {tile(s.entries, t("kept now"))}
         {tile(s.rounds, t("rounds run"))}
@@ -103,7 +119,7 @@ export function LearnedOverview(props: {
       {/* Is any of it doing anything. Hidden until a round running the counters
           has judged at least one entry — a row of zeroes would read as "none of
           it works" when it actually means "nobody has looked". */}
-      {hasVerdicts(props.data.entries) && (
+      {hasVerdicts(entries) && (
         <div className="kinds vd">
           <span className="kd">
             {t("helped")}
@@ -122,6 +138,8 @@ export function LearnedOverview(props: {
 
       {/* The one chart. Its reading is the gap: learning that did not last. */}
       <LearnedCurve stats={s} />
+
+      </div>
 
       {/* The auto side's one real control, with the rhythm it runs at. Hidden —
           never faked — when the daemon predates the status block. */}

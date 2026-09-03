@@ -9,6 +9,18 @@ function fmtTime(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** The decision out of a message: its first two non-empty lines, stripped of
+ *  markdown bullets and headings. A turn's reasoning opens with what it chose;
+ *  the rest is elaboration the card row has no room for. */
+function firstLines(text: string): string {
+  const lines = text
+    .split("\n")
+    .map((l) => l.replace(/^\s*(?:[-*+]|\d+[.)]|#{1,6})\s*/, "").replace(/\*\*/g, "").trim())
+    .filter((l) => l.length > 0);
+  const out = lines.slice(0, 2).join(" — ");
+  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+}
+
 function kindOf(name: string): "html" | "md" | "png" | "pdf" | null {
   if (/\.html?$/i.test(name)) return "html";
   if (/\.md$/i.test(name)) return "md";
@@ -86,6 +98,7 @@ function VersionPane(props: {
   const body = () => {
     if (kind === "png") return <img className="vimg" src={previewFileUrl(file.path, v)} alt={file.name} />;
     if (kind === "pdf") return <embed className="vframe" src={previewFileUrl(file.path, v)} type="application/pdf" />;
+    if (kind === null) return <div className="vempty">{t("no preview for this kind of file")}</div>;
     if (text === null) return <div className="vempty">{t("loading…")}</div>;
     if (kind === "html")
       return (
@@ -108,6 +121,12 @@ function VersionPane(props: {
   // The zoom is stated, not silent: a page at 34% is a projection, and the
   // user should know that before judging its type sizes.
   const zoom = kind === "html" && scale < 1 ? `${Math.round(scale * 100)}% · ` : "";
+  // "It iterated three times, one version" only looks like a bug while the card
+  // stays quiet about the rounds that moved nothing. Say the count, and for a
+  // version with no label of its own, say how much moved.
+  const same = version?.same ? `${t("no change")} ×${version.same} · ` : "";
+  const delta =
+    !version?.note && version?.add !== undefined ? `+${version.add} −${version.del} · ` : "";
 
   return (
     <div
@@ -125,11 +144,21 @@ function VersionPane(props: {
       <div className="vh">
         <b>{vlabel ? (props.current && !props.head ? `${vlabel} · ${t("current")}` : vlabel) : t("live")}</b>
         <span>
+          {same}
+          {delta}
           {zoom}
           {version ? fmtTime(version.at) : t("unsaved this turn")}
         </span>
       </div>
       {body()}
+      {version?.note && !props.head?.includes(version.note) && (
+        <div className="vnote">{version.note}</div>
+      )}
+      {version?.saidAgain && version.saidAgain !== version.note && (
+        <div className="vnote">
+          {t("republished unchanged as")} {version.saidAgain}
+        </div>
+      )}
     </div>
   );
 }
@@ -213,17 +242,22 @@ export function PreviewView(props: {
       ? [undefined, undefined]
       : [versions[shownIdx - 1], versions[shownIdx]];
 
-  // Timeline events that happened between the two shown snapshots (real
-  // tool/lesson rows only; items without a real timestamp are left out).
+  // What happened between the two versions, in the terms the user cares about:
+  // what the agent decided (its own words), what it published, and what it
+  // learned. Tool calls are deliberately not here — `python · import pathlib`
+  // is the mechanics of a step, never the judgement in it.
   const between =
     from && to
-      ? props.timeline.filter((x): x is Extract<TimelineItem, { kind: "tool" | "divider" | "lesson" }> => {
-          const ts =
-            (x.kind === "tool" || x.kind === "divider" || x.kind === "lesson") && x.ts !== undefined ? x.ts : null;
-          if (ts === null) return false;
-          if (x.kind === "divider" && !x.text.startsWith("lesson kept")) return false;
-          return ts > Date.parse(from.at) && ts <= Date.parse(to.at);
-        })
+      ? props.timeline.filter(
+          (x): x is Extract<TimelineItem, { kind: "master" | "agent" | "note" | "lesson" }> => {
+            if (x.kind !== "master" && x.kind !== "agent" && x.kind !== "note" && x.kind !== "lesson")
+              return false;
+            if (x.ts === undefined) return false;
+            if (x.kind === "note" && !/^(published|已发布)/.test(x.text)) return false;
+            if ((x.kind === "master" || x.kind === "agent") && x.text.trim() === "") return false;
+            return x.ts > Date.parse(from.at) && x.ts <= Date.parse(to.at);
+          },
+        )
       : [];
 
   return (
@@ -308,27 +342,21 @@ export function PreviewView(props: {
             <div className="bh">
               {t("between {from} → {to}", { from: from.label, to: to.label })}
             </div>
-            {between.map((e) =>
-              e.kind === "tool" ? (
-                <div className={e.status === "error" ? "ev bad" : "ev"} key={e.id}>
-                  <span className="ic" />
-                  <strong>{e.name}</strong>
-                  <span className="rt">{e.at}</span>
-                </div>
-              ) : (
-                <div className="ev violet" key={e.id}>
-                  <span className="ic" />
-                  <strong>
-                    {e.kind === "lesson"
-                      ? t("lesson kept · {summary}", { summary: e.result.summary ?? e.result.id })
-                      : e.kind === "divider"
-                        ? e.text
-                        : ""}
-                  </strong>
-                  <span className="rt" />
-                </div>
-              ),
-            )}
+            {between.map((e) => (
+              <div className={e.kind === "lesson" ? "ev violet" : "ev"} key={e.id}>
+                <span className="ic" />
+                <strong>
+                  {e.kind === "lesson"
+                    ? t("lesson kept · {summary}", { summary: e.result.summary ?? e.result.id })
+                    : e.kind === "note"
+                      ? e.text
+                      : e.kind === "agent"
+                        ? `${e.from} · ${firstLines(e.text)}`
+                        : firstLines(e.text)}
+                </strong>
+                <span className="rt">{e.kind === "note" ? (e.rt ?? "") : e.at}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>

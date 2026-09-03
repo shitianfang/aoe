@@ -5,7 +5,8 @@ knowledge workers around three ideas: proactive (long unattended runs), self-imp
 multi-agent (a resident **master** agent with helpers).
 
 Design source: [prime-agent-client-handoff](https://github.com/shitianfang/prime-agent-client-handoff)
-(interaction handoff + approved mockup).
+(interaction handoff + approved mockup). Runtime findings: [docs/daemon-integration.md](docs/daemon-integration.md),
+[docs/helper-runtime-findings.md](docs/helper-runtime-findings.md).
 
 ## Develop
 
@@ -13,10 +14,21 @@ Design source: [prime-agent-client-handoff](https://github.com/shitianfang/prime
 cp .env.example .env   # add your NVIDIA NIM API key
 npm install
 npm run dev            # renderer at http://localhost:3000
+npm run bridge         # daemon bridge on 127.0.0.1:3117 (real runtime)
 npm run app            # Electron shell pointing at the dev server
 ```
 
-The NIM key stays server-side (Vite dev proxy). Never commit `.env`.
+The bridge needs **Node >= 22.8** and **uv** on PATH (the prime-agent daemon and its Python kernel
+require them), plus a built prime-agent checkout at `PRIME_AGENT_DIR` (default `/workspace/prime-agent`).
+Without the bridge the app falls back to plain NIM chat ("model only" in the title bar).
+
+The NIM key stays server-side (Vite dev proxy / bridge). Never commit `.env`.
+
+## Workspaces
+
+Each directory under `~/.prime/desktop/` is a workspace with its own resident master
+(session `master@<name>`; `general` is the pinned default). Switch or create from the
+title-bar workspace menu.
 
 ## Build (Windows)
 
@@ -24,17 +36,20 @@ The NIM key stays server-side (Vite dev proxy). Never commit `.env`.
 npm run dist:win       # zip target, output in release/
 ```
 
-The packaged app reads the NIM key from the `NIM_API_KEY` environment variable, or from
-`%APPDATA%/prime-desktop/config.json`:
+The packaged app hosts the daemon bridge itself. On the target machine it needs:
 
-```json
-{ "nimApiKey": "nvapi-..." }
-```
+- `NIM_API_KEY` env var, or `%APPDATA%/prime-desktop/config.json` with `{ "nimApiKey": "nvapi-..." }`
+- for the real runtime: Node >= 22.8 and uv on PATH, and `PRIME_AGENT_DIR` pointing at a built
+  prime-agent checkout (otherwise the app runs in model-only mode)
 
 ## Status
 
-- [x] Shell: title bar (light/dark toggle), rail, agents column, master timeline, DRIVERS inspector, composer
-- [x] master agent chat via NVIDIA NIM (streaming)
-- [ ] Daemon-backed runtime (prime-agent protocol v4): objectives, check-ins, unattended runs, lessons, helpers
-- [ ] Files / Learned / Preview views
-- [ ] Windows build artifact
+- [x] Shell per the approved mockup: light/dark, rail, agents column, timeline, DRIVERS, composer
+- [x] Real runtime: daemon protocol v7 bridge — resident master, streaming replies, tool events
+- [x] Helpers: rlm children in the agents column, helper view, family-wide composer targeting
+- [x] Objectives (goal_update), check-ins, unattended status, lessons (Learned reads harness state)
+- [x] Files (inferred from edit/write events) and Preview (version snapshots per turn)
+- [x] Workspaces with pinned general default
+- [x] Windows zip releases (v0.2.0)
+- [ ] Preview host-request pipeline in core (client-side inference for now)
+- [ ] Windows end-to-end validation on a real machine

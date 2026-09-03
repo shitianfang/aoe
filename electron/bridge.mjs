@@ -89,7 +89,8 @@ async function connectDaemon() {
       cwd: WORKSPACE_DIR,
       detached: true,
       stdio: "ignore",
-      env: { ...process.env },
+      // Under packaged Electron, execPath is the app binary; run it as node.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     });
     child.on("error", (e) => console.error("[bridge] daemon spawn error:", e?.message));
     child.unref();

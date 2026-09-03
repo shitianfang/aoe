@@ -81,8 +81,17 @@ async function createWindow() {
   });
   if (app.isPackaged) {
     const port = await startBridge();
+    // The daemon bridge listens on its own fixed port; loading it here gives
+    // the packaged app the same real runtime the dev browser gets.
+    let daemonBridgePort = "";
+    try {
+      await import(path.join(__dirname, "bridge.mjs"));
+      daemonBridgePort = process.env.PRIME_BRIDGE_PORT || "3117";
+    } catch (e) {
+      console.error("daemon bridge unavailable:", e?.message);
+    }
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"), {
-      query: { bridge: String(port) },
+      query: { bridge: String(port), ...(daemonBridgePort ? { pbridge: daemonBridgePort } : {}) },
     });
   } else {
     win.loadURL(DEV_URL);

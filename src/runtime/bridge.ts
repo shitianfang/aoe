@@ -16,8 +16,13 @@ export type BridgeMessage =
   | { type: "snapshot"; state: { goal: unknown; heartbeat: unknown }; children: unknown[]; messages: unknown[] }
   | { type: "event"; event: Record<string, unknown> };
 
+// Packaged app: Electron main hosts the daemon bridge and hands its port over
+// via the page query. Dev: same-origin Vite proxy.
+const pbridge = new URLSearchParams(window.location.search).get("pbridge");
+const BRIDGE_BASE = pbridge ? `http://127.0.0.1:${pbridge}` : "";
+
 export function openBridge(onMessage: (m: BridgeMessage) => void): { close: () => void } {
-  const es = new EventSource("/bridge/events");
+  const es = new EventSource(`${BRIDGE_BASE}/bridge/events`);
   es.onmessage = (e) => {
     try {
       onMessage(JSON.parse(e.data));
@@ -33,7 +38,7 @@ export async function bridgeCmd(
   text?: string,
   extra?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch("/bridge/cmd", {
+  const res = await fetch(`${BRIDGE_BASE}/bridge/cmd`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ op, text, ...extra }),
@@ -78,19 +83,24 @@ export interface WorkspaceInfo {
 }
 
 export async function fetchWorkspaces(): Promise<{ current: string; workspaces: WorkspaceInfo[] }> {
-  const r = await fetch("/bridge/workspaces");
+  const r = await fetch(`${BRIDGE_BASE}/bridge/workspaces`);
   if (!r.ok) throw new Error(`workspaces failed (${r.status})`);
   return r.json();
 }
 
 export async function switchWorkspace(name: string): Promise<void> {
-  const r = await fetch("/bridge/workspace", {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/workspace`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.ok === false) throw new Error(data.error || `switch failed (${r.status})`);
+}
+
+/** Absolute-ify a /bridge/* path for the current host (dev proxy or packaged). */
+export function bridgeUrl(p: string): string {
+  return `${BRIDGE_BASE}${p}`;
 }
 
 /** Pull readable text out of an AgentMessage-shaped object. */

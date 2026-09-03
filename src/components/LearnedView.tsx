@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { bridgeUrl } from "../runtime/bridge";
 
 interface HarnessRefinement {
   id: string;
@@ -36,7 +37,7 @@ export function LearnedView() {
   const [data, setData] = useState<{ local: HarnessState | null; global: HarnessState | null } | null>(null);
 
   useEffect(() => {
-    fetch("/bridge/learned")
+    fetch(bridgeUrl("/bridge/learned"))
       .then((r) => r.json())
       .then(setData)
       .catch(() => setData({ local: null, global: null }));

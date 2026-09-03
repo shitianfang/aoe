@@ -33,6 +33,7 @@ import {
   stopHelper,
   removeHelper,
   extractText,
+  bridgeUrl,
   type BridgeMessage,
 } from "./runtime/bridge";
 import { getPreviewState } from "./runtime/preview";
@@ -134,7 +135,7 @@ export function App() {
       hbTimer = setTimeout(async () => {
         hbTimer = null;
         try {
-          const r = await fetch("/bridge/heartbeats").then((x) => x.json());
+          const r = await fetch(bridgeUrl("/bridge/heartbeats")).then((x) => x.json());
           const jobs: HeartbeatInfo[] = (r.heartbeats ?? [])
             .map((h: { job?: HeartbeatInfo }) => h.job ?? (h as HeartbeatInfo))
             .filter((j: HeartbeatInfo) => j.status === "active" || j.status === "paused");

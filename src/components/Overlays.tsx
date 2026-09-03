@@ -45,6 +45,19 @@ export function WorkspacePopup(props: {
     void go(name);
   };
 
+  /* The showcase only renders on a master with nothing in its transcript, so
+     "see what it can do" has to mean a workspace that has never run — in one
+     you have already used, the cards are gone for good and there is no honest
+     way to bring them back. Hence a NEW workspace every time: demo, demo-2,
+     demo-3. Reusing one name would hand back a used master on the second
+     click, which is exactly the state the cards do not survive. */
+  const demo = () => {
+    const taken = new Set((list ?? []).map((w) => w.name));
+    let name = "demo";
+    for (let n = 2; taken.has(name); n++) name = `demo-${n}`;
+    void go(name);
+  };
+
   const stateWord = (w: WorkspaceInfo) =>
     w.name === workspace
       ? `${t("master {state}", { state: t(props.master === "working" ? "running" : "idle") })}${
@@ -82,6 +95,12 @@ export function WorkspacePopup(props: {
             onKeyDown={(e) => e.key === "Enter" && create()}
           />
         </div>
+        {/* Bottom of the list on purpose: it is the way in for a new user, not
+            a workspace you keep coming back to. */}
+        <button className="wsrow demo" onClick={demo} disabled={busy || list === null}>
+          <span className="n">{t("see what it can do")}</span>
+          <span className="m">{t("a fresh workspace with examples")}</span>
+        </button>
       </div>
     </>
   );

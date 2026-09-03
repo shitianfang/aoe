@@ -59,7 +59,43 @@ const CLI = path.join(PRIME_AGENT_DIR, "prime-agent.sh");
 const WORKSPACE_ROOT =
   process.env.PRIME_WORKSPACE_ROOT || path.join(os.homedir(), ".prime", "desktop");
 const WS_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
-let currentWorkspace = process.env.PRIME_WORKSPACE || "general";
+// Where the last opened workspace is remembered. Dot-prefixed, so the
+// workspace listing (which skips dotted entries) never shows it as one.
+const STATE_FILE = path.join(WORKSPACE_ROOT, ".desktop.json");
+
+/** The workspace to open on a cold start: an explicit env override wins, then
+ *  the one last opened, then the pinned default. A remembered name is only
+ *  honoured while its directory is still there — a workspace deleted from disk
+ *  would otherwise strand the app in a folder that no longer exists. */
+function initialWorkspace() {
+  if (process.env.PRIME_WORKSPACE) return process.env.PRIME_WORKSPACE;
+  try {
+    const { lastWorkspace } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    if (
+      typeof lastWorkspace === "string" &&
+      WS_NAME_RE.test(lastWorkspace) &&
+      fs.existsSync(path.join(WORKSPACE_ROOT, lastWorkspace))
+    ) {
+      return lastWorkspace;
+    }
+  } catch {
+    /* no state yet, or unreadable — the default is the right answer */
+  }
+  return "general";
+}
+
+/** Remember the workspace for the next cold start. Best-effort: failing to
+ *  write it must never break a switch the user asked for. */
+function rememberWorkspace(name) {
+  try {
+    fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify({ lastWorkspace: name }, null, 2));
+  } catch {
+    /* read-only home, or a race with another client — not worth failing over */
+  }
+}
+
+let currentWorkspace = initialWorkspace();
 let WORKSPACE_DIR = path.join(WORKSPACE_ROOT, currentWorkspace);
 const masterNameFor = (ws) => (ws === "general" ? "master" : `master@${ws}`);
 
@@ -755,6 +791,7 @@ async function switchWorkspace(name) {
     masterConn = null;
   }
   currentWorkspace = name;
+  rememberWorkspace(name); // the app reopens where you left off
   WORKSPACE_DIR = path.join(WORKSPACE_ROOT, name);
   sessionDir = null;
   masterSessionId = null;

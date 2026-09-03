@@ -154,14 +154,10 @@ const ZH: Record<string, string> = {
   "no skills installed.": "尚未安装技能。",
   "nothing here yet.": "这里还没有内容。",
 
-  /* extensions (on/off are also the Inspector's unattended chip words) */
-  Model: "模型",
+  /* composer model pick; on/off are also the Inspector's unattended chip words */
+  model: "模型",
   on: "启用",
   off: "关闭",
-  "claude -p · your local login": "claude -p · 本机登录环境",
-  "cloud models · api key": "云端模型 · API key",
-  "NIM model": "NIM 模型",
-  "no model extension is enabled": "未启用任何模型扩展",
 
   /* files column */
   "no file activity yet.": "还没有文件活动。",

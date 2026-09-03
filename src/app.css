@@ -216,13 +216,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .f.ro { cursor: default; }
 .f.ro:hover { background: none; }
 .f.ro .fm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* model extensions: on/off word on the row, model picker under the active one.
-   The two toggle rows are buttons — clickable, unlike the catalog's divs. */
-button.f.ro { cursor: pointer; }
-.f .fn .ext-state { margin-left: 8px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
-.f .fn .ext-state.on { color: var(--t1); }
-.extmodel { display: block; margin: 0 8px 10px; width: calc(100% - 16px); height: 24px; padding: 0 4px; border: 0; background: var(--hair); color: var(--t1); font-family: var(--mono); font-size: 10px; outline: none; border-radius: 0; }
-.extmodel:focus { background: var(--hair-hi); }
 .colnote { padding: 12px 8px 0; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
 /* self-evolution column (⚡): one quiet explainer + lesson rows grouped by owner */
 .lhint { padding: 0 8px 12px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
@@ -346,6 +339,9 @@ body.resizing iframe { pointer-events: none; }
 .crow { display: flex; align-items: center; gap: 12px; padding: 0 8px 8px 12px; }
 .crow .to { margin-left: auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); cursor: pointer; }
 .crow .to:hover { color: var(--t2); }
+/* model pick (model-only mode): which backend answers — claude -p or a NIM model */
+.crow .mpick { border: 0; background: none; padding: 0; max-width: 160px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
+.crow .mpick:hover, .crow .mpick:focus { color: var(--t2); }
 .dmode { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .dmode span.static { cursor: default; color: var(--t3); }
 .send { min-width: 56px; height: 26px; padding: 0 12px; color: var(--hi-fg); font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--hi-bg); }

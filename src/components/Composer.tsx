@@ -12,6 +12,7 @@ import type {
 import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
+import { MODEL_PICKS, setModelPick, useModelPick } from "../runtime/providers";
 
 function popupStatus(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return t("running");
@@ -54,6 +55,7 @@ export function Composer(props: {
   const t = useT();
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
+  const modelPick = useModelPick();
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -155,6 +157,23 @@ export function Composer(props: {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
+            {/* Model-only mode: the reply comes straight from a model, so the
+                pick lives here. Picking one backend is leaving the other. */}
+            {!props.bridge?.connected && !props.fixedRoot && (
+              <select
+                className="mpick"
+                value={modelPick}
+                onChange={(e) => setModelPick(e.target.value)}
+                aria-label={t("model")}
+                title={modelPick}
+              >
+                {MODEL_PICKS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            )}
             {!props.fixedRoot && props.target.kind === "helper" && (
               <div className="dmode">
                 <span className="static">{t("delivered now")}</span>

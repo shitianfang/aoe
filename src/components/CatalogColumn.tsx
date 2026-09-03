@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { bridgeUrl } from "../runtime/bridge";
-import { NIM_MODELS, setActiveProvider, setNimModel, useProviders } from "../runtime/providers";
 import type { CatalogItem } from "../types";
 import { useT } from "../i18n";
 
@@ -52,57 +51,12 @@ export function SkillsColumn() {
   );
 }
 
-/** Model extensions are a client-side choice — which backend answers master
- *  when the daemon is not there — and mutually exclusive by construction
- *  (one active id). The catalog below stays the daemon's read-only list. */
 export function ExtensionsColumn() {
   const t = useT();
-  const { active, nimModel } = useProviders();
   const items = useCatalog("/bridge/extensions");
   return (
     <aside className="col2">
-      <div className="sec">{t("Model")}</div>
-      <button
-        type="button"
-        className="f ro"
-        onClick={() => setActiveProvider(active === "claude" ? null : "claude")}
-      >
-        <div className="fn">
-          Claude Code
-          <span className={active === "claude" ? "ext-state on" : "ext-state"}>
-            {active === "claude" ? t("on") : t("off")}
-          </span>
-        </div>
-        <div className="fm">{t("claude -p · your local login")}</div>
-      </button>
-      <button
-        type="button"
-        className="f ro"
-        onClick={() => setActiveProvider(active === "nim" ? null : "nim")}
-      >
-        <div className="fn">
-          NVIDIA NIM
-          <span className={active === "nim" ? "ext-state on" : "ext-state"}>
-            {active === "nim" ? t("on") : t("off")}
-          </span>
-        </div>
-        <div className="fm">{t("cloud models · api key")}</div>
-      </button>
-      {active === "nim" && (
-        <select
-          className="extmodel"
-          value={nimModel}
-          onChange={(e) => setNimModel(e.target.value)}
-          aria-label={t("NIM model")}
-        >
-          {NIM_MODELS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      )}
-      <div className="sec sub">{t("Extensions")}</div>
+      <div className="sec">{t("Extensions")}</div>
       <CatalogRows items={items} empty="nothing here yet." />
     </aside>
   );

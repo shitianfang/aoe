@@ -1,82 +1,65 @@
 import { useSyncExternalStore } from "react";
 
-/** Which model extension answers master when the daemon is not there: the
- *  Claude Code CLI through the local bridge, or NVIDIA NIM in the cloud.
- *  Exactly one is active, or none — a single field, so they cannot overlap. */
-export type ProviderId = "nim" | "claude";
+/** One picked model backs master when the daemon is not there. Picking
+ *  "claude" chats through the local Claude Code CLI (the bridge spawns the
+ *  user's own `claude -p` login); any other id is a NIM cloud model. One
+ *  value ⇒ the two backends can never be active at once. */
 
 declare const __NIM_MODEL__: string;
 
-/** The models offered in the picker — the build's default first. */
-export const NIM_MODELS: readonly string[] = Array.from(
-  new Set([
-    __NIM_MODEL__,
-    "deepseek-ai/deepseek-r1",
-    "meta/llama-3.3-70b-instruct",
-    "qwen/qwen2.5-coder-32b-instruct",
-    "moonshotai/kimi-k2-instruct",
-  ]),
-);
+export const CLAUDE_PICK = "claude";
 
-interface ProviderState {
-  active: ProviderId | null;
-  nimModel: string;
-}
+/** What the composer's model picker offers: Claude Code first, then the NIM
+ *  models with the build's default on top. Labels drop the vendor prefix. */
+export const MODEL_PICKS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: CLAUDE_PICK, label: "Claude Code" },
+  ...Array.from(
+    new Set([
+      __NIM_MODEL__,
+      "deepseek-ai/deepseek-r1",
+      "meta/llama-3.3-70b-instruct",
+      "qwen/qwen2.5-coder-32b-instruct",
+      "moonshotai/kimi-k2-instruct",
+    ]),
+  ).map((m) => ({ id: m, label: m.split("/").pop() ?? m })),
+];
 
-const ACTIVE_KEY = "provider.active";
-const MODEL_KEY = "provider.nimModel";
+const KEY = "model.pick";
 
-function load(): ProviderState {
-  let active: ProviderId | null = "nim";
-  let nimModel = __NIM_MODEL__;
+function load(): string {
   try {
-    const a = localStorage.getItem(ACTIVE_KEY);
-    if (a === "nim" || a === "claude") active = a;
-    else if (a === "none") active = null;
-    const m = localStorage.getItem(MODEL_KEY);
-    if (m && NIM_MODELS.includes(m)) nimModel = m;
+    const v = localStorage.getItem(KEY);
+    if (v && MODEL_PICKS.some((p) => p.id === v)) return v;
   } catch {
     /* private mode */
   }
-  return { active, nimModel };
+  return __NIM_MODEL__;
 }
 
-let state: ProviderState = load();
+let pick: string = load();
 const listeners = new Set<() => void>();
 
-function emit() {
+export function getModelPick(): string {
+  return pick;
+}
+
+export function setModelPick(id: string) {
+  if (id === pick || !MODEL_PICKS.some((p) => p.id === id)) return;
+  pick = id;
+  try {
+    localStorage.setItem(KEY, id);
+  } catch {
+    /* private mode */
+  }
   for (const fn of listeners) fn();
 }
 
-export function getActiveProvider(): ProviderId | null {
-  return state.active;
+export function getActiveProvider(): "claude" | "nim" {
+  return pick === CLAUDE_PICK ? "claude" : "nim";
 }
 
 export function getNimModel(): string {
-  return state.nimModel;
-}
-
-/** One active id ⇒ enabling one extension turns the other off by construction. */
-export function setActiveProvider(id: ProviderId | null) {
-  if (id === state.active) return;
-  state = { ...state, active: id };
-  try {
-    localStorage.setItem(ACTIVE_KEY, id ?? "none");
-  } catch {
-    /* private mode */
-  }
-  emit();
-}
-
-export function setNimModel(m: string) {
-  if (m === state.nimModel) return;
-  state = { ...state, nimModel: m };
-  try {
-    localStorage.setItem(MODEL_KEY, m);
-  } catch {
-    /* private mode */
-  }
-  emit();
+  return pick === CLAUDE_PICK ? __NIM_MODEL__ : pick;
 }
 
 function subscribe(fn: () => void): () => void {
@@ -86,11 +69,11 @@ function subscribe(fn: () => void): () => void {
   };
 }
 
-function snapshot(): ProviderState {
-  return state;
+function snapshot(): string {
+  return pick;
 }
 
-/** Re-renders the component when the active extension or NIM model changes. */
-export function useProviders(): ProviderState {
+/** Re-renders the component when the picked model changes. */
+export function useModelPick(): string {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }

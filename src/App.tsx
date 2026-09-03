@@ -10,6 +10,7 @@ import type {
   GoalInfo,
   HeartbeatInfo,
   HelperEvent,
+  LessonResult,
   Theme,
   TimelineItem,
 } from "./types";
@@ -325,11 +326,20 @@ export function App() {
           ),
         }));
       } else if (t === "refine_complete") {
-        const result = event.result as { id?: string; summary?: string } | undefined;
+        const result = event.result as LessonResult | undefined;
+        if (result?.id) {
+          push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
+        } else {
+          push({ kind: "divider", id: id(), text: `lesson kept · ${clock()}`, ts: Date.now() });
+        }
+      } else if (t === "refine_failed") {
+        const raw = event.error;
+        const msg =
+          typeof raw === "string" ? raw : (raw as { message?: string } | undefined)?.message ?? "unknown error";
         push({
           kind: "divider",
           id: id(),
-          text: `lesson kept · ${result?.summary ?? result?.id ?? ""} · ${clock()}`,
+          text: `lesson attempt failed · ${msg.slice(0, 80)} · ${clock()}`,
           ts: Date.now(),
         });
       } else if (t === "compaction_end") {

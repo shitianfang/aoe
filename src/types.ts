@@ -5,12 +5,35 @@ export type AgentState = "idle" | "working";
 export type CenterView = "timeline" | "learned" | "preview";
 export type ColumnView = "agents" | "files";
 
+/** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]). */
+export interface LessonEdit {
+  id: string;
+  kind: string;
+  title: string;
+  applied: boolean;
+  before?: string;
+  after?: string;
+  error?: string;
+}
+
+/** RefinementResult subset we render (refine_complete { result }). */
+export interface LessonResult {
+  id: string;
+  summary?: string;
+  rationale?: string;
+  expectedOutcome?: string;
+  appliedEdits?: LessonEdit[];
+  rollbackOf?: string;
+  scope?: string;
+}
+
 /** One rendered row in the master timeline. */
 export type TimelineItem =
   | { kind: "divider"; id: string; text: string; ts?: number }
   | { kind: "user"; id: string; text: string; at: string }
   | { kind: "master"; id: string; text: string; at: string; streaming?: boolean }
-  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number };
+  | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number }
+  | { kind: "lesson"; id: string; result: LessonResult; at: string; ts?: number };
 
 /** GoalState subset we render (see docs/daemon-integration.md). */
 export interface GoalInfo {

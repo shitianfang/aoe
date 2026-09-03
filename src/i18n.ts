@@ -129,6 +129,9 @@ const ZH: Record<string, string> = {
   "new agent": "新建智能体",
   "new agent name…": "新智能体名称…",
   "create failed": "创建失败",
+  "delete agent": "删除智能体",
+  delete: "删除",
+  "delete failed": "删除失败",
   /* agents column: task lines + the sample crew shown before anything has run */
   "example · real helpers replace this": "示例 · 有真实助手后即被替换",
   "ask master for a team and they appear here, each with its task.":

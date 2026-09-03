@@ -1201,6 +1201,38 @@ async function handleCmd(body) {
       if (!r.success) throw new Error(r.error || "create failed");
       return { agent: { name } };
     }
+    case "delete_agent": {
+      // Removing a root agent for good. Two steps, because the daemon refuses
+      // to delete a session that is still live: close the worker first (kill
+      // is a clean close, not a crash), then drop the saved file so the roster
+      // stops listing it. A master is the workspace itself — never deletable
+      // from here; that is what the workspace menu is for.
+      const name = String(body.text ?? "").trim();
+      if (!name) throw new Error("no agent named");
+      if (name.toLowerCase().startsWith("master")) throw new Error("master belongs to the workspace");
+      const listed = await daemonClient.request({ type: "list", all: true });
+      if (!listed.success) throw new Error(listed.error || "list failed");
+      const s = (listed.data.sessions || []).find(
+        (x) => x.sessionName === name && (x.rlmDepth ?? 0) === 0,
+      );
+      if (!s) throw new Error("no such agent");
+      await unwatchRoot(name); // our own attach would keep the worker alive
+      const live = s.activeSessionId ?? s.id;
+      if (live) {
+        const killed = await daemonClient.request({ type: "kill", activeSessionId: live });
+        if (!killed.success) throw new Error(killed.error || "could not stop the agent");
+      }
+      // No saved file means it only ever lived in memory — the kill was the
+      // whole job, and asking to delete nothing would fail for no reason.
+      if (s.sessionFile) {
+        const gone = await daemonClient.request({
+          type: "delete_saved_session",
+          sessionPath: s.sessionFile,
+        });
+        if (!gone.success) throw new Error(gone.error || "delete failed");
+      }
+      return { deleted: name };
+    }
     case "stop_helper":
       return { cancelled: await masterConn.cancelRlmChild(String(body.target ?? "")) };
     case "watch_helper":

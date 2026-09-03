@@ -196,6 +196,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* the sample crew: present enough to read, plainly not something you can open */
 .a.eg { cursor: default; opacity: .55; }
 .a.eg:hover { background: none; }
+/* Delete a root agent: hidden until the row is hovered, because it is the one
+   irreversible thing in this column and must not invite a stray click. The
+   confirm step replaces the glyph with the word, in red. */
+.a .del { flex-shrink: 0; margin-left: 6px; font-family: var(--mono); font-size: 9px; color: var(--t3); padding: 1px 3px; opacity: 0; }
+.a:hover .del { opacity: 1; }
+.a .del:hover { color: var(--t1); }
+.a .del.on { opacity: 1; color: var(--red); }
 .a .tag .tagbad { color: var(--red); }
 .fold { flex-shrink: 0; font-size: 11px; line-height: 1; color: var(--t2); padding: 0 2px; margin-left: 4px; }
 .fold:hover { color: var(--t1); }

@@ -100,6 +100,22 @@ export function AgentsColumn(props: {
     }
   };
 
+  /* Deleting a root agent is not undoable — its transcript and harness go with
+     it — so the row asks once, in place, instead of opening a dialog. Click
+     the ✕, the row offers "delete"; anything else cancels. */
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const deleteAgent = async (name: string) => {
+    setConfirmDel(null);
+    setDelErr(null);
+    try {
+      await bridgeCmd("delete_agent", name);
+      props.onRefreshOthers();
+    } catch (e) {
+      setDelErr(e instanceof Error ? e.message : t("delete failed"));
+    }
+  };
+
   /* ---- build display nodes ---- */
   const visibleChildren = props.children.filter((c) => ACTIVE.has(c.status) || showInactive);
   const inactiveCount = props.children.filter((c) => !ACTIVE.has(c.status)).length;
@@ -337,6 +353,7 @@ export function AgentsColumn(props: {
             if (key) drop(key, n.key);
           }}
           onClick={() => {
+            if (confirmDel !== null) return setConfirmDel(null); // anywhere else cancels
             if (n.eg) return; // a sample row stands for an agent; there is none to open
             if (rootName !== null) props.onSelectRoot(rootName);
             else if (n.key === "master") props.onSelect(null);
@@ -370,6 +387,32 @@ export function AgentsColumn(props: {
           <span className={n.state.cls} title={t(n.state.word)}>
             {n.state.glyph}
           </span>
+          {/* Roots only: master belongs to the workspace, helpers belong to
+              their master, and a sample row stands for nothing to delete. */}
+          {rootName !== null &&
+            (confirmDel === rootName ? (
+              <button
+                className="del on"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void deleteAgent(rootName);
+                }}
+              >
+                {t("delete")}
+              </button>
+            ) : (
+              <button
+                className="del"
+                title={t("delete agent")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDel(rootName);
+                  setDelErr(null);
+                }}
+              >
+                ✕
+              </button>
+            ))}
         </div>
         {!isFolded && kids.map((k) => renderNode(k, Math.min(depth + 1, 3)))}
       </div>
@@ -408,6 +451,7 @@ export function AgentsColumn(props: {
         </div>
       )}
       {roots.map((n) => renderNode(n, 0))}
+      {delErr !== null && <div className="ierr">{delErr}</div>}
       {/* Says out loud that the crew above is a sample. It sits under the rows
           it labels, so the first thing read is the shape of a real team. */}
       {props.children.length === 0 && props.claudeAgents.length === 0 && (

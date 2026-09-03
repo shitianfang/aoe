@@ -46,10 +46,12 @@ The packaged app hosts the daemon bridge itself. On the target machine it needs:
 
 - [x] Shell per the approved mockup: light/dark, rail, agents column, timeline, DRIVERS, composer
 - [x] Real runtime: daemon protocol v7 bridge — resident master, streaming replies, tool events
-- [x] Helpers: rlm children in the agents column, helper view, family-wide composer targeting
-- [x] Objectives (goal_update), check-ins, unattended status, lessons (Learned reads harness state)
-- [x] Files (inferred from edit/write events) and Preview (version snapshots per turn)
+- [x] Helpers: roster, helper view with live child-session transcript, family-wide composer targeting
+- [x] Objectives with pause/resume/clear + inline set; unattended toggle; check-in create/pause/clear
+- [x] Lessons end-to-end (verified live): timeline lesson cards, Learned history/entries, one-step rollback
+- [x] Transcript history restored on attach ("N earlier turns · show"); other root agents listed
+- [x] Files and Preview from filesystem truth (per-turn scan; version snapshots)
 - [x] Workspaces with pinned general default
-- [x] Windows zip releases (v0.2.0)
+- [x] Windows zip releases
 - [ ] Preview host-request pipeline in core (client-side inference for now)
 - [ ] Windows end-to-end validation on a real machine

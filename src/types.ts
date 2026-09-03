@@ -37,6 +37,8 @@ export type TimelineItem =
   | { kind: "master"; id: string; text: string; at: string; streaming?: boolean }
   | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number }
   | { kind: "lesson"; id: string; result: LessonResult; at: string; ts?: number }
+  /** Quiet chip row for secondary events (agent messages, queue notes) — no rule line. */
+  | { kind: "note"; id: string; text: string; rt?: string; tone?: "" | "bad"; ts?: number }
   /** Folded run of older history rows; renders as one "N earlier turns · show" divider. */
   | { kind: "collapsed"; id: string; count: number; items: TimelineItem[] };
 

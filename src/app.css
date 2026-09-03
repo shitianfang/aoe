@@ -37,6 +37,7 @@ body {
   background: var(--win); color: var(--t1);
   font-family: var(--sans); font-size: 13px; line-height: 1.55;
   -webkit-font-smoothing: antialiased; overflow: hidden;
+  zoom: 1.5; /* the shell reads right at 150% */
 }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 
@@ -56,10 +57,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .stat b { color: var(--green); font-weight: 500; }
 .stat b.bad { color: var(--red); }
 
-/* workspace popup */
-.bar { position: relative; }
+/* workspace + settings popups (anchored to the rail; there is no top bar) */
 .scrim { position: fixed; inset: 0; z-index: 25; }
-.wspop { position: absolute; top: 38px; left: 52px; z-index: 30; min-width: 260px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
+.wspop { position: fixed; top: 12px; left: 56px; z-index: 30; min-width: 260px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
+.setpop { position: fixed; bottom: 12px; left: 56px; z-index: 30; min-width: 210px; background: var(--win); border: 1px solid var(--hair-hi); box-shadow: 0 18px 50px rgba(0, 0, 0, .25); padding: 6px; }
+.setpop .h { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); padding: 6px 10px; }
+.setpop .srow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 10px; font-size: 12px; }
+.setpop .srow .k { color: var(--t2); }
+.stat { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.stat b { color: var(--green); font-weight: 500; }
+.stat b.bad { color: var(--red); }
 .wspop .h { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); padding: 6px 10px; }
 .wsrow { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; cursor: pointer; }
 .wsrow:hover { background: var(--soft); }
@@ -126,16 +133,25 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
     radial-gradient(circle 1.7px at 4.5px 4.5px, currentColor 1.7px, transparent 1.8px),
     radial-gradient(circle 1.7px at 10.5px 4.5px, currentColor 1.7px, transparent 1.8px);
 }
-.rbtn { width: 34px; height: 34px; display: grid; place-items: center; color: var(--t3); border-left: 2px solid transparent; }
+.rbtn { width: 38px; height: 38px; display: grid; place-items: center; color: var(--t3); }
 .rbtn:hover { color: var(--t2); }
-.rbtn.on { color: var(--t1); border-left-color: var(--t1); background: var(--soft); }
-.rbtn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.rbtn.on { color: var(--t1); background: var(--soft); }
+.rbtn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.5; }
 .rail .sp { flex: 1; }
-.uav { width: 22px; height: 22px; background: var(--soft2); border: 1px solid var(--hair-hi); color: var(--t2); font-family: var(--mono); font-size: 8px; font-weight: 700; display: grid; place-items: center; }
+.uav { position: relative; width: 26px; height: 26px; background: var(--soft2); border: 1px solid var(--hair-hi); color: var(--t2); font-family: var(--mono); font-size: 9px; font-weight: 700; display: grid; place-items: center; cursor: pointer; }
+.uav:hover { color: var(--t1); border-color: var(--t3); }
+.uav .udot { position: absolute; right: -3px; bottom: -3px; width: 7px; height: 7px; background: var(--green); border: 1px solid var(--win); }
+.uav .udot.bad { background: var(--red); }
 
 /* ---- agents column ---- */
-.col2 { width: 198px; border-right: 1px dashed var(--hair); padding: 16px 10px; overflow-y: auto; flex-shrink: 0; }
+.col2 { width: 198px; border-right: 1px dashed var(--hair); padding: 12px 10px 16px; overflow-y: auto; flex-shrink: 0; }
 .sec { font-family: var(--mono); font-size: 8.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--t3); padding: 0 8px 12px; }
+.sec.row { display: flex; align-items: center; justify-content: space-between; }
+.sec .plus { font-family: var(--mono); font-size: 13px; color: var(--t3); padding: 0 2px; line-height: 1; }
+.sec .plus:hover { color: var(--t1); }
+.wslabel { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--t2); padding: 2px 8px 12px; text-align: left; }
+.wslabel:hover { color: var(--t1); }
+.wslabel .car { font-size: 8px; color: var(--t3); }
 .chip { display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; font-family: var(--mono); font-size: 10px; font-weight: 700; color: #141517; }
 .chip.master { background: var(--hi-bg); color: var(--hi-fg); }
 .chip.master::before {
@@ -150,6 +166,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .chip.violet { background: var(--violet); }
 .chip.sm { width: 18px; height: 18px; font-size: 8px; }
 .a { display: flex; align-items: center; gap: 9px; padding: 6px 8px; cursor: pointer; margin-bottom: 3px; border: 1px solid transparent; width: 100%; text-align: left; }
+.a.tree { gap: 6px; }
+.a.droptgt { border-color: var(--t3); background: var(--soft); }
+.fold { width: 12px; flex-shrink: 0; font-size: 8px; color: var(--t3); padding: 0; }
+.fold:hover { color: var(--t1); }
+.fold.none { display: inline-block; }
 .a:hover { background: var(--soft); }
 .a.sel { background: var(--soft); border-color: var(--hair); }
 .a.indent { margin-left: 14px; width: calc(100% - 14px); }
@@ -195,7 +216,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ahead .r3 { margin-top: 2px; font-size: 12px; color: var(--t2); }
 
 .transcript { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 18px; overflow-y: auto; scrollbar-width: thin; }
-.msg { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start; }
+.msg { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.msg > .when { margin: 0; padding-top: 4px; font-family: var(--mono); font-size: 9px; color: var(--t3); white-space: nowrap; }
 .msg::before { content: ""; position: absolute; left: 11.5px; top: 30px; bottom: -16px; border-left: 1px dashed var(--hair); }
 .msg:last-child::before { display: none; }
 .msg .body { font-size: 12.5px; color: var(--t2); padding-top: 3px; white-space: pre-wrap; overflow-wrap: break-word; min-width: 0; }

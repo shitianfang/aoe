@@ -16,7 +16,7 @@ import type {
   Theme,
   TimelineItem,
 } from "./types";
-import { TitleBar } from "./components/TitleBar";
+import { SettingsPopup, WorkspacePopup } from "./components/Overlays";
 import { Rail } from "./components/Rail";
 import { AgentsColumn } from "./components/AgentsColumn";
 import { FilesColumn } from "./components/FilesColumn";
@@ -64,15 +64,26 @@ function hhmm(at?: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Rules (dashed dividers) mark only long silences, not every event. */
+const GAP_MS = 30 * 60 * 1000;
+
 /** Snapshot history → timeline rows: user/assistant as normal rows (never
- *  streaming), agent messages as the same divider live ones get. */
+ *  streaming), agent messages as quiet note chips, dividers only on gaps. */
 function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
-  return messages.map((m) => {
-    if (m.role === "user") return { kind: "user", id: id(), text: m.text, at: hhmm(m.at) };
-    if (m.role === "assistant") return { kind: "master", id: id(), text: m.text, at: hhmm(m.at) };
-    const when = m.at !== undefined ? ` · ${hhmm(m.at)}` : "";
-    return { kind: "divider", id: id(), text: `msg ← ${m.from ?? "agent"}${when}` };
-  });
+  const out: TimelineItem[] = [];
+  let last: number | undefined;
+  for (const m of messages) {
+    if (m.at !== undefined) {
+      if (last !== undefined && m.at - last > GAP_MS) {
+        out.push({ kind: "divider", id: id(), text: hhmm(m.at) });
+      }
+      last = m.at;
+    }
+    if (m.role === "user") out.push({ kind: "user", id: id(), text: m.text, at: hhmm(m.at) });
+    else if (m.role === "assistant") out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at) });
+    else out.push({ kind: "note", id: id(), text: `msg ← ${m.from ?? "agent"}`, rt: hhmm(m.at) });
+  }
+  return out;
 }
 
 /** Long histories open on the recent tail; the rest folds into one divider. */
@@ -146,6 +157,9 @@ export function App() {
   const bridgeRef = useRef(false);
   // Snapshots repeat on bridge reconnect (same workspace) — seed history once.
   const histSeededRef = useRef(false);
+  // Last live timeline append; long silences get one dashed time rule.
+  const lastAtRef = useRef(Date.now());
+  const [setOpen, setSetOpen] = useState(false);
 
   const toggleTheme = useCallback(() => {
     setState((s) => {
@@ -162,7 +176,21 @@ export function App() {
 
   /* ---- daemon bridge ingestion ---- */
   useEffect(() => {
-    const push = (item: TimelineItem) => setState((s) => ({ ...s, timeline: [...s.timeline, item] }));
+    const push = (item: TimelineItem) =>
+      setState((s) => {
+        // A dashed rule only after a long silence — never per event.
+        const now = Date.now();
+        const gap = now - lastAtRef.current > GAP_MS;
+        lastAtRef.current = now;
+        return {
+          ...s,
+          timeline: [
+            ...s.timeline,
+            ...(gap ? [{ kind: "divider", id: id(), text: clock() } as TimelineItem] : []),
+            item,
+          ],
+        };
+      });
 
     let hbTimer: ReturnType<typeof setTimeout> | null = null;
     const refreshHeartbeats = () => {
@@ -229,7 +257,10 @@ export function App() {
           ...s,
           master: "idle",
           working: undefined,
-          timeline: s.timeline.map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x)),
+          timeline: s.timeline
+            .map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x))
+            // A settled master row with no text is noise (orphan timestamp).
+            .filter((x) => !(x.kind === "master" && !x.streaming && x.text === "")),
         }));
       } else if (t === "goal_update") {
         setState((s) => ({ ...s, goal: (event.goal as GoalInfo) ?? null }));
@@ -265,13 +296,14 @@ export function App() {
               // Roster can lag the first reply — keep the text in the timeline
               // row itself so nothing is lost when there is no helper row yet.
               const brief = (d?.message ?? "").slice(0, 60);
-              const divider: TimelineItem = {
-                kind: "divider",
+              const note: TimelineItem = {
+                kind: "note",
                 id: id(),
-                text: child || !brief ? `msg ← ${fromName} · ${clock()}` : `msg ← ${fromName} · “${brief}” · ${clock()}`,
+                text: child || !brief ? `msg ← ${fromName}` : `msg ← ${fromName} · “${brief}”`,
+                rt: clock(),
               };
-              if (!child) return { ...s, timeline: [...s.timeline, divider] };
-              s = { ...s, timeline: [...s.timeline, divider] };
+              if (!child) return { ...s, timeline: [...s.timeline, note] };
+              s = { ...s, timeline: [...s.timeline, note] };
               const excerpt = (d?.message ?? "").slice(0, 80);
               const ev: HelperEvent = {
                 id: id(),
@@ -364,16 +396,18 @@ export function App() {
         if (result?.id) {
           push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
         } else {
-          push({ kind: "divider", id: id(), text: `lesson kept · ${clock()}`, ts: Date.now() });
+          push({ kind: "note", id: id(), text: "lesson kept", rt: clock(), ts: Date.now() });
         }
       } else if (t === "refine_failed") {
         const raw = event.error;
         const msg =
           typeof raw === "string" ? raw : (raw as { message?: string } | undefined)?.message ?? "unknown error";
         push({
-          kind: "divider",
+          kind: "note",
           id: id(),
-          text: `lesson attempt failed · ${msg.slice(0, 80)} · ${clock()}`,
+          text: `lesson attempt failed · ${msg.slice(0, 80)}`,
+          tone: "bad",
+          rt: clock(),
           ts: Date.now(),
         });
       } else if (t === "compaction_end") {
@@ -641,7 +675,7 @@ export function App() {
             ...s.timeline,
             userItem,
             ...(op === "follow_up"
-              ? [{ kind: "divider", id: id(), text: "queued · lands after it finishes" } as TimelineItem]
+              ? [{ kind: "note", id: id(), text: "queued · lands after it finishes" } as TimelineItem]
               : []),
           ],
         }));
@@ -741,23 +775,38 @@ export function App() {
   const timelineTabOn = state.view === "timeline" && !selectedChild;
   return (
     <div className="app">
-      <TitleBar
-        theme={state.theme}
-        bridge={state.bridge}
-        master={state.master}
-        needsYou={needsYou}
-        wsOpen={wsOpen}
-        onToggleWs={() => setWsOpen((v) => !v)}
-        onToggleTheme={toggleTheme}
-      />
+      {wsOpen && (
+        <WorkspacePopup
+          bridge={state.bridge}
+          master={state.master}
+          needsYou={needsYou}
+          onClose={() => setWsOpen(false)}
+        />
+      )}
+      {setOpen && (
+        <SettingsPopup
+          theme={state.theme}
+          bridge={state.bridge}
+          onToggleTheme={toggleTheme}
+          onClose={() => setSetOpen(false)}
+        />
+      )}
       <div className="frame">
-        <Rail column={state.column} onColumn={setColumn} onLogo={() => setWsOpen((v) => !v)} />
+        <Rail
+          column={state.column}
+          bridge={state.bridge}
+          onColumn={setColumn}
+          onLogo={() => setWsOpen((v) => !v)}
+          onSettings={() => setSetOpen((v) => !v)}
+        />
         {state.column === "agents" ? (
           <AgentsColumn
             master={state.master}
+            workspace={state.bridge?.workspace || "general"}
             children={state.children}
             selected={state.selectedAgent}
             onSelect={selectAgent}
+            onWorkspaces={() => setWsOpen(true)}
           />
         ) : (
           <FilesColumn files={state.files} onOpenPreview={openPreview} />

@@ -70,14 +70,21 @@ export function Timeline(props: { items: TimelineItem[] }) {
     if (item.kind === "lesson") {
       return <LessonRow key={item.id} result={item.result} at={item.at} />;
     }
+    if (item.kind === "note") {
+      return (
+        <div className={`ev${item.tone === "bad" ? " bad" : ""}`} key={item.id}>
+          <span className="ic" />
+          <strong>{item.text}</strong>
+          {item.rt ? <span className="rt">{item.rt}</span> : <span className="rt" />}
+        </div>
+      );
+    }
     if (item.kind === "user") {
       return (
         <div className="msg user" key={item.id}>
           <span className="chip ghost">Y</span>
-          <span className="body">
-            {item.text}
-            <span className="when">{item.at}</span>
-          </span>
+          <span className="body">{item.text}</span>
+          <span className="when">{item.at}</span>
         </div>
       );
     }
@@ -86,8 +93,9 @@ export function Timeline(props: { items: TimelineItem[] }) {
         <span className="chip master" />
         <span className="body">
           {item.text}
-          {item.streaming ? <span className="cursor" /> : <span className="when">{item.at}</span>}
+          {item.streaming ? <span className="cursor" /> : null}
         </span>
+        <span className="when">{item.streaming ? "" : item.at}</span>
       </div>
     );
   };

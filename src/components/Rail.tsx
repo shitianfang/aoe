@@ -1,9 +1,11 @@
-import type { ColumnView } from "../types";
+import type { BridgeState, ColumnView } from "../types";
 
 export function Rail(props: {
   column: ColumnView;
+  bridge: BridgeState | null;
   onColumn: (v: ColumnView) => void;
   onLogo: () => void;
+  onSettings: () => void;
 }) {
   return (
     <nav className="rail">
@@ -41,9 +43,9 @@ export function Rail(props: {
         </svg>
       </div>
       <div className="sp" />
-      <div className="uav" title="you">
-        Y
-      </div>
+      <button className="uav" title="you · settings" onClick={props.onSettings}>
+        Y<span className={props.bridge?.connected ? "udot" : "udot bad"} />
+      </button>
     </nav>
   );
 }

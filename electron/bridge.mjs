@@ -552,6 +552,20 @@ async function handleCmd(body) {
     case "heartbeat_update":
       // action "pause" | "resume" | "clear" — master's own heartbeat only
       return { job: (await masterConn.updateHeartbeat(String(body.action ?? ""))) ?? null };
+    case "create_agent": {
+      const name = String(body.text ?? "").trim();
+      if (!WS_NAME_RE.test(name)) throw new Error("invalid agent name");
+      if (name.toLowerCase().startsWith("master")) throw new Error("master names are reserved");
+      const r = await daemonClient.request({
+        type: "create",
+        name,
+        lifecycle: "resident",
+        config: { cwd: WORKSPACE_DIR },
+        launchEnv: { ...process.env },
+      });
+      if (!r.success) throw new Error(r.error || "create failed");
+      return { agent: { name } };
+    }
     case "stop_helper":
       return { cancelled: await masterConn.cancelRlmChild(String(body.target ?? "")) };
     case "watch_helper":

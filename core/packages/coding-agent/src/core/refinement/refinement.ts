@@ -51,7 +51,35 @@ export interface HarnessEntry {
 	created_at: string;
 	updated_at: string;
 	version: number;
+	/**
+	 * How often a refinement round judged this entry to have carried weight in
+	 * the trajectory it just read, and how often it judged the entry to have got
+	 * in the way. Absent on entries written before the counters existed; absent
+	 * is not zero, it is "never asked".
+	 *
+	 * These are the only evidence the harness keeps that an entry is earning its
+	 * place. Loading is not evidence — every entry under the overview cap is put
+	 * in the prompt on every turn, so a load counter would only count turns.
+	 */
+	helpful?: number;
+	harmful?: number;
+	/** When a round last judged this entry either way. */
+	last_used_at?: string;
 }
+
+/** One refiner judgement about an entry that already existed this round. */
+export interface EntryUsageMark {
+	id: string;
+	tag: "helpful" | "harmful";
+}
+
+/** The four kinds, as a list — the store is keyed by kind, so lookups by bare
+ *  id have to walk them. */
+const REFINEMENT_KIND_LIST: RefinementKind[] = ["prompt", "memory", "skill", "subagent"];
+
+/** Ceiling on marks accepted from one proposal — a bound on untrusted output,
+ *  not a product limit; no real round judges this many entries. */
+const MAX_USAGE_MARKS = 64;
 
 export interface HarnessRefinementEvent {
 	id: string;
@@ -93,6 +121,9 @@ export interface RefinementProposal {
 	rationale: string;
 	edits: RefinementEdit[];
 	expectedOutcome: string;
+	/** Judgements about entries that already existed; separate from `edits`,
+	 *  because marking an entry helpful is not a change to it. */
+	used?: EntryUsageMark[];
 }
 
 export interface AppliedRefinementEdit extends RefinementEdit {
@@ -177,7 +208,16 @@ lists them, not by this subsystem. Write them accordingly:
 - summary is one short sentence naming what future work should do differently. It
   is not a verdict on whether edits were justified.
 - rationale is at most two sentences: what in this session showed it.
-Entry `title` and `content` are the artifact itself and keep their own rules above.
+Entry \`title\` and \`content\` are the artifact itself and keep their own rules above.
+
+Alongside your edits, report which EXISTING entries actually carried weight in
+this trajectory, in \`used\`. Mark an entry \`helpful\` when following it visibly
+produced a better turn, \`harmful\` when it misled or got in the way. Judge only
+entries that appear in the current harness state, only from evidence in this
+trajectory, and leave \`used\` empty when nothing stood out — an entry nobody can
+point to is more useful as an unmarked entry than as a guessed one. This is the
+only record that an entry is earning its place; being loaded into the prompt is
+not evidence, since every entry under the overview cap is loaded on every turn.
 
 Output JSON only with this exact shape:
 
@@ -186,6 +226,7 @@ Output JSON only with this exact shape:
   "title": "concise display title in the summary's language: at most 6 words (about 12 CJK characters), no trailing period",
   "rationale": "why these edits are justified by trajectory evidence",
   "expectedOutcome": "what should improve and how to validate it",
+  "used": [{"id": "existing entry id", "tag": "helpful|harmful"}],
   "edits": [
     {
       "action": "create|update|delete",
@@ -691,6 +732,32 @@ function extractJsonObject(text: string): unknown {
 }
 
 /**
+ * Keeps only well-formed marks: a non-empty string id and one of the two tags.
+ * Ids naming entries that do not exist are dropped later, at apply time, where
+ * the store is in hand.
+ */
+function normalizeUsageMarks(value: unknown): EntryUsageMark[] {
+	if (!Array.isArray(value)) return [];
+	const out: EntryUsageMark[] = [];
+	const seen = new Set<string>();
+	for (const raw of value) {
+		if (out.length >= MAX_USAGE_MARKS) break;
+		if (typeof raw !== "object" || raw === null) continue;
+		const mark = raw as Record<string, unknown>;
+		const id = typeof mark.id === "string" ? mark.id.trim() : "";
+		const tag = mark.tag;
+		if (id === "" || (tag !== "helpful" && tag !== "harmful")) continue;
+		// One judgement per entry per round: a model that repeats itself must not
+		// be able to run a counter up.
+		const key = `${id}\u0000${tag}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ id, tag });
+	}
+	return out;
+}
+
+/**
  * Normalizes an untrusted refinement proposal while preserving invalid edit
  * fields for apply-time validation.
  */
@@ -704,6 +771,7 @@ export function normalizeRefinementProposal(value: unknown): RefinementProposal 
 		...(title ? { title } : {}),
 		rationale: typeof record.rationale === "string" ? record.rationale : "",
 		expectedOutcome: typeof record.expectedOutcome === "string" ? record.expectedOutcome : "",
+		used: normalizeUsageMarks(record.used),
 		edits: edits
 			.filter((edit): edit is Record<string, unknown> => typeof edit === "object" && edit !== null)
 			.map((edit) => ({
@@ -850,10 +918,33 @@ export function applyRefinementProposal(
 			created_at: createdAt,
 			updated_at: now(),
 			version,
+			// An update rebuilds the record; without this, revising an entry would
+			// silently reset everything ever learned about whether it works.
+			...(before?.helpful !== undefined ? { helpful: before.helpful } : {}),
+			...(before?.harmful !== undefined ? { harmful: before.harmful } : {}),
+			...(before?.last_used_at !== undefined ? { last_used_at: before.last_used_at } : {}),
 		};
 		records[id] = after;
 		proposalModifiedKeys.add(entryKey);
 		appliedEdits.push({ ...edit, id, before, after: cloneEntry(after), applied: true });
+	}
+
+	// Judgements land after the edits: a mark naming an entry this round just
+	// created still finds it, and one naming an entry it deleted finds nothing
+	// and is dropped. Counters live on the entry, not on the round, because the
+	// question they answer ("is this earning its place") is about the entry.
+	const usedAt = now();
+	for (const mark of proposal.used ?? []) {
+		// Ids are unique across kinds in practice but the store is keyed by kind,
+		// so the entry has to be looked for rather than addressed.
+		for (const kind of REFINEMENT_KIND_LIST) {
+			const entry = state.entries[kind]?.[mark.id];
+			if (!entry) continue;
+			const field = mark.tag === "helpful" ? "helpful" : "harmful";
+			entry[field] = (entry[field] ?? 0) + 1;
+			entry.last_used_at = usedAt;
+			break;
+		}
 	}
 
 	const changes = appliedEdits.filter((edit) => edit.applied).map((edit) => `${edit.action} ${edit.kind}:${edit.id}`);

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { AutoRefineInfo } from "../types";
 import { getLang, useT } from "../i18n";
-import { ENTRY_KINDS, type HarnessData, type HarnessStats } from "../runtime/learned";
+import { ENTRY_KINDS, hasVerdicts, type HarnessData, type HarnessStats } from "../runtime/learned";
 import { LearnedCurve } from "./LearnedCurve";
 
 /** Days the activity strip covers. Fixed, so the strip means the same thing
@@ -99,6 +99,26 @@ export function LearnedOverview(props: {
           );
         })}
       </div>
+
+      {/* Is any of it doing anything. Hidden until a round running the counters
+          has judged at least one entry — a row of zeroes would read as "none of
+          it works" when it actually means "nobody has looked". */}
+      {hasVerdicts(props.data.entries) && (
+        <div className="kinds vd">
+          <span className="kd">
+            {t("helped")}
+            <span className="c">{s.verdicts.helped}</span>
+          </span>
+          <span className={s.verdicts.hindered === 0 ? "kd z" : "kd"}>
+            {t("got in the way")}
+            <span className="c">{s.verdicts.hindered}</span>
+          </span>
+          <span className={s.verdicts.unjudged === 0 ? "kd z" : "kd"}>
+            {t("not judged yet")}
+            <span className="c">{s.verdicts.unjudged}</span>
+          </span>
+        </div>
+      )}
 
       {/* The one chart. Its reading is the gap: learning that did not last. */}
       <LearnedCurve stats={s} />

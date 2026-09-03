@@ -37,8 +37,14 @@ function EntryDetail(props: {
     })
     .filter((x): x is { l: LessonRecord; ref: NonNullable<ReturnType<typeof parseChange>> } => x !== null);
   const revisions = (e.version ?? 1) - 1;
-  const head = [t(e.kind), e.owner ?? t("for every workspace"), e.path, revisions > 0 ? t("revised ×{n}", { n: revisions }) : null]
-    .filter((p): p is string => p !== null && p !== undefined && p !== "");
+  const head = [
+    t(e.kind),
+    e.owner ?? t("for every workspace"),
+    e.path,
+    revisions > 0 ? t("revised ×{n}", { n: revisions }) : null,
+    (e.helpful ?? 0) > 0 ? t("helped ×{n}", { n: e.helpful ?? 0 }) : null,
+    (e.harmful ?? 0) > 0 ? t("got in the way ×{n}", { n: e.harmful ?? 0 }) : null,
+  ].filter((p): p is string => p !== null && p !== undefined && p !== "");
 
   return (
     <div className="edetail" style={{ marginTop: 0 }}>

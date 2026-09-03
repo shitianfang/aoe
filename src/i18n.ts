@@ -380,6 +380,12 @@ const ZH: Record<string, string> = {
   "changed nothing": "其中没改动",
   "{n} rounds": "{n} 次",
   "where it came from": "怎么来的",
+  /* whether an entry is earning its place — counted at refine time, not at load */
+  "helped ×{n}": "帮上忙 {n} 次",
+  "got in the way ×{n}": "帮倒忙 {n} 次",
+  helped: "帮上忙",
+  "got in the way": "帮倒忙",
+  "not judged yet": "还没评过",
   /* the yield curve: everything ever written, against what is still standing */
   "written versus still standing": "学到的与还留着的",
   written: "学到",
@@ -405,6 +411,7 @@ const ZH: Record<string, string> = {
   "{who} is writing": "{who} 正在写",
   "{n} versions kept": "留了 {n} 版",
   "{n} takes to pick from": "{n} 版方案待选",
+  "click to shrink": "点一下缩回",
 
   /* inspector */
   "check-in": "定时跟进",

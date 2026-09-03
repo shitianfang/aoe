@@ -6,3 +6,7 @@ release/
 .DS_Store
 .claude/
 aoe-ui-redesign.html
+
+# screenshots dropped in the repo root while working — the shared checkout
+# gets committed with `git add -A`, and this repo is public
+/*.png

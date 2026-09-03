@@ -154,6 +154,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .kinds .kd { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--t2); }
 .kinds .kd .c { font-family: var(--mono); font-size: 11px; color: var(--t1); }
 .kinds .kd.z, .kinds .kd.z .c { color: var(--t3); }
+/* the verdict row sits under the composition row and reads as its sibling */
+.kinds.vd { margin-top: 7px; }
 /* Written versus still standing, one point per round. Step segments, hairline
    baseline, no grid, no legend box — the two lines are labelled at their ends.
    The gap between them is the reading: learning that did not survive. */
@@ -554,7 +556,11 @@ body.resizing iframe { pointer-events: none; }
    square language the agents column already speaks (filled = done, pulsing
    green = running, red = failed), and the row is left as one quiet line of
    machine text hanging off the helper's spine. */
-.transcript .ev.step { padding: 3px 0; border: 0; background: none; }
+/* Top-aligned, not centred: when a code line wraps, centring drops the diamond
+   into the gutter between the two lines and the marker column stops being a
+   column. It sits on the first line's centre instead, wherever the row ends. */
+.transcript .ev.step { padding: 3px 0; border: 0; background: none; align-items: start; }
+.transcript .ev.step .ic, .transcript .ev.step .rt { margin-top: 3px; }
 .transcript .ev.step strong { color: var(--t2); }
 .transcript .ev.step .tn { color: var(--t3); }
 .transcript .ev.step .tn::after { content: " · "; }
@@ -664,7 +670,9 @@ body.resizing iframe { pointer-events: none; }
 .vgrid { display: grid; gap: 12px; }
 .pstat { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; font-family: var(--mono); font-size: 9px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
 .pstat .dot { width: 6px; height: 6px; background: var(--green); }
-.vbox { min-width: 0; border: 1px solid var(--hair-hi); background: var(--win); }
+.vbox { min-width: 0; border: 1px solid var(--hair-hi); background: var(--win); text-align: left; cursor: zoom-in; }
+.vbox.big { cursor: zoom-out; }
+.vbox:focus-visible { outline: 1px solid var(--t1); outline-offset: 1px; }
 .vbox .vh { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 9px; color: var(--t3); }
 .vbox .vh b { color: var(--t1); }
 .vbox .vempty { padding: 14px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
@@ -673,7 +681,9 @@ body.resizing iframe { pointer-events: none; }
 /* The page is taken out of flow so its logical size can never push the box
    wider than the column — the box measures the column, the page scales to it. */
 .vbox .vshell { position: relative; width: 100%; overflow: hidden; background: #fff; }
-.vbox .vpage { position: absolute; top: 0; left: 0; border: 0; background: #fff; transform-origin: top left; }
+/* The projection is a picture of the page, not the page: clicks belong to the
+   card (zoom), never to the document inside it. */
+.vbox .vpage { position: absolute; top: 0; left: 0; border: 0; background: #fff; transform-origin: top left; pointer-events: none; }
 .vbox .vframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
 .vbox .vimg { display: block; max-width: 100%; }
 .between { padding-top: 16px; }

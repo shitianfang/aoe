@@ -82,8 +82,15 @@ export function LearnedColumn(props: {
   const entryRow = (e: HarnessEntry) => {
     const sel: LearnedSel = { owner: e.owner, id: e.id, what: "entry" };
     const hit = on(sel, "entry");
-    const meta = [t(e.kind), e.owner, (e.version ?? 1) > 1 ? t("revised ×{n}", { n: (e.version ?? 1) - 1 }) : null]
-      .filter((p): p is string => p !== null && p !== "");
+    // Absent counters are not zero — they mean no round has judged this entry —
+    // so the row says nothing rather than reporting a zero it cannot stand behind.
+    const meta = [
+      t(e.kind),
+      e.owner,
+      (e.version ?? 1) > 1 ? t("revised ×{n}", { n: (e.version ?? 1) - 1 }) : null,
+      (e.helpful ?? 0) > 0 ? t("helped ×{n}", { n: e.helpful ?? 0 }) : null,
+      (e.harmful ?? 0) > 0 ? t("got in the way ×{n}", { n: e.harmful ?? 0 }) : null,
+    ].filter((p): p is string => p !== null && p !== "");
     return (
       <button
         key={`e-${e.owner ?? "*"}-${e.id}`}

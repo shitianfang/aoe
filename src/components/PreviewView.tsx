@@ -28,10 +28,9 @@ const BOX_H = 420;
  *  instead of a tall box with dead air under a 28% projection. */
 const boxHeight = (w: number) => (w > 0 ? Math.min(BOX_H, Math.max(180, Math.round(w * 1.35))) : BOX_H);
 const pageWidthFor = (w: number) => (w >= 620 ? 1100 : w >= 380 ? 900 : w >= 240 ? 720 : 480);
-/** Room one card needs before another one is worth adding. */
+/** Room one card needs; the grid fits as many as that allows and wraps the
+ *  rest, so a file that keeps getting new versions keeps stacking them. */
 const CARD_MIN = 140;
-/** Cards never go past four, however wide the pane gets. */
-const MAX_CARDS = 4;
 
 /** Width of an element as it changes: `ref` on the node, width in px (0 until
  *  it is mounted and measured). */
@@ -56,6 +55,9 @@ function VersionPane(props: {
   version: PreviewVersion | null;
   current: boolean;
   head?: string;
+  /** Click zooms this card to the full pane, and clicking it again returns. */
+  onZoom?: () => void;
+  zoomed?: boolean;
 }) {
   const t = useT();
   const { file, version } = props;
@@ -108,7 +110,18 @@ function VersionPane(props: {
   const zoom = kind === "html" && scale < 1 ? `${Math.round(scale * 100)}% · ` : "";
 
   return (
-    <div className="vbox">
+    <div
+      className={props.zoomed ? "vbox big" : "vbox"}
+      onClick={props.onZoom}
+      role={props.onZoom ? "button" : undefined}
+      tabIndex={props.onZoom ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (props.onZoom && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          props.onZoom();
+        }
+      }}
+    >
       <div className="vh">
         <b>{vlabel ? (props.current && !props.head ? `${vlabel} · ${t("current")}` : vlabel) : t("live")}</b>
         <span>
@@ -134,9 +147,18 @@ export function PreviewView(props: {
   // about this pane's width, not about how many versions exist.
   const [measure, width] = useWidth();
   const [row, setRow] = useState(true);
+  /** Version label (or file path, for a variant row) shown alone at full
+   *  width. Cleared when the file changes — a zoom belongs to what you were
+   *  looking at. */
+  const [zoomKey, setZoomKey] = useState<string | null>(null);
   const file =
     (props.selectedPath ? props.files.find((f) => f.path === props.selectedPath) : undefined) ??
     props.files[0];
+
+  const filePath = file?.path ?? null;
+  useEffect(() => {
+    setZoomKey(null);
+  }, [filePath]);
 
   if (!file) {
     return (
@@ -150,40 +172,46 @@ export function PreviewView(props: {
     );
   }
 
-  // How many cards this pane can carry: room for one each, four at most, and
-  // one when the row is off. Then what the cards are — the file's own last
-  // versions if it has several, otherwise one card per sibling file, which is
-  // how four variants written for an alignment round line up.
-  const fit = row ? Math.max(1, Math.min(MAX_CARDS, Math.floor((width || CARD_MIN) / CARD_MIN))) : 1;
-  const versions = file.versions.slice(-fit);
-  // The list arrives newest-first; a variant row reads left to right in the
-  // order the agent produced them.
-  const siblings =
-    file.versions.length > 1 || props.files.length < 2 ? [] : props.files.slice(0, fit).reverse();
-  const cards: Array<{ file: PreviewFile; version: PreviewVersion | null; head?: string }> =
+  // Every version stacks, newest first — a run that keeps publishing keeps
+  // adding cards, and the grid wraps them. Variants (one version each, several
+  // files) stack the same way: the newest take leads.
+  const versions = file.versions;
+  const siblings = file.versions.length > 1 || props.files.length < 2 ? [] : props.files;
+  const all: Array<{ key: string; file: PreviewFile; version: PreviewVersion | null; head?: string }> =
     siblings.length > 1
       ? siblings.map((f) => ({
+          key: f.path,
           file: f,
           version: f.versions[f.versions.length - 1] ?? null,
           head: f.label ?? f.name,
         }))
-      : versions.map((v, i) => ({
+      : [...versions].reverse().map((v, ri) => {
+          const i = versions.length - 1 - ri;
+          return {
+          key: v.label,
           file,
           version: v,
           // The two newest get words instead of numbers: that is how the user
-          // reads the row — what it is now, and what it was before.
+          // reads the stack — what it is now, and what it was before.
           head:
             i === versions.length - 1
               ? t("current")
               : i === versions.length - 2 && versions.length > 1
                 ? t("previous")
                 : undefined,
-        }));
-  // The event list belongs to a run of versions, not to a variant row.
+          };
+        });
+  // One card alone: a zoomed one if it is still in the list, else the newest.
+  const zoomed = zoomKey ? all.find((c) => c.key === zoomKey) : undefined;
+  const cards = zoomed ? [zoomed] : row ? all : all.slice(0, 1);
+  // The events belong to the step into the card being looked at: the zoomed
+  // version and the one before it, or the newest pair. A variant row has no
+  // such step.
+  const shownIdx = zoomed ? versions.findIndex((v) => v.label === zoomed.key) : versions.length - 1;
   const [from, to] =
-    siblings.length > 1 || versions.length < 2
+    siblings.length > 1 || versions.length < 2 || shownIdx < 1
       ? [undefined, undefined]
-      : [versions[0], versions[versions.length - 1]];
+      : [versions[shownIdx - 1], versions[shownIdx]];
 
   // Timeline events that happened between the two shown snapshots (real
   // tool/lesson rows only; items without a real timestamp are left out).
@@ -226,6 +254,7 @@ export function PreviewView(props: {
               {siblings.length > 1
                 ? t("{n} takes to pick from", { n: String(siblings.length) })
                 : t("{n} versions kept", { n: String(file.versions.length) })}
+              {zoomed && ` · ${t("click to shrink")}`}
             </>
           )}
         </div>
@@ -237,23 +266,39 @@ export function PreviewView(props: {
           {file.live && <span className="live">● {t("live")}</span>}
           {(file.versions.length > 1 || props.files.length > 1) && (
             <span className="mode">
-              <button className={row ? "btn" : "btn off"} onClick={() => setRow((r) => !r)}>
+              <button
+                className={row && !zoomed ? "btn" : "btn off"}
+                onClick={() => {
+                  setZoomKey(null);
+                  setRow((r) => (zoomed ? true : !r));
+                }}
+              >
                 {t("side by side")}
               </button>
             </span>
           )}
         </div>
-        <div className="vgrid" style={{ gridTemplateColumns: `repeat(${Math.max(cards.length, 1)}, minmax(0, 1fr))` }}>
+        <div
+          className="vgrid"
+          style={{
+            gridTemplateColumns:
+              cards.length === 1
+                ? "minmax(0, 1fr)"
+                : `repeat(auto-fill, minmax(${CARD_MIN}px, 1fr))`,
+          }}
+        >
           {cards.length === 0 ? (
             <VersionPane file={file} version={null} current />
           ) : (
-            cards.map((c, i) => (
+            cards.map((c) => (
               <VersionPane
-                key={c.head ? `${c.file.path}-${c.head}` : `${c.file.path}-${c.version?.label}`}
+                key={`${c.file.path}-${c.key}`}
                 file={c.file}
                 version={c.version}
-                current={i === cards.length - 1}
+                current={c.key === all[0]?.key}
                 head={c.head}
+                zoomed={Boolean(zoomed)}
+                onZoom={() => setZoomKey(zoomed ? null : c.key)}
               />
             ))
           )}

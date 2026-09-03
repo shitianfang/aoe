@@ -108,6 +108,13 @@ class HarnessEntry:
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
     version: int = 1
+    # How often a refinement round judged this entry to have carried weight, and
+    # how often it judged the entry to have got in the way. Declared here because
+    # _ENTRY_FIELDS filters every load to this dataclass — an entry field the
+    # kernel does not know about is dropped the next time it writes the file.
+    helpful: int = 0
+    harmful: int = 0
+    last_used_at: str = ""
 
 
 @dataclass

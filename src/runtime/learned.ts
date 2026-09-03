@@ -39,6 +39,12 @@ export interface HarnessEntry {
   updated_at?: string;
   /** Bumped on every update — 1 means it has never been revised. */
   version?: number;
+  /** How often a refinement round judged this entry to have carried weight, and
+   *  how often it judged the entry to have got in the way. Absent means never
+   *  asked — which is not the same as zero, and must not be rendered as zero. */
+  helpful?: number;
+  harmful?: number;
+  last_used_at?: string;
 }
 
 export type EntryKind = "prompt" | "memory" | "skill" | "subagent";
@@ -113,6 +119,13 @@ export function isNoop(r: LessonRecord): boolean {
 
 /** What the overview panel counts. All of it comes out of one pull — no extra
  *  bridge calls, no core change. */
+/** Whether any entry carries a judgement yet. Until a daemon running the
+ *  counters has refined at least once, every entry is unjudged and the whole
+ *  verdict line stays hidden rather than reporting a wall of zeroes. */
+export function hasVerdicts(entries: HarnessEntry[]): boolean {
+  return entries.some((e) => e.helpful !== undefined || e.harmful !== undefined);
+}
+
 export interface HarnessStats {
   /** Entries alive right now, by kind, in ENTRY_KINDS order. */
   byKind: Array<{ kind: EntryKind; n: number }>;
@@ -135,6 +148,9 @@ export interface HarnessStats {
   curve: Array<{ k: number; written: number; alive: number; at: string; label: string }>;
   /** Newest round timestamp, or "" when nothing has run. */
   last: string;
+  /** Entries a round has vouched for, entries a round has blamed, and entries
+   *  no round has judged either way. */
+  verdicts: { helped: number; hindered: number; unjudged: number };
 }
 
 /** Local YYYY-MM-DD — buckets must follow the reader's midnight, not UTC's. */
@@ -223,6 +239,11 @@ export function harnessStats(data: HarnessData): HarnessStats {
     })),
     days,
     last: data.lessons[0]?.created_at ?? "",
+    verdicts: {
+      helped: data.entries.filter((e) => (e.helpful ?? 0) > 0).length,
+      hindered: data.entries.filter((e) => (e.harmful ?? 0) > 0).length,
+      unjudged: data.entries.filter((e) => (e.helpful ?? 0) === 0 && (e.harmful ?? 0) === 0).length,
+    },
   };
 }
 

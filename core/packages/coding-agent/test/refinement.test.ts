@@ -140,6 +140,126 @@ function seedEntry(state: HarnessState, kind: RefinementKind, id = `${kind}_entr
 	);
 }
 
+describe("entry usage counters", () => {
+	it("counts a helpful mark on an existing entry and stamps when it was judged", () => {
+		const state = loadHarnessState(makeTempDir(), "local");
+		seedEntry(state, "memory", "keep_reports_short");
+
+		applyRefinementProposal(
+			state,
+			{
+				...proposal("marked it", []),
+				used: [{ id: "keep_reports_short", tag: "helpful" }],
+			},
+			{ id: "refine_mark_1" },
+		);
+
+		const entry = state.entries.memory.keep_reports_short;
+		expect(entry.helpful).toBe(1);
+		expect(entry.harmful).toBeUndefined();
+		expect(entry.last_used_at).toBeTruthy();
+	});
+
+	it("keeps counting across rounds, and counts the two tags apart", () => {
+		const state = loadHarnessState(makeTempDir(), "local");
+		seedEntry(state, "prompt", "align_first");
+
+		for (const tag of ["helpful", "helpful", "harmful"] as const) {
+			applyRefinementProposal(
+				state,
+				{ ...proposal("marked it", []), used: [{ id: "align_first", tag }] },
+				{ id: `refine_mark_${tag}_${Math.random()}` },
+			);
+		}
+
+		expect(state.entries.prompt.align_first.helpful).toBe(2);
+		expect(state.entries.prompt.align_first.harmful).toBe(1);
+	});
+
+	it("carries the counters through an update — a revision is not a fresh start", () => {
+		const state = loadHarnessState(makeTempDir(), "local");
+		seedEntry(state, "memory", "align_first");
+		applyRefinementProposal(
+			state,
+			{ ...proposal("marked it", []), used: [{ id: "align_first", tag: "helpful" }] },
+			{ id: "refine_mark_2" },
+		);
+
+		applyRefinementProposal(
+			state,
+			proposal("revised it", [
+				{ action: "update", kind: "memory", id: "align_first", title: "Align first", content: "rewritten" },
+			]),
+			{ id: "refine_update_1" },
+		);
+
+		const entry = state.entries.memory.align_first;
+		expect(entry.version).toBe(2);
+		expect(entry.content).toBe("rewritten");
+		expect(entry.helpful).toBe(1);
+	});
+
+	it("drops marks that name nothing in the store", () => {
+		const state = loadHarnessState(makeTempDir(), "local");
+		seedEntry(state, "memory", "real_entry");
+
+		const result = applyRefinementProposal(
+			state,
+			{
+				...proposal("marked a ghost", []),
+				used: [{ id: "no_such_entry", tag: "helpful" }],
+			},
+			{ id: "refine_mark_3" },
+		);
+
+		expect(result.appliedEdits).toHaveLength(0);
+		expect(state.entries.memory.real_entry.helpful).toBeUndefined();
+	});
+
+	it("survives a save/load round trip", () => {
+		const dir = makeTempDir();
+		const state = loadHarnessState(dir, "local");
+		seedEntry(state, "skill", "blind_review");
+		applyRefinementProposal(
+			state,
+			{ ...proposal("marked it", []), used: [{ id: "blind_review", tag: "harmful" }] },
+			{ id: "refine_mark_4" },
+		);
+		saveHarnessState(dir, state);
+
+		expect(loadHarnessState(dir, "local").entries.skill.blind_review.harmful).toBe(1);
+	});
+
+	it("keeps only well-formed marks from untrusted model output", () => {
+		const normalized = normalizeRefinementProposal({
+			summary: "s",
+			rationale: "r",
+			expectedOutcome: "e",
+			edits: [],
+			used: [
+				{ id: "good", tag: "helpful" },
+				{ id: "good", tag: "helpful" }, // repeated: must not run the counter up
+				{ id: "bad_tag", tag: "wonderful" },
+				{ id: "", tag: "helpful" },
+				{ tag: "harmful" },
+				"nonsense",
+				{ id: "also_good", tag: "harmful" },
+			],
+		});
+
+		expect(normalized.used).toEqual([
+			{ id: "good", tag: "helpful" },
+			{ id: "also_good", tag: "harmful" },
+		]);
+	});
+
+	it("reads a proposal with no marks as no marks", () => {
+		expect(normalizeRefinementProposal({ summary: "s", rationale: "r", expectedOutcome: "e", edits: [] }).used).toEqual(
+			[],
+		);
+	});
+});
+
 describe("harness refinement", () => {
 	it("rejects an edit when the target entry changed after planning", () => {
 		const harnessStateDir = makeTempDir();

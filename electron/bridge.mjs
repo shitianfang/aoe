@@ -4,7 +4,8 @@
  * renderer can reach from a browser or the Electron renderer:
  *
  *   GET  /bridge/events   SSE stream of session events + snapshots
- *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine", text? }
+ *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine"
+ *                               |"heartbeat_set"|"heartbeat_update"|..., text? }
  *   GET  /bridge/health   { connected, master }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -343,6 +344,18 @@ async function handleCmd(body) {
       const receipt = await masterConn.sendAgentMessage(String(body.target ?? ""), String(body.text ?? ""));
       return { receipt: { deliveryStatus: receipt?.deliveryStatus ?? "queued" } };
     }
+    case "heartbeat_set":
+      // schedule like "every 30m"; mode "steer" | "follow_up" (SDK default applies if omitted)
+      return {
+        job: await masterConn.setHeartbeat(
+          String(body.schedule ?? ""),
+          String(body.text ?? ""),
+          body.mode ? String(body.mode) : undefined,
+        ),
+      };
+    case "heartbeat_update":
+      // action "pause" | "resume" | "clear" — master's own heartbeat only
+      return { job: (await masterConn.updateHeartbeat(String(body.action ?? ""))) ?? null };
     case "stop_helper":
       return { cancelled: await masterConn.cancelRlmChild(String(body.target ?? "")) };
     case "remove_helper": {

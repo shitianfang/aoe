@@ -11,18 +11,21 @@ Everything under core/ is a vendored fork of prime-agent:
 
   Upstream:  https://github.com/PrimeIntellect-ai/prime-agent
   Fork:      https://github.com/shitianfang/prime-agent
-  Vendored:  commit 55fbf4f909a83ead490ea10e48a4cf54ce27cb6c
+  Vendored:  commit fcc7f02541a77f61edecbcbb9a9f9fa2895bf128
   License:   MIT — Copyright (c) 2025 Mario Zechner
                    Copyright (c) 2026 Prime Intellect
              Full text retained at core/LICENSE.
 
-The fork carries five changes not present upstream at the time of vendoring:
+The fork carries eight changes not present upstream at the time of vendoring:
 
   - preview.publish — agents declare work products as a host request
   - machine-readable status for refinements, autonomy, children, auto-refine
   - autonomous status mirrored on connection state
   - limit overrides on /autonomous on
   - the refiner emits a concise display title for each lesson
+  - root agents switch autonomous mode through a bundled skill
+  - the limit-smuggling guard closed on the key half, mid-turn hold proven
+  - autonomous.enable payloads read only the named limit keys
 
 These raise the daemon schema from 25 to 27. They are offered upstream; the
 subtree is pulled forward with `npm run core:pull`.

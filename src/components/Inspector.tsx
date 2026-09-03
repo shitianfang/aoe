@@ -483,15 +483,21 @@ export function Inspector(props: {
           );
         })()}
 
-      {/* Who drives sits in the header above; this panel is the objective itself. */}
+      {/* Who drives sits in the header above; this panel is the objective itself.
+          Its heading is unconditional. It used to exist only as a "none" row, so
+          the one word naming what the quote below IS went missing exactly when
+          there was an objective to name. The state rides the heading's chip the
+          way Unattended's does — which also drops a row from the active panel. */}
       <div className="panel">
+        <div className="phead">
+          <span>{t("Objective")}</span>
+          <code className={goal?.status === "active" ? "ok" : undefined}>
+            {goalActive ? (goal?.status ? t(goal.status) : t("on")) : t("none")}
+          </code>
+        </div>
         {goalActive ? (
           <>
             <div className="rule">“{goal?.objective}”</div>
-            <div className="kv">
-              <span className="k">{t("Status")}</span>
-              <span className="v ok">{goal?.status ? t(goal.status) : ""}</span>
-            </div>
             {typeof goal?.tokenBudget === "number" && goal.tokenBudget > 0 && (
               <div className="kv">
                 <span className="k">{t("Budget")}</span>
@@ -523,10 +529,6 @@ export function Inspector(props: {
           </>
         ) : (
           <>
-            <div className="kv">
-              <span className="k">{t("Objective")}</span>
-              <span className="v faint">{t("none")}</span>
-            </div>
             <div className="rule">
               {online
                 ? t("{name} acts when you message it. An objective keeps it going on its own.", {

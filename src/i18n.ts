@@ -366,7 +366,7 @@ const ZH: Record<string, string> = {
   "driven by objective": "目标推进中",
   Status: "状态",
   Budget: "预算",
-  Objective: "开启目标",
+  Objective: "目标",
   none: "无",
   resume: "继续",
   pause: "暂停",
@@ -385,7 +385,7 @@ const ZH: Record<string, string> = {
   "Turns on with these limits. It steps in only after a failed check or a turn without evidence.":
     "按下面这些上限开启。仅在检查失败、或某轮没有交付证据时才续跑。",
   "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.":
-    "仅在检查失败、或某轮没有证据时续跑;触及任一上限即停止。目标不受影响,继续推进。",
+    "仅在检查失败、或某轮没有证据时续跑；触及任一上限即停止。目标不受影响，继续推进。",
   Continued: "续跑次数",
   Turns: "轮数",
   Tokens: "用量",

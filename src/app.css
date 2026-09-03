@@ -556,6 +556,7 @@ body.resizing iframe { pointer-events: none; }
 .panel { padding: 13px 14px; border-bottom: 1px dashed var(--hair); }
 .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); }
 .phead code { font-family: var(--mono); color: var(--t1); }
+.phead code.ok { color: var(--green); }
 .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 12px; }
 .kv .k { color: var(--t2); }
 .kv .v { font-family: var(--mono); font-size: 10px; color: var(--t1); }
@@ -627,12 +628,55 @@ html[lang="zh-CN"] .learn .btn,
 html[lang="zh-CN"] .lesson .btn {
   font-family: var(--sans); font-size: 10px; letter-spacing: 0; text-transform: none;
 }
-/* Same reason, one row over: this button sits next to .lauto, so it takes
-   .lauto's size rather than the mono action scale. */
-html[lang="zh-CN"] .insp .selfev .btn {
+/* ---- right rail (inspector), same block, same reason ----
+   The rail had three different sizes all acting as a section title: .phead at
+   8.5px tracked mono (the faintest thing on the panel once it is hanzi), a
+   .kv .k data-row label standing in for the objective's missing heading at
+   12px, and the row labels under each heading — also 12px — out-shouting the
+   heading above them. One scale, top down: heading, then row label, then body.
+   The heading is the one place the muted ink is dropped: four two-character
+   names are the panel's spine, and you have to be able to scan them without
+   reading anything else. */
+html[lang="zh-CN"] .insp .phead {
+  font-family: var(--sans); font-size: 12px; font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: var(--t1);
+}
+html[lang="zh-CN"] .insp .phead code {
+  font-family: var(--sans); font-size: 11px; font-weight: 400; letter-spacing: 0;
+}
+html[lang="zh-CN"] .insp .kv .k { font-size: 11.5px; }
+/* The remaining 8–8.5px captions the block above never reached: the driver
+   line in the subject header and the unattended limit labels. */
+html[lang="zh-CN"] .insp .subj .st,
+html[lang="zh-CN"] .insp .lims span {
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
+}
+/* Values, inputs and the interval select keep mono — the digits in them are
+   what makes the column scannable, and their hanzi already falls off the mono
+   face onto the CJK fallback. Size only. */
+html[lang="zh-CN"] .insp .kv .v,
+html[lang="zh-CN"] .insp .iin,
+html[lang="zh-CN"] .insp .lims input,
+html[lang="zh-CN"] .insp .hbnew select { font-size: 11px; }
+/* Every button in the rail, not just self-evolution's: they sit beside sans
+   labels, so they take that size rather than the mono action scale. Without
+   this, 学习一次 was legible and 设定 / 暂停 / 清除 beside it were not. */
+html[lang="zh-CN"] .insp .btn {
   font-family: var(--sans); font-size: 11px; letter-spacing: 0; text-transform: none;
   white-space: nowrap; /* the row is a row — a short label must not wrap it open */
 }
+html[lang="zh-CN"] .insp .btn.xs { font-size: 10.5px; padding: 2px 5px; }
+/* A re-entry row is label + when + ops, and the label is the flexing one — at
+   the sans sizes above, "排期 · @daily" lost the argument and ellipsized to
+   "排期 · @d…", which is no schedule at all. Let the ops wrap to their own line
+   instead; the rail is width-draggable, so the row has to survive any width. */
+html[lang="zh-CN"] .insp .kv.hbrow { flex-wrap: wrap; row-gap: 4px; }
+/* .k flexes from a zero basis, so it ellipsizes before the line ever overflows
+   — which is why it was the label, not the ops, that gave way. Pin it to its
+   content and let the ops wrap instead; max-width keeps the escape hatch for a
+   genuinely long cron expression, which ellipsizes on a line of its own. */
+html[lang="zh-CN"] .insp .kv.hbrow .k { flex: 0 0 auto; max-width: 100%; }
+html[lang="zh-CN"] .insp .kv.hbrow .hbops { margin-left: auto; }
 
 .send:focus-visible, .a:focus-visible, .theme:focus-visible, .btn:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 2px; }
 ::-webkit-scrollbar { width: 6px; }

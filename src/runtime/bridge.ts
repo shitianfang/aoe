@@ -4,7 +4,7 @@
  * hosted by Electron main.
  */
 
-import type { AutoRefineInfo, AutonomousInfo, GoalInfo, HelperFeedEvent } from "../types";
+import type { AutoRefineInfo, AutonomousInfo, GoalInfo, HelperFeedEvent, RootAgent } from "../types";
 
 export interface BridgeHello {
   connected: boolean;
@@ -45,7 +45,10 @@ export type BridgeMessage =
       state?: { goal?: unknown; autonomous?: unknown; autoRefine?: unknown };
     }
   | { type: "root_event"; root: string; event: Record<string, unknown> }
-  | { type: "root_working"; root: string; text: string };
+  | { type: "root_working"; root: string; text: string }
+  // Live other-roots roster (daemon capability agent_roster); replaces the
+  // 30s /bridge/agents polling while frames keep arriving.
+  | { type: "roster"; agents: RootAgent[] };
 
 // Packaged app: Electron main hosts the daemon bridge and hands its port over
 // via the page query. Dev: same-origin Vite proxy.

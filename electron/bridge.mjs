@@ -413,8 +413,10 @@ function slimHistory(messages) {
 }
 
 /** Root sessions beyond this bridge's masters (rlmDepth 0, non-master names),
- *  read-only in the Agents column. */
+ *  read-only in the Agents column. Served from the live roster cache when the
+ *  daemon pushes roster_update; the list request is the older-daemon fallback. */
 async function agentsPayload() {
+  if (rosterLive) return { agents: rosterAgents() };
   if (!daemonClient) return { agents: [] };
   const listed = await daemonClient.request({ type: "list", all: true });
   if (!listed.success) throw new Error(listed.error || "list failed");
@@ -425,6 +427,98 @@ async function agentsPayload() {
       state: s.isSessionActive ? (s.isStreaming ? "running" : "idle") : "inactive",
     }));
   return { agents };
+}
+
+/* ---- live agent roster (capability agent_roster) ----
+ * One roster_subscribe on the control connection replaces the renderer's 30s
+ * /bridge/agents polling: the daemon pushes roster_update on every membership
+ * or status change, and entries cover subagents too — so another root's
+ * helpers ("agent team") render without attaching to anything. Master's own
+ * helpers keep riding snapshot.children, which is richer (selectable ids,
+ * terminal detail); its subagent roster rows resolve to no listed root and
+ * drop out naturally. */
+/** @type {Map<string, any>} */ const rosterEntries = new Map();
+let rosterLive = false;
+/** Non-null while a subscribe is in flight; buffers pushes racing the reply. */
+/** @type {any[]|null} */ let rosterPending = null;
+let rosterListening = false;
+let rosterEmitScheduled = false;
+
+function displayName(s) {
+  return s.sessionName || String(s.firstMessage ?? "").slice(0, 40) || "unnamed";
+}
+
+/** Thin renderer shape: roots with their kids joined by parent session id. */
+function rosterAgents() {
+  const roots = [];
+  const byParentKey = new Map();
+  for (const e of rosterEntries.values()) {
+    const s = e.summary ?? {};
+    if (s.runtimeKind === "subagent" || (s.rlmDepth ?? 0) !== 0) continue;
+    if (String(s.sessionName ?? "").startsWith("master")) continue;
+    const rec = { name: displayName(s), state: e.status ?? "inactive", kids: [] };
+    roots.push(rec);
+    if (s.sessionId) byParentKey.set(s.sessionId, rec);
+    if (s.activeSessionId) byParentKey.set(s.activeSessionId, rec);
+  }
+  for (const e of rosterEntries.values()) {
+    const s = e.summary ?? {};
+    if (s.runtimeKind !== "subagent") continue;
+    const parent = byParentKey.get(s.parentSessionId) ?? byParentKey.get(s.parentActiveSessionId);
+    if (!parent) continue;
+    parent.kids.push({ name: displayName(s), state: e.status ?? "inactive" });
+  }
+  for (const r of roots) if (r.kids.length === 0) delete r.kids;
+  return roots;
+}
+
+/** Coalesce a burst of roster pushes into one SSE frame per microtask. */
+function broadcastRoster() {
+  if (rosterEmitScheduled) return;
+  rosterEmitScheduled = true;
+  queueMicrotask(() => {
+    rosterEmitScheduled = false;
+    broadcast({ type: "roster", agents: rosterAgents() });
+  });
+}
+
+function applyRosterUpdate(m) {
+  if (m.resync) rosterEntries.clear();
+  for (const e of m.changed ?? []) rosterEntries.set(e.agentId, e);
+  for (const id of m.removed ?? []) rosterEntries.delete(id);
+}
+
+async function subscribeRoster() {
+  if (!daemonClient?.supportsServerCapability?.("agent_roster")) return;
+  if (!rosterListening) {
+    rosterListening = true;
+    daemonClient.onMessage((m) => {
+      if (m?.type === "roster_update") {
+        if (rosterPending) rosterPending.push(m);
+        else {
+          applyRosterUpdate(m);
+          broadcastRoster();
+        }
+      } else if (m?.type === "daemon_hello" && rosterLive) {
+        // Transport reconnected under us; the server-side subscription died
+        // with the old connection. Resubscribe on the fresh one.
+        rosterLive = false;
+        subscribeRoster().catch(() => undefined);
+      }
+    });
+  }
+  rosterPending = [];
+  try {
+    const r = await daemonClient.request({ type: "roster_subscribe" });
+    if (!r?.success) return; // renderer polling stays as the fallback
+    rosterEntries.clear();
+    for (const e of r.data?.roster ?? []) rosterEntries.set(e.agentId, e);
+    for (const m of rosterPending) applyRosterUpdate(m);
+    rosterLive = true;
+    broadcastRoster();
+  } finally {
+    rosterPending = null;
+  }
 }
 
 function canConnect(socketPath) {
@@ -476,6 +570,9 @@ async function connectDaemon() {
   } catch {
     serverCaps = [];
   }
+  // Roster push is independent of the master attach; don't let either block
+  // the other, and a subscribe failure only means polling stays.
+  subscribeRoster().catch((e) => console.error("[bridge] roster subscribe failed:", e?.message));
   await attachMaster();
 }
 
@@ -1468,6 +1565,9 @@ const server = http.createServer(async (req, res) => {
     res.write(`data: ${JSON.stringify({ type: "hello", daemon })}\n\n`);
     if (daemon.connected && lastSnapshot) {
       res.write(`data: ${JSON.stringify(lastSnapshot)}\n\n`);
+    }
+    if (rosterLive) {
+      res.write(`data: ${JSON.stringify({ type: "roster", agents: rosterAgents() })}\n\n`);
     }
     sseClients.add(res);
     req.on("close", () => sseClients.delete(res));

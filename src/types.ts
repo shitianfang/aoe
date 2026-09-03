@@ -86,11 +86,22 @@ export interface GoalInfo {
   continuationsUsed?: number;
 }
 
+/** One sub-agent of another root, straight from the daemon roster — a
+ *  read-only row in the Agents column (no session to select or message). */
+export interface RootKid {
+  name: string;
+  state: "running" | "idle" | "inactive";
+}
+
 /** Another root session on this daemon ("Other" in the Agents column,
- *  GET /bridge/agents) — selectable and conversable via the root_* bridge ops. */
+ *  GET /bridge/agents or the live roster push) — selectable and conversable
+ *  via the root_* bridge ops. A root with kids is an agent team. */
 export interface RootAgent {
   name: string;
   state: "running" | "idle" | "inactive";
+  /** Present only on roster-push daemons; master's own helpers keep riding
+   *  snapshot.children instead. */
+  kids?: RootKid[];
 }
 
 /** How much of a watched root's transcript we hold: "partial" = attached

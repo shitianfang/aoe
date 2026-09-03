@@ -480,30 +480,41 @@ export function App() {
     });
   }, []);
 
-  /** Re-pull the other-roots roster; a root gone from it falls back to master
-   *  (honest empty state — no invented rows, no stale selection or target). */
+  /** Reconcile a fresh other-roots roster into state; a root gone from it
+   *  falls back to master (honest empty state — no invented rows, no stale
+   *  selection or target). Fed by the daemon's roster push when it has the
+   *  agent_roster capability, by the polling fallback otherwise. */
+  const applyOthers = useCallback((others: RootAgent[]) => {
+    setState((s) => {
+      const has = (n: string | null) => n !== null && others.some((a) => a.name === n);
+      return reconcileSplit(
+        {
+          ...s,
+          others,
+          selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
+          target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
+        },
+        { roots: true },
+      );
+    });
+  }, []);
+  /** Last roster push, epoch ms — the poll tick stands down while pushes flow. */
+  const rosterAtRef = useRef(0);
   const refreshOthers = useCallback(async () => {
     try {
       const r = await fetch(bridgeUrl("/bridge/agents")).then((x) => x.json());
-      const others: RootAgent[] = Array.isArray(r.agents) ? (r.agents as RootAgent[]) : [];
-      setState((s) => {
-        const has = (n: string | null) => n !== null && others.some((a) => a.name === n);
-        return reconcileSplit(
-          {
-            ...s,
-            others,
-            selectedRoot: has(s.selectedRoot) ? s.selectedRoot : null,
-            target: s.target.kind === "root" && !has(s.target.name) ? { kind: "master" } : s.target,
-          },
-          { roots: true },
-        );
-      });
+      applyOthers(Array.isArray(r.agents) ? (r.agents as RootAgent[]) : []);
     } catch {
       /* bridge offline */
     }
-  }, []);
+  }, [applyOthers]);
   useEffect(() => {
-    const t = setInterval(refreshOthers, 30_000);
+    const t = setInterval(() => {
+      // Poll only when the push has gone quiet for three ticks — older daemon,
+      // failed subscribe, or a dead subscription; it self-heals either way.
+      if (Date.now() - rosterAtRef.current < 90_000) return;
+      refreshOthers();
+    }, 30_000);
     return () => clearInterval(t);
   }, [refreshOthers]);
 
@@ -1172,6 +1183,9 @@ export function App() {
         onRootEvent(m.root, m.event);
       } else if (m.type === "root_working") {
         setState((s) => ({ ...s, rootWorking: { ...s.rootWorking, [m.root]: m.text } }));
+      } else if (m.type === "roster") {
+        rosterAtRef.current = Date.now();
+        applyOthers(m.agents);
       } else if (m.type === "snapshot") {
         // The snapshot roster is authoritative: helpers can vanish (the agent
         // may delete its own). Merge by id, keep cached session ids, drop the
@@ -1215,7 +1229,7 @@ export function App() {
       }
     });
     return () => bridge.close();
-  }, [refreshOthers]);
+  }, [refreshOthers, applyOthers]);
 
   const setColumn = useCallback((column: ColumnView) => setState((s) => ({ ...s, column })), []);
   // Selecting an agent in the column never changes the composer target —

@@ -93,8 +93,10 @@ export function AgentsColumn(props: {
   const visibleChildren = props.children.filter((c) => ACTIVE.has(c.status) || showInactive);
   const inactiveCount = props.children.filter((c) => !ACTIVE.has(c.status)).length;
 
-  const nodes = useMemo(() => {
+  const { nodes, kin } = useMemo(() => {
     const map = new Map<string, Node>();
+    /** Real family for roster kids: kid node key -> its root's node key. */
+    const kin: Record<string, string> = {};
     const masterWord = props.master === "working" ? "running" : "idle";
     map.set("master", {
       key: "master",
@@ -146,8 +148,23 @@ export function AgentsColumn(props: {
         selectable: null,
         draggable: true,
       });
+      // Roster kids: another root's sub-agents, read-only rows (no session of
+      // ours to select or message) — a root with kids is an agent team.
+      (a.kids ?? []).forEach((k, i) => {
+        const key = `rk:${a.name}:${i}`;
+        kin[key] = `root:${a.name}`;
+        map.set(key, {
+          key,
+          label: k.name,
+          avatar: <BotAvatar seed={k.name} />,
+          tag: flavorTag(k.name, k.state),
+          state: statusIcon(k.state),
+          selectable: null,
+          draggable: false,
+        });
+      });
     });
-    return map;
+    return { nodes: map, kin };
   }, [
     props.master,
     props.children,
@@ -169,10 +186,11 @@ export function AgentsColumn(props: {
         if (g === "__top") return null;
         if (nodes.has(g)) return g; // stale targets fall through to the default
       }
+      if (kin[key] !== undefined) return kin[key]; // roster kid under its root
       if (key === "master" || key.startsWith("root:")) return null;
       return "master"; // real family: helpers sit under master
     },
-    [group, nodes],
+    [group, nodes, kin],
   );
 
   /** would `child under parent` loop? */
@@ -190,15 +208,17 @@ export function AgentsColumn(props: {
         return realParent(k);
       }
       function realParent(k: string): string | null {
+        if (kin[k] !== undefined) return kin[k];
         return k === "master" || k.startsWith("root:") ? null : "master";
       }
     },
-    [group, nodes],
+    [group, nodes, kin],
   );
 
   const drop = (childKey: string, parentKey: string | "__top") => {
     setDropOn(null);
     if (childKey === "master") return; // the commander stays pinned in this list
+    if (parentKey.startsWith("rk:")) return; // read-only roster kids take no drops
     if (childKey === parentKey) return;
     if (parentKey !== "__top" && wouldCycle(childKey, parentKey)) return;
     const next = { ...group, [childKey]: parentKey };
@@ -206,8 +226,10 @@ export function AgentsColumn(props: {
     saveJson(groupKey, next);
   };
 
-  const toggleFold = (key: string) => {
-    const next = { ...folded, [key]: !folded[key] };
+  /** Root teams start folded (one row, no matter the crew size); master stays
+   *  open — it is the workspace's own context. Toggles persist per workspace. */
+  const toggleFold = (key: string, current: boolean) => {
+    const next = { ...folded, [key]: !current };
     setFolded(next);
     saveJson(foldKey, next);
   };
@@ -217,7 +239,7 @@ export function AgentsColumn(props: {
 
   const renderNode = (n: Node, depth: number): React.ReactNode => {
     const kids = childrenOf(n.key);
-    const isFolded = Boolean(folded[n.key]);
+    const isFolded = kids.length > 0 && (folded[n.key] ?? n.key.startsWith("root:"));
     const rootName = n.key.startsWith("root:") ? n.key.slice(5) : null;
     const selected =
       rootName !== null
@@ -260,10 +282,10 @@ export function AgentsColumn(props: {
                   className="fold"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleFold(n.key);
+                    toggleFold(n.key, isFolded);
                   }}
                 >
-                  {isFolded ? "▸" : "▾"}
+                  {isFolded ? `▸ ${kids.length}` : "▾"}
                 </button>
               )}
             </span>

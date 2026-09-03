@@ -14,8 +14,10 @@ import type {
   HelperToolRow,
   HistoryMessage,
   LessonResult,
+  PaneGroup,
   PaneView,
   RootAgent,
+  Slot,
   Theme,
   TimelineItem,
 } from "./types";
@@ -93,9 +95,15 @@ function upsertFile(files: FileActivity[], path: string, who: string): FileActiv
   return [row, ...files.filter((f) => f.path !== path)];
 }
 
-/* ---- center split layout helpers ----
- * The canonical fields (view/selectedAgent/selectedRoot) describe the FOCUSED
- * pane; split.other is the second pane. See SplitState in types.ts. */
+/* ---- center pane grid ----
+ * The center is a 2x2 grid of slots; each occupied slot is a pane with its own
+ * tab list. The canonical fields (view/selectedAgent/selectedRoot) still
+ * describe the FOCUSED pane — that invariant is load-bearing: watches, the
+ * composer target, the Inspector and setTarget all read them. So
+ * panes[focus].active is a mirror the canonical fields win over (activeOf
+ * reads them, not it), while every other slot's `active` is the truth, the way
+ * split.other was. A focus move stamps the pane it leaves from currentPane().
+ * Layout is derived from occupancy, never stored. */
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -144,94 +152,177 @@ function sameView(a: PaneView, b: PaneView): boolean {
   return true;
 }
 
-/* ---- tab groups ----
- * Each pane holds a LIST of open tabs (tabsL/tabsR); the visible one is the
- * pane's active tab. The focused pane's active tab is the canonical fields,
- * the other pane's is split.other — so watches/composer stay unchanged. */
+/* ---- the grid ----
+ * Slot geometry only: column 0 is the left half, row 0 the top. Everything the
+ * layout needs (how many columns, which pane spans a whole column) falls out of
+ * which slots hold a pane, so no layout is kept in state. */
 
-type Side = "left" | "right";
-const sideKey = (sd: Side) => (sd === "left" ? "tabsL" : "tabsR") as "tabsL" | "tabsR";
-const tabsOf = (s: AppState, sd: Side): PaneView[] => (sd === "left" ? s.tabsL : s.tabsR);
-const focusSideOf = (s: AppState): Side => s.split?.focusSide ?? "left";
+const SLOTS: Slot[] = ["tl", "tr", "bl", "br"];
+const colOf = (sl: Slot): 0 | 1 => (sl === "tr" || sl === "br" ? 1 : 0);
+const rowOf = (sl: Slot): 0 | 1 => (sl === "bl" || sl === "br" ? 1 : 0);
+const slotAt = (c: 0 | 1, r: 0 | 1): Slot => (r === 0 ? (c === 0 ? "tl" : "tr") : c === 0 ? "bl" : "br");
+/** The slot beside / below-or-above this one — the two ways a pane can split. */
+const acrossCol = (sl: Slot): Slot => slotAt(colOf(sl) === 0 ? 1 : 0, rowOf(sl));
+const acrossRow = (sl: Slot): Slot => slotAt(colOf(sl), rowOf(sl) === 0 ? 1 : 0);
+
+/** Where in a pane a drag sits: its middle, or one of the four edges. */
+type Region = "center" | "left" | "right" | "top" | "bottom";
+/** How much of a pane's width/height, on each side, reads as that edge. */
+const EDGE = 0.22;
+
+/** The slot an edge drop lands in: the neighbour on that side of `sl`, created
+ *  if the grid has room, else the pane already there. A pane sitting on that
+ *  side of the grid has no neighbour beyond it — the view moves into it. */
+function dropSlot(sl: Slot, region: Region): Slot {
+  if (region === "left") return slotAt(0, rowOf(sl));
+  if (region === "right") return slotAt(1, rowOf(sl));
+  if (region === "top") return slotAt(colOf(sl), 0);
+  if (region === "bottom") return slotAt(colOf(sl), 1);
+  return sl;
+}
+
+type Grid = { panes: Partial<Record<Slot, PaneGroup>>; focus: Slot };
+
+const openSlots = (g: Grid): Slot[] => SLOTS.filter((sl) => g.panes[sl] !== undefined);
+const tabsOf = (g: Grid, sl: Slot): PaneView[] => g.panes[sl]?.tabs ?? [];
 const inList = (list: PaneView[], v: PaneView) => list.some((t) => sameView(t, v));
 const addTab = (list: PaneView[], v: PaneView) => (inList(list, v) ? list : [...list, v]);
+/** The empty state: one pane with nothing open in it. */
+const isBlank = (g: Grid): boolean => {
+  const only = openSlots(g);
+  return only.length === 1 && g.panes[only[0]]!.tabs.length === 0;
+};
 
-/** The view a pane currently shows (null: no second pane). */
-function activeOf(s: AppState, sd: Side): PaneView | null {
-  if (!s.split) return sd === "left" ? currentPane(s) : null;
-  return sd === s.split.focusSide ? currentPane(s) : s.split.other;
+/** Keep the grid canonical: a column or row left standing alone slides to the
+ *  top-left, so tl is always taken and "tl only" is always the single-pane
+ *  case. Called after every removal — drops only ever add slots. */
+function compact<T extends Grid>(s: T): T {
+  // A slide's pairs cover the whole side that moves, onto a side already
+  // empty — no pane is ever dropped by rebuilding the map from them.
+  const slide = (g: T, pairs: [Slot, Slot][]): T => {
+    const panes: Partial<Record<Slot, PaneGroup>> = {};
+    let focus = g.focus;
+    for (const [from, to] of pairs) {
+      if (g.panes[from]) panes[to] = g.panes[from];
+      if (g.focus === from) focus = to;
+    }
+    return { ...g, panes, focus };
+  };
+  let out = s;
+  if (!out.panes.tl && !out.panes.bl) out = slide(out, [["tr", "tl"], ["br", "bl"]]);
+  if (!out.panes.tl && !out.panes.tr) out = slide(out, [["bl", "tl"], ["br", "tr"]]);
+  return out;
+}
+
+/* ---- tab groups ----
+ * Each pane holds a LIST of open tabs; the visible one is the pane's active
+ * tab. The focused pane's active tab is the canonical fields, every other
+ * pane's is its own `active` — so watches/composer stay unchanged. */
+
+/** The view a pane shows (null: the slot holds no pane). The canonical fields
+ *  win for the focused slot — a roster change can move them behind the mirror. */
+function activeOf(s: AppState, sl: Slot): PaneView | null {
+  const g = s.panes[sl];
+  if (!g) return null;
+  return sl === s.focus ? currentPane(s) : g.active;
+}
+
+/** Write one slot's group; undefined removes the pane. */
+function withPane(s: AppState, sl: Slot, g: PaneGroup | undefined): AppState {
+  const panes = { ...s.panes };
+  if (g) panes[sl] = g;
+  else delete panes[sl];
+  return { ...s, panes };
+}
+
+/** Show `v` in slot `sl` (opening it there if it is not already a tab) without
+ *  moving focus — the mirror is written too when the slot is the focused one. */
+function setActive(s: AppState, sl: Slot, v: PaneView): AppState {
+  const g = s.panes[sl];
+  const next = withPane(s, sl, { tabs: addTab(g?.tabs ?? [], v), active: v });
+  return sl === s.focus ? { ...next, ...panePatch(v) } : next;
+}
+
+/** Move focus to an occupied slot: the canonical fields take that pane's
+ *  active tab, and the pane we leave keeps what it was showing. */
+function focusSlot(s: AppState, sl: Slot): AppState {
+  const g = s.panes[sl];
+  if (!g || sl === s.focus) return s;
+  const held = s.panes[s.focus];
+  const panes = { ...s.panes };
+  if (held) panes[s.focus] = { ...held, active: currentPane(s) };
+  return { ...s, panes, focus: sl, ...panePatch(g.active) };
 }
 
 /** Activate one of a pane's open tabs; focus moves to that pane. */
-function activateTab(s: AppState, sd: Side, v: PaneView): AppState {
-  if (!inList(tabsOf(s, sd), v)) return s;
-  if (!s.split || sd === s.split.focusSide) return { ...s, ...panePatch(v) };
-  return { ...s, ...panePatch(v), split: { other: currentPane(s), focusSide: sd } };
+function activateTab(s: AppState, sl: Slot, v: PaneView): AppState {
+  if (!inList(tabsOf(s, sl), v)) return s;
+  return setActive(focusSlot(s, sl), sl, v);
 }
 
-/** Open `v` in pane `sd` as its active tab, focused; dropping on the right
- *  half of a single pane opens the split. */
-function openIn(s: AppState, sd: Side, v: PaneView): AppState {
-  if (!s.split) {
-    const cur = currentPane(s);
-    if (sd === "right" && cur.kind !== "empty" && !sameView(cur, v)) {
-      return { ...s, ...panePatch(v), tabsR: addTab(s.tabsR, v), split: { other: cur, focusSide: "right" } };
-    }
-    return { ...s, ...panePatch(v), tabsL: addTab(s.tabsL, v) };
-  }
-  const patch = { [sideKey(sd)]: addTab(tabsOf(s, sd), v) };
-  if (sd === s.split.focusSide) return { ...s, ...panePatch(v), ...patch };
-  return { ...s, ...panePatch(v), ...patch, split: { other: currentPane(s), focusSide: sd } };
+/** Open `v` in slot `sl` as its active tab, focused; an unoccupied slot is
+ *  created, which is how a drop past a pane's edge splits the grid. The blank
+ *  pane is a placeholder, never something to split beside — it is replaced. */
+function openIn(s: AppState, sl: Slot, v: PaneView): AppState {
+  const dest = s.panes[sl] === undefined && isBlank(s) ? s.focus : sl;
+  const panes = { ...s.panes };
+  // Stamp the pane we are leaving before the canonical fields move off it.
+  const held = panes[s.focus];
+  if (dest !== s.focus && held) panes[s.focus] = { ...held, active: currentPane(s) };
+  panes[dest] = { tabs: addTab(panes[dest]?.tabs ?? [], v), active: v };
+  return { ...s, panes, focus: dest, ...panePatch(v) };
 }
 
-/** Remove `v` from pane `sd`'s tab list; a removed active tab hands the pane
- *  to its neighbor, an emptied pane collapses (split: the other pane stays;
- *  single: the empty state). */
-function removeTab(s: AppState, sd: Side, v: PaneView): AppState {
-  const list = tabsOf(s, sd);
-  const idx = list.findIndex((t) => sameView(t, v));
+/** Remove `v` from slot `sl`'s tab list; a removed active tab hands the pane
+ *  to its neighbour tab, an emptied pane collapses and the survivors reclaim
+ *  its space (the last pane standing becomes the blank one). Focus only moves
+ *  when the pane it was in is the one that went away. */
+function removeTab(s: AppState, sl: Slot, v: PaneView): AppState {
+  const g = s.panes[sl];
+  if (!g) return s;
+  const idx = g.tabs.findIndex((t) => sameView(t, v));
   if (idx < 0) return s;
-  const next = list.filter((t) => !sameView(t, v));
-  const act = activeOf(s, sd);
-  const base = { ...s, [sideKey(sd)]: next } as AppState;
-  if (!act || !sameView(act, v)) return base;
+  const next = g.tabs.filter((t) => !sameView(t, v));
+  const act = activeOf(s, sl);
   if (next.length > 0) {
-    const nv = next[Math.min(idx, next.length - 1)];
-    if (!s.split || sd === s.split.focusSide) return { ...base, ...panePatch(nv) };
-    return { ...base, split: { ...s.split, other: nv } };
+    const base = withPane(s, sl, { ...g, tabs: next });
+    if (!act || !sameView(act, v)) return base;
+    return setActive(base, sl, next[Math.min(idx, next.length - 1)]);
   }
-  if (!s.split) return { ...base, ...panePatch({ kind: "empty" }) };
-  const survTabs = sd === "left" ? base.tabsR : base.tabsL;
-  const survActive = sd === s.split.focusSide ? s.split.other : currentPane(s);
-  return { ...base, ...panePatch(survActive), split: null, tabsL: survTabs, tabsR: [] };
+  // Nothing open anywhere else: this pane stays, as the empty state.
+  if (openSlots(s).length === 1)
+    return { ...withPane(s, sl, { tabs: [], active: { kind: "empty" } }), ...panePatch({ kind: "empty" }) };
+  const gone = withPane(s, sl, undefined);
+  if (sl !== s.focus) return compact(gone);
+  const heir = [acrossCol(sl), acrossRow(sl), acrossCol(acrossRow(sl))].find((x) => gone.panes[x]) as Slot;
+  return compact({ ...gone, focus: heir, ...panePatch(gone.panes[heir]!.active) });
 }
 
-/** A tab (or an agent row) dragged onto a pane: move it there and activate. */
-function moveTab(s: AppState, v: PaneView, sd: Side): AppState {
-  const src: Side | null = inList(s.tabsL, v) ? "left" : inList(s.tabsR, v) ? "right" : null;
-  if (src === sd) return activateTab(s, sd, v);
+/** A tab (or an agent row) dragged onto a slot: move it there and activate. */
+function moveTab(s: AppState, v: PaneView, sl: Slot): AppState {
+  const src = openSlots(s).find((x) => inList(tabsOf(s, x), v)) ?? null;
+  if (src === sl) return activateTab(s, sl, v);
   const removed = src ? removeTab(s, src, v) : s;
-  return openIn(removed, sd, v);
+  return openIn(removed, sl, v);
 }
 
-/** Auto-pop (preview / learned): show `v` in the pane the user is NOT in,
- *  without stealing focus; no-op when it is already visible somewhere. */
+/** Auto-pop (preview / learned): show `v` in a pane the user is NOT in,
+ *  without stealing focus; no-op when it is already visible somewhere. An
+ *  already-open pane beats splitting the grid further, and the focused pane's
+ *  neighbour across the columns beats the one across the rows. */
 function popPane(s: AppState, v: PaneView): AppState {
-  if (sameView(currentPane(s), v) || (s.split && sameView(s.split.other, v))) return s;
-  if (!s.split) {
-    if (currentPane(s).kind === "empty") return openIn(s, "left", v);
-    return { ...s, tabsR: addTab(s.tabsR, v), split: { other: v, focusSide: "left" } };
-  }
-  const os: Side = s.split.focusSide === "left" ? "right" : "left";
-  return { ...s, [sideKey(os)]: addTab(tabsOf(s, os), v), split: { ...s.split, other: v } } as AppState;
+  if (openSlots(s).some((sl) => sameView(activeOf(s, sl) as PaneView, v))) return s;
+  if (isBlank(s)) return openIn(s, s.focus, v);
+  const order = [acrossCol(s.focus), acrossRow(s.focus), acrossCol(acrossRow(s.focus))];
+  return setActive(s, order.find((sl) => s.panes[sl] !== undefined) ?? order[0], v);
 }
 
-/** Show `v` in the focused pane. If the OTHER pane already holds that tab,
+/** Show `v` in the focused pane. If another pane already holds that tab,
  *  don't duplicate — activate it there (focus follows). */
 function showFocused(s: AppState, v: PaneView): AppState {
-  const os: Side = focusSideOf(s) === "left" ? "right" : "left";
-  if (s.split && inList(tabsOf(s, os), v)) return activateTab(s, os, v);
-  return openIn(s, focusSideOf(s), v);
+  const away = openSlots(s).find((sl) => sl !== s.focus && inList(tabsOf(s, sl), v));
+  if (away) return activateTab(s, away, v);
+  return openIn(s, s.focus, v);
 }
 
 /** Another root's crew, promoted from the roster to ChildInfo the moment a
@@ -281,10 +372,16 @@ function reconcileSplit(s: AppState, fresh: { children?: boolean; roots?: boolea
     (fresh.roots === true && v.kind === "root" && !s.others.some((a) => a.name === v.name));
   let out = s;
   for (let guard = 0; guard < 40; guard++) {
-    const hitL = tabsOf(out, "left").find(stale);
-    const hitR = hitL ? undefined : tabsOf(out, "right").find(stale);
-    if (!hitL && !hitR) break;
-    out = removeTab(out, hitL ? "left" : "right", (hitL ?? hitR) as PaneView);
+    let hit: { sl: Slot; v: PaneView } | null = null;
+    for (const sl of openSlots(out)) {
+      const v = tabsOf(out, sl).find(stale);
+      if (v) {
+        hit = { sl, v };
+        break;
+      }
+    }
+    if (!hit) break;
+    out = removeTab(out, hit.sl, hit.v);
   }
   return out;
 }
@@ -299,33 +396,47 @@ function sanePane(p: unknown): PaneView | null {
   if (v.kind === "root" && typeof v.name === "string") return { kind: "root", name: v.name };
   return null;
 }
+const saneSlot = (k: unknown): Slot | null => (SLOTS.some((sl) => sl === k) ? (k as Slot) : null);
 
-/** Restore a saved tab layout (per-workspace key). Stale helper/root tabs
- *  are tolerated here and reconciled once the real rosters arrive. */
+/** Restore a saved tab layout (per-workspace key). A layout written before the
+ *  grid held two sides — tabsL/tabsR, focus left|right — and reads back as
+ *  tl/tr, so the upgrade keeps the panes a user had open. Stale helper/root
+ *  tabs are tolerated here and reconciled once the real rosters arrive. */
 function restoreSplit(key: string): Partial<AppState> {
-  const raw = loadJson<{
-    tabsL?: unknown[];
-    tabsR?: unknown[];
-    activeL?: unknown;
-    activeR?: unknown;
-    focus?: unknown;
-  } | null>(key, null);
-  const tl = (Array.isArray(raw?.tabsL) ? raw.tabsL : [])
-    .map(sanePane)
-    .filter((x): x is PaneView => x !== null && x.kind !== "empty");
-  const tr = (Array.isArray(raw?.tabsR) ? raw.tabsR : [])
-    .map(sanePane)
-    .filter((x): x is PaneView => x !== null && x.kind !== "empty");
-  if (tl.length === 0) return {};
-  const aL0 = sanePane(raw?.activeL);
-  const aL = aL0 && inList(tl, aL0) ? aL0 : tl[0];
-  if (tr.length === 0) return { ...panePatch(aL), tabsL: tl, tabsR: [], split: null };
-  const aR0 = sanePane(raw?.activeR);
-  const aR = aR0 && inList(tr, aR0) ? aR0 : tr[0];
-  const focusSide = raw?.focus === "right" ? ("right" as const) : ("left" as const);
-  const focused = focusSide === "left" ? aL : aR;
-  const other = focusSide === "left" ? aR : aL;
-  return { ...panePatch(focused), tabsL: tl, tabsR: tr, split: { other, focusSide } };
+  const raw = loadJson<Record<string, unknown> | null>(key, null);
+  if (!raw || typeof raw !== "object") return {};
+  const panes: Partial<Record<Slot, PaneGroup>> = {};
+  const put = (sl: Slot, tabsRaw: unknown, activeRaw: unknown) => {
+    const tabs = (Array.isArray(tabsRaw) ? tabsRaw : [])
+      .map(sanePane)
+      .filter((x): x is PaneView => x !== null && x.kind !== "empty");
+    if (tabs.length === 0) return;
+    const a = sanePane(activeRaw);
+    panes[sl] = { tabs, active: a && inList(tabs, a) ? a : tabs[0] };
+  };
+  let focus: Slot | null = null;
+  const saved = raw.panes;
+  if (saved && typeof saved === "object") {
+    for (const [k, g] of Object.entries(saved as Record<string, unknown>)) {
+      const sl = saneSlot(k);
+      if (!sl || !g || typeof g !== "object") continue;
+      const group = g as { tabs?: unknown; active?: unknown };
+      put(sl, group.tabs, group.active);
+    }
+    focus = saneSlot(raw.focus);
+  } else {
+    put("tl", raw.tabsL, raw.activeL);
+    put("tr", raw.tabsR, raw.activeR);
+    focus = raw.focus === "right" ? "tr" : "tl";
+  }
+  const open = SLOTS.filter((sl) => panes[sl] !== undefined);
+  if (open.length === 0) return {};
+  const grid = compact({ panes, focus: focus && panes[focus] ? focus : open[0] });
+  return {
+    panes: grid.panes,
+    focus: grid.focus,
+    ...panePatch(grid.panes[grid.focus]!.active),
+  };
 }
 
 function hhmm(at?: number): string {
@@ -425,9 +536,8 @@ export function App() {
     column: "agents",
     selectedAgent: null,
     selectedRoot: null,
-    split: null,
-    tabsL: [{ kind: "timeline" }],
-    tabsR: [],
+    panes: { tl: { tabs: [{ kind: "timeline" }], active: { kind: "timeline" } } },
+    focus: "tl",
     others: [],
     rootTimelines: {},
     rootLoad: {},
@@ -461,11 +571,19 @@ export function App() {
   const [learnedSel, setLearnedSel] = useState<LearnedSel | null>(null);
   const [lessonEpoch, setLessonEpoch] = useState(0);
   const [learnedUnread, setLearnedUnread] = useState(false);
-  // Split width: the left pane's share [0.2, 0.8], persisted per workspace.
+  // Split ratios: the left column's share and the top row's share, each in
+  // [0.2, 0.8] and persisted per workspace. Layouts saved before the grid held
+  // one bare number — the column ratio — so read that shape too.
   const ratioKey = `pane-ratio:${state.bridge?.workspace || "general"}`;
-  const [paneRatio, setPaneRatio] = useState(0.5);
+  const [paneRatio, setPaneRatio] = useState({ col: 0.5, row: 0.5 });
   useEffect(() => {
-    setPaneRatio(loadJson(ratioKey, 0.5));
+    const raw = loadJson<unknown>(ratioKey, null);
+    const share = (v: unknown) => (typeof v === "number" && v > 0 && v < 1 ? v : 0.5);
+    if (typeof raw === "number") setPaneRatio({ col: share(raw), row: 0.5 });
+    else if (raw && typeof raw === "object") {
+      const o = raw as { col?: unknown; row?: unknown };
+      setPaneRatio({ col: share(o.col), row: share(o.row) });
+    } else setPaneRatio({ col: 0.5, row: 0.5 });
   }, [ratioKey]);
   // Side-column widths (left column / inspector) — a personal preference,
   // one value across workspaces. Dragged via the vgutter handles.
@@ -539,9 +657,9 @@ export function App() {
   const lastInjectionSeenRef = useRef<number | undefined>(undefined);
   const [setOpen, setSetOpen] = useState(false);
   // The tab being dragged (drag data is unreadable during dragover) + the
-  // half of the center that would be taken on drop.
+  // pane and the region of it a drop would take.
   const dragViewRef = useRef<PaneView | null>(null);
-  const [dropHint, setDropHint] = useState<"left" | "right" | null>(null);
+  const [dropHint, setDropHint] = useState<{ slot: Slot; region: Region } | null>(null);
   // Per-workspace persistence key for the split layout; set at hello so the
   // save effect never writes before the restore ran.
   const splitKeyRef = useRef<string | null>(null);
@@ -1132,9 +1250,8 @@ export function App() {
             view: "timeline",
             selectedAgent: null,
             selectedRoot: null,
-            split: null,
-            tabsL: [{ kind: "timeline" }],
-            tabsR: [],
+            panes: { tl: { tabs: [{ kind: "timeline" }], active: { kind: "timeline" } } },
+            focus: "tl",
             others: [],
             rootTimelines: {},
             rootLoad: {},
@@ -1378,23 +1495,16 @@ export function App() {
       }),
     [],
   );
-  // Clicking anywhere in the unfocused pane moves focus there (model swap:
-  // canonical fields take that pane's content, `other` takes the old one).
-  const focusPane = useCallback(
-    (side: "left" | "right") =>
-      setState((s) => {
-        if (!s.split || s.split.focusSide === side) return s;
-        return { ...s, ...panePatch(s.split.other), split: { other: currentPane(s), focusSide: side } };
-      }),
-    [],
-  );
+  // Clicking anywhere in an unfocused pane moves focus there (model swap: the
+  // canonical fields take that pane's content, the pane we leave keeps ours).
+  const focusPane = useCallback((sl: Slot) => setState((s) => focusSlot(s, sl)), []);
   /** × on a tab. */
-  const closeTab = useCallback((side: "left" | "right" | null, v: PaneView) => {
-    setState((s) => removeTab(s, side ?? "left", v));
+  const closeTab = useCallback((sl: Slot, v: PaneView) => {
+    setState((s) => removeTab(s, sl, v));
   }, []);
   /** Click a tab in a pane's strip. */
-  const pickTab = useCallback((side: "left" | "right" | null, v: PaneView) => {
-    setState((s) => activateTab(s, side ?? "left", v));
+  const pickTab = useCallback((sl: Slot, v: PaneView) => {
+    setState((s) => activateTab(s, sl, v));
   }, []);
   /** Rail ⚡ toggles the Learned column on the left. */
   const toggleLearned = useCallback(() => {
@@ -1465,9 +1575,9 @@ export function App() {
       live = false;
     };
   }, [learnedConnected, lessonEpoch, learnedRootsKey, learnedSeenKey, learnedColumnOpen]);
-  /** A tab (or agent row) dropped on the left/right half of the center area. */
-  const dropPane = useCallback((v: PaneView, side: "left" | "right") => {
-    setState((s) => moveTab(s, v, side));
+  /** A tab (or agent row) dropped into a pane, or past one of its edges. */
+  const dropPane = useCallback((v: PaneView, sl: Slot) => {
+    setState((s) => moveTab(s, v, sl));
   }, []);
   const selectPreviewFile = useCallback(
     (previewPath: string) => setState((s) => ({ ...s, previewPath })),
@@ -1714,16 +1824,22 @@ export function App() {
   const selectedChild = findChild(state, state.selectedAgent);
   const needsYou = state.children.filter((c) => c.status === "done" && !c.repliedSinceTask).length;
 
-  // Either pane can hold a helper or root view now — watch whatever is open.
-  const otherPane = state.split?.other ?? null;
-  const otherHelper = otherPane?.kind === "helper" ? findChild(state, otherPane.childId) : null;
+  // Any pane can hold a helper or root view now — watch whatever is open. The
+  // unfocused panes carry their own active tab; the focused one is the
+  // selection above (which outlives a learned/preview tab laid over it).
+  const awayViews = SLOTS.filter((sl) => sl !== state.focus && state.panes[sl]).map(
+    (sl) => state.panes[sl]!.active,
+  );
 
   // Watch open helpers' live sessions (second attaches on the same daemon
   // socket). Attach can fail when the helper ran inline or was deleted — no
   // retry; the view then shows observed events only.
   const helperWatchKey = [
     ...new Set(
-      [selectedChild?.activeSessionId, otherHelper?.activeSessionId].filter((x): x is string => Boolean(x)),
+      [
+        selectedChild?.activeSessionId,
+        ...awayViews.map((v) => (v.kind === "helper" ? findChild(state, v.childId)?.activeSessionId : null)),
+      ].filter((x): x is string => Boolean(x)),
     ),
   ]
     .sort()
@@ -1742,7 +1858,7 @@ export function App() {
   // master honestly (the roster re-pull also reconciles a stale pane).
   const rootWatchKey = [
     ...new Set(
-      [state.selectedRoot, otherPane?.kind === "root" ? otherPane.name : null].filter(
+      [state.selectedRoot, ...awayViews.map((v) => (v.kind === "root" ? v.name : null))].filter(
         (x): x is string => Boolean(x),
       ),
     ),
@@ -1776,11 +1892,13 @@ export function App() {
   // Persist the tab layout per workspace. Guarded by splitKeyRef so nothing
   // writes before the restore.
   const splitSave = JSON.stringify({
-    tabsL: state.tabsL,
-    tabsR: state.tabsR,
-    activeL: activeOf(state, "left"),
-    activeR: activeOf(state, "right"),
-    focus: focusSideOf(state),
+    panes: Object.fromEntries(
+      SLOTS.filter((sl) => state.panes[sl]).map((sl) => [
+        sl,
+        { tabs: state.panes[sl]!.tabs, active: activeOf(state, sl) },
+      ]),
+    ),
+    focus: state.focus,
   });
   useEffect(() => {
     const key = splitKeyRef.current;
@@ -1788,8 +1906,8 @@ export function App() {
     saveJson(key, JSON.parse(splitSave));
   }, [splitSave]);
 
-  // An agent writing files this turn auto-opens Preview in the second pane
-  // (right of the focused one), without stealing focus. Each new live snapshot
+  // An agent writing files this turn auto-opens Preview in a pane the user is
+  // not in (beside the focused one), without stealing focus. Each live snapshot
   // signature triggers once — closing the pane doesn't reopen it for the same
   // write, the next write brings it back.
   const liveSig = state.previewFiles
@@ -1974,8 +2092,6 @@ export function App() {
     );
   };
 
-  const focusedPane = currentPane(state);
-
   const paneTitle = (p: PaneView): string => {
     if (p.kind === "learned") return tt("Self-evolution");
     if (p.kind === "preview") return tt("Preview");
@@ -1996,21 +2112,26 @@ export function App() {
     return null;
   };
 
-  /** Drag the gutter to resize the split; double-click resets to 50/50. */
-  const gutterDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  /** Drag a gutter to resize the grid; double-click resets that axis to 50/50.
+   *  body.resizing kills iframe pointer events for the drag, or the Preview
+   *  swallows every move the cursor makes over it. */
+  const gutterDown = (axis: "col" | "row") => (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     const panes = e.currentTarget.parentElement;
     if (!panes) return;
     const rect = panes.getBoundingClientRect();
     document.body.classList.add("resizing");
+    if (axis === "row") document.body.classList.add("rows");
     const move = (ev: MouseEvent) => {
-      const r = Math.min(0.8, Math.max(0.2, (ev.clientX - rect.left) / rect.width));
-      setPaneRatio(r);
+      const raw =
+        axis === "col" ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height;
+      const r = Math.min(0.8, Math.max(0.2, raw));
+      setPaneRatio((prev) => ({ ...prev, [axis]: r }));
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
-      document.body.classList.remove("resizing");
+      document.body.classList.remove("resizing", "rows");
       setPaneRatio((r) => {
         saveJson(ratioKey, r);
         return r;
@@ -2019,31 +2140,63 @@ export function App() {
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   };
+  const resetRatio = (axis: "col" | "row") => () =>
+    setPaneRatio((r) => {
+      const next = { ...r, [axis]: 0.5 };
+      saveJson(ratioKey, next);
+      return next;
+    });
 
-  const center = () => {
-    if (state.split) {
-      // Two panes split by a draggable gutter; each pane carries its own tab
-      // group and (for conversations) its own input.
-      const fs = state.split.focusSide;
-      return (
-        <div className="panes">
-          {renderPane("left", fs !== "left")}
+  /* ---- derived layout ----
+   * Two column tracks exist when both columns hold a pane; a column splits
+   * into two rows when both of its slots do. A pane whose column holds it
+   * alone spans that column's whole height — which is what turns three open
+   * panes into "one tall beside two stacked". */
+  const occupied = SLOTS.filter((sl) => state.panes[sl] !== undefined);
+  const colSplit = occupied.some((sl) => colOf(sl) === 0) && occupied.some((sl) => colOf(sl) === 1);
+  const rowSplit = (c: 0 | 1) => occupied.filter((sl) => colOf(sl) === c).length > 1;
+  const colTrack = (c: 0 | 1) => (colSplit ? (c === 0 ? "1 / 2" : "3 / 4") : "1 / -1");
+  const cellOf = (sl: Slot): React.CSSProperties => ({
+    gridColumn: colTrack(colOf(sl)),
+    gridRow: rowSplit(colOf(sl)) ? (rowOf(sl) === 0 ? "1 / 2" : "3 / 4") : "1 / -1",
+  });
+
+  const center = () => (
+    // Panes on a grid, separated by draggable gutters; each pane carries its
+    // own tab group and (for conversations) its own input. The 5px tracks are
+    // the gutters themselves, so the grid is exactly as wide as the center.
+    <div
+      className="panes"
+      style={{
+        gridTemplateColumns: colSplit ? `${paneRatio.col}fr 5px ${1 - paneRatio.col}fr` : "1fr",
+        gridTemplateRows:
+          rowSplit(0) || rowSplit(1) ? `${paneRatio.row}fr 5px ${1 - paneRatio.row}fr` : "1fr",
+      }}
+    >
+      {occupied.map((sl) => renderPane(sl))}
+      {colSplit && (
+        <div
+          className="gutter"
+          style={{ gridColumn: "2 / 3", gridRow: "1 / -1" }}
+          onMouseDown={gutterDown("col")}
+          onDoubleClick={resetRatio("col")}
+        />
+      )}
+      {([0, 1] as const)
+        .filter((c) => rowSplit(c))
+        .map((c) => (
           <div
-            className="gutter"
-            onMouseDown={gutterDown}
-            onDoubleClick={() => {
-              setPaneRatio(0.5);
-              saveJson(ratioKey, 0.5);
-            }}
+            key={`h${c}`}
+            className="gutter h"
+            style={{ gridColumn: colTrack(c), gridRow: "2 / 3" }}
+            onMouseDown={gutterDown("row")}
+            onDoubleClick={resetRatio("row")}
           />
-          {renderPane("right", fs !== "right")}
-        </div>
-      );
-    }
-    return renderPane(null, false);
-  };
+        ))}
+    </div>
+  );
 
-  /* ---- drag: tabs and agent rows both land on a half or a strip ---- */
+  /* ---- drag: tabs and agent rows land in a pane, or past one of its edges ---- */
   const agentKeyToView = (key: string): PaneView =>
     key === "master" ? { kind: "timeline" } : key.startsWith("root:") ? { kind: "root", name: key.slice(5) } : { kind: "helper", childId: key };
   const tabDragStart = (v: PaneView) => (e: React.DragEvent) => {
@@ -2063,51 +2216,83 @@ export function App() {
   };
   const dragIsRelevant = (e: React.DragEvent) =>
     dragViewRef.current !== null || e.dataTransfer.types.includes("text/agent-key");
-  const dropSide = (e: React.DragEvent<HTMLDivElement>): "left" | "right" => {
+  /** The cursor's region within the pane it is over: the outer fifth of any
+   *  side is that edge (in a corner the nearer one wins), the rest is the
+   *  pane itself. Same convention every IDE uses for a drop-to-split. */
+  const dropRegion = (e: React.DragEvent<HTMLDivElement>): Region => {
     const r = e.currentTarget.getBoundingClientRect();
-    return e.clientX < r.left + r.width / 2 ? "left" : "right";
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    const d = Math.min(x, 1 - x, y, 1 - y);
+    if (d > EDGE) return "center";
+    if (d === x) return "left";
+    if (d === 1 - x) return "right";
+    return d === y ? "top" : "bottom";
   };
+  const paneDragOver = (sl: Slot) => (e: React.DragEvent<HTMLDivElement>) => {
+    if (!dragIsRelevant(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const region = dropRegion(e);
+    setDropHint((h) => (h && h.slot === sl && h.region === region ? h : { slot: sl, region }));
+  };
+  const paneDrop = (sl: Slot) => (e: React.DragEvent<HTMLDivElement>) => {
+    const v = draggedView(e);
+    const region = dropRegion(e);
+    dragViewRef.current = null;
+    setDropHint(null);
+    if (!v) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dropPane(v, dropSlot(sl, region));
+  };
+  /** The seam between panes takes drops too — a 5px gutter is easy to land on
+   *  — so preventDefault here as well, or the drop event never fires. */
   const bodyDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (!dragIsRelevant(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    const side = dropSide(e);
-    setDropHint((h) => (h === side ? h : side));
   };
   const bodyDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setDropHint(null);
   };
+  /** A drop on a gutter: honour the hint the pane last showed rather than
+   *  swallowing the drag over a 5px seam. */
   const bodyDrop = (e: React.DragEvent<HTMLDivElement>) => {
     const v = draggedView(e);
+    const h = dropHint;
     dragViewRef.current = null;
     setDropHint(null);
     if (!v) return;
     e.preventDefault();
-    dropPane(v, dropSide(e));
+    dropPane(v, h ? dropSlot(h.slot, h.region) : state.focus);
   };
-  const tabsDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  /** A pane's own strip always means that pane, never a split — its edges sit
+   *  inside the pane's own edge bands, so it claims the hint too. */
+  const tabsDragOver = (sl: Slot) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!dragIsRelevant(e)) return;
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "move";
+    setDropHint((h) => (h && h.slot === sl && h.region === "center" ? h : { slot: sl, region: "center" }));
   };
-  /** A drop on a pane's own strip moves the view into that pane. */
-  const tabsDropOn = (side: "left" | "right" | null) => (e: React.DragEvent<HTMLDivElement>) => {
+  const tabsDropOn = (sl: Slot) => (e: React.DragEvent<HTMLDivElement>) => {
     const v = draggedView(e);
     dragViewRef.current = null;
     setDropHint(null);
     if (!v) return;
     e.preventDefault();
     e.stopPropagation();
-    dropPane(v, side ?? "left");
+    dropPane(v, sl);
   };
 
   /** One pane's tab group: every open tab, active highlighted, each closable
    *  and draggable. The strip follows the pane — there is no global tab bar. */
-  const paneTabs = (side: "left" | "right" | null, active: PaneView) => {
-    const list = side === "right" ? state.tabsR : state.tabsL;
+  const paneTabs = (sl: Slot, active: PaneView) => {
+    const list = tabsOf(state, sl);
     return (
-      <div className="tabs" onDragOver={tabsDragOver} onDrop={tabsDropOn(side)}>
+      <div className="tabs" onDragOver={tabsDragOver(sl)} onDrop={tabsDropOn(sl)}>
         {list.map((t) => (
           <div
             key={`${t.kind}:${t.kind === "helper" ? t.childId : t.kind === "root" ? t.name : ""}`}
@@ -2115,7 +2300,7 @@ export function App() {
             draggable
             onDragStart={tabDragStart(t)}
             onDragEnd={tabDragEnd}
-            onClick={() => pickTab(side, t)}
+            onClick={() => pickTab(sl, t)}
           >
             {paneTitle(t)}
             <button
@@ -2123,7 +2308,7 @@ export function App() {
               title={tt("close")}
               onClick={(e) => {
                 e.stopPropagation();
-                closeTab(side, t);
+                closeTab(sl, t);
               }}
             >
               ✕
@@ -2134,19 +2319,22 @@ export function App() {
     );
   };
 
-  const renderPane = (side: "left" | "right" | null, away: boolean) => {
-    const p = side === null ? focusedPane : (activeOf(state, side) ?? { kind: "empty" as const });
-    const grow = side === "left" ? paneRatio : side === "right" ? 1 - paneRatio : 1;
+  const renderPane = (sl: Slot) => {
+    const p = activeOf(state, sl) ?? { kind: "empty" as const };
+    const away = sl !== state.focus;
     return (
       <div
-        key={side ?? "solo"}
+        key={sl}
         className={away ? "pane away" : "pane"}
-        style={{ flexGrow: grow }}
-        onMouseDownCapture={side ? () => focusPane(side) : undefined}
+        style={cellOf(sl)}
+        onMouseDownCapture={away ? () => focusPane(sl) : undefined}
+        onDragOver={paneDragOver(sl)}
+        onDrop={paneDrop(sl)}
       >
-        {paneTabs(side, p)}
+        {paneTabs(sl, p)}
         <div className="pbody">{paneBody(p)}</div>
         {paneComposer(p)}
+        {dropHint?.slot === sl && <div className={`drophint ${dropHint.region}`} />}
       </div>
     );
   };
@@ -2220,9 +2408,13 @@ export function App() {
         )}
         <div className="vgutter" onMouseDown={sideDrag("col")} onDoubleClick={resetSide("col")} />
         <div className="center">
-          <div className="cbody" onDragOver={bodyDragOver} onDragLeave={bodyDragLeave} onDrop={bodyDrop}>
+          <div
+            className="cbody"
+            onDragOver={bodyDragOver}
+            onDragLeave={bodyDragLeave}
+            onDrop={bodyDrop}
+          >
             {center()}
-            {dropHint && <div className={`drophint ${dropHint}`} />}
           </div>
         </div>
         <div className="vgutter r" onMouseDown={sideDrag("insp")} onDoubleClick={resetSide("insp")} />

@@ -221,14 +221,22 @@ export function App() {
               | undefined;
             const from = d?.from;
             const fromName = from?.sessionName ?? "agent";
-            push({ kind: "divider", id: id(), text: `msg ← ${fromName} · ${clock()}` });
             setState((s) => {
               const child = s.children.find(
                 (c) =>
                   (from?.activeSessionId !== undefined && c.activeSessionId === from.activeSessionId) ||
                   c.sessionName === fromName,
               );
-              if (!child) return s;
+              // Roster can lag the first reply — keep the text in the timeline
+              // row itself so nothing is lost when there is no helper row yet.
+              const brief = (d?.message ?? "").slice(0, 60);
+              const divider: TimelineItem = {
+                kind: "divider",
+                id: id(),
+                text: child || !brief ? `msg ← ${fromName} · ${clock()}` : `msg ← ${fromName} · “${brief}” · ${clock()}`,
+              };
+              if (!child) return { ...s, timeline: [...s.timeline, divider] };
+              s = { ...s, timeline: [...s.timeline, divider] };
               const excerpt = (d?.message ?? "").slice(0, 80);
               const ev: HelperEvent = {
                 id: id(),

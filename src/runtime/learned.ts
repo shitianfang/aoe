@@ -84,6 +84,26 @@ export function parseChange(change: string): ChangeRef | null {
   };
 }
 
+/** The id a rollback round undid. Core writes the rollback's summary as
+ *  "Rollback refinement <id>" (rollbackProposal) and stores no structured
+ *  link, so the id has to come back out of the sentence. */
+export function rolledBackTarget(r: LessonRecord): string | null {
+  const m = /roll ?back\s+refinement\s+(\S+)/i.exec(r.trigger ?? "");
+  return m === null ? null : m[1].replace(/[.,;:]$/, "");
+}
+
+/** Ids of every round that a later rollback undid. A reversed round stays in
+ *  the log — dropping it would make the history lie about what happened — but
+ *  it reads as spent rather than as something the agent still believes. */
+export function undoneIds(lessons: LessonRecord[]): Set<string> {
+  const out = new Set<string>();
+  for (const l of lessons) {
+    const target = rolledBackTarget(l);
+    if (target !== null) out.add(target);
+  }
+  return out;
+}
+
 /** A round that applied no edits at all. The review thought there was something
  *  to learn and the refiner concluded there was not — worth showing as its own
  *  state, not as a lesson. `undefined` changes is an older record, not a no-op. */

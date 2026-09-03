@@ -137,6 +137,50 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .edetail .lf .note { font-family: var(--mono); font-size: 8px; color: var(--t3); }
 .edetail .hv .dim { color: var(--t3); font-style: italic; }
 
+/* ---- self-evolution overview (the ⚡ pane with nothing picked) ---------- */
+.ovw { padding: 0; }
+.ovw .ohead { font-size: 12px; line-height: 1.6; color: var(--t2); max-width: 52ch; }
+/* Four numbers, not four charts: at this data volume a bar chart of them is
+   decoration. The two smaller ones are subsets of "rounds run", which is why
+   their labels say so. */
+.kpi { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 14px; }
+.kpi .t { flex: 1 1 96px; min-width: 0; background: var(--soft); padding: 9px 10px 10px; }
+.kpi .n { font-size: 21px; line-height: 1.1; color: var(--t1); }
+.kpi .n.q { color: var(--t3); }
+.kpi .k { margin-top: 3px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+/* Composition as words. Four nominal classes have no order to ramp, and the
+   categorical hues in this shell already mean "which agent". */
+.kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 14px; }
+.kinds .kd { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--t2); }
+.kinds .kd .c { font-family: var(--mono); font-size: 11px; color: var(--t1); }
+.kinds .kd.z, .kinds .kd.z .c { color: var(--t3); }
+/* The one thing a number cannot say: is it still learning, or did it stop.
+   One column per day over a fixed window; a quiet day is a baseline hairline,
+   not a track, so silence reads as silence. */
+.spark { margin-top: 18px; }
+.spark .row { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
+.spark .b { width: 6px; flex: none; height: 100%; display: flex; align-items: flex-end; }
+.spark .b i { width: 100%; min-height: 2px; background: var(--t1); }
+.spark .b.z i { height: 1px; min-height: 1px; background: var(--hair-hi); }
+.spark .b.open i { background: var(--t3); }
+.spark .ax { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); }
+.ovw .orule { margin-top: 20px; padding-top: 13px; border-top: 1px dashed var(--hair); }
+.ovw .orule .lauto { padding: 0; }
+.ovw .orule .dim { margin-top: 6px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
+
+/* ---- one harness entry: the thing it knows, shown as itself ------------- */
+.edetail .eh .kd { color: var(--t2); }
+/* The artifact's own text. The pane's only tinted surface, so it reads as the
+   quotation it is rather than as more chrome. */
+.edetail .ebody { margin-top: 11px; padding: 11px 13px; background: var(--soft); font-size: 13px; line-height: 1.75; color: var(--t1); max-width: 52ch; white-space: pre-wrap; overflow-wrap: break-word; }
+.trace { margin-top: 8px; }
+.trace .tr { display: flex; width: 100%; text-align: left; gap: 10px; align-items: baseline; padding: 5px 0; font-size: 12px; color: var(--t2); }
+.trace .tr:hover { color: var(--t1); }
+.trace .tr .w { flex-shrink: 0; width: 108px; white-space: nowrap; font-family: var(--mono); font-size: 9px; color: var(--t3); }
+.trace .tr .dot { flex-shrink: 0; width: 4px; height: 4px; background: var(--t3); align-self: center; }
+.trace .tr.now .dot { background: var(--t1); }
+.trace .tr .tx { min-width: 0; overflow-wrap: break-word; }
+
 /* lesson card (timeline, expanded) */
 .lwrap { margin-left: 34px; }
 .lwrap .ev { margin-left: 0; }
@@ -287,6 +331,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    margin — the panel's own padding closes it, and 6px on top of that reopened
    the same uneven gap from the other side. */
 .insp .selfrow:not(:last-child) { margin-bottom: 6px; }
+/* Two altitudes, one switch. Follows the tab language: window ground behind,
+   the chosen one a step greyer — never a filled pill. */
+.segs { display: flex; gap: 2px; padding: 0 8px 10px; }
+.segs button { flex: 1; padding: 5px 6px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.segs button:hover { color: var(--t2); }
+.segs button.on { background: var(--soft); color: var(--t1); }
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }
@@ -297,6 +347,17 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lsn .ttl { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; line-height: 1.45; color: var(--t1); }
 .lsn .ttl .tx { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .lsn .ttl .tm { margin-left: auto; flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--t3); }
+/* A round names the entries it touched, so the log answers "what moved" the
+   same way the list above answers "what is this". */
+.lsn .chg { display: block; margin-top: 3px; font-size: 11px; line-height: 1.6; color: var(--t2); }
+.lsn .chg .cg { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lsn .chg .cg i { display: inline-block; width: 9px; font-family: var(--mono); font-style: normal; color: var(--t3); }
+/* A reversed round stays in the log — removing it would make the history lie —
+   but it is spent, so it reads at the weight of something no longer in force. */
+.lsn.spent .ttl, .lsn.spent .chg { color: var(--t3); }
+/* An entry row leads with the artifact's own words, so the list answers "what
+   is this" without opening anything. */
+.lsn .pv { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 3px; font-size: 11px; line-height: 1.6; color: var(--t2); }
 .lsn .meta { display: block; margin-top: 2px; font-family: var(--mono); font-size: 9px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* empty center pane */
 .pnote { flex: 1; display: grid; place-items: center; padding: 24px; font-family: var(--mono); font-size: 9px; color: var(--t3); text-align: center; }
@@ -351,8 +412,6 @@ body.resizing iframe { pointer-events: none; }
 .ahead .run { color: var(--green); }
 .ahead .need { color: var(--red); }
 .ahead .r1 .act { margin-left: auto; display: flex; gap: 8px; }
-/* master only: the workspace it runs, and the corner mark that switches it. */
-.ahead .wsw { margin-top: 3px; font-family: var(--mono); font-size: 9px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t2); background: transparent; border: 1px solid var(--hair-hi); padding: 4px 9px; cursor: pointer; }
 .btn:hover { color: var(--t1); border-color: var(--t3); }
 .ahead .r3 { margin-top: 2px; font-size: 12px; color: var(--t2); }
@@ -474,6 +533,14 @@ body.resizing iframe { pointer-events: none; }
 /* ...and carries on down the tool rows, so a run of steps hangs off the helper
    that took them instead of floating in the message column on its own. Offset
    is .msg's own 11.5px spine less the 34px indent. */
+/* A tool row's detail is the first line of the code it ran; ellipsised at the
+   first narrow pane it becomes `drop_duplicates("order_id…`, which answers
+   nothing. Two lines, clamped in CSS so it follows the dragged pane width the
+   way the lesson titles do — a character cap cannot. */
+.transcript.hevents .ev strong {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+}
 .transcript.hevents .ev { position: relative; }
 .transcript.hevents .ev::before { content: ""; position: absolute; left: -22.5px; top: -8px; bottom: 0; border-left: 1px dashed var(--hair); }
 
@@ -634,10 +701,14 @@ html[lang="zh-CN"] .lhint,
 html[lang="zh-CN"] .colnote,
 html[lang="zh-CN"] .edetail .hk,
 html[lang="zh-CN"] .edetail .more,
+html[lang="zh-CN"] .kpi .k,
+html[lang="zh-CN"] .segs button,
+html[lang="zh-CN"] .ovw .orule .dim,
 html[lang="zh-CN"] .lesson .ll {
   font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
 }
 html[lang="zh-CN"] .lauto,
+html[lang="zh-CN"] .trace .tr .w,
 html[lang="zh-CN"] .lsn .meta,
 html[lang="zh-CN"] .edetail .eh,
 html[lang="zh-CN"] .lesson .lh {

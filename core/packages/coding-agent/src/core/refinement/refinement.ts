@@ -166,8 +166,20 @@ Scope and persistence policy:
 
 Use the trajectory, current continual harness state, and prior refinement history. Prefer
 small evidence-backed edits. If prior refinements caused issues, rollback or
-replace the faulty editable entries. Never edit source files directly. Output
-JSON only with this exact shape:
+replace the faulty editable entries. Never edit source files directly.
+
+The prose fields are read by the person whose workspace this is, in a client that
+lists them, not by this subsystem. Write them accordingly:
+- summary, title, rationale and expectedOutcome go in the language the user writes
+  in. A conversation held in Chinese gets a Chinese record.
+- Plain words. Not "trajectory", "scope policy", "store", "continual harness",
+  "entry id" — none of that vocabulary belongs in text a user reads.
+- summary is one short sentence naming what future work should do differently. It
+  is not a verdict on whether edits were justified.
+- rationale is at most two sentences: what in this session showed it.
+Entry `title` and `content` are the artifact itself and keep their own rules above.
+
+Output JSON only with this exact shape:
 
 {
   "summary": "one sentence",

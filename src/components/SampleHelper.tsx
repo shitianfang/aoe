@@ -27,11 +27,26 @@ export function SampleHelper(props: { agent: SampleAgent }) {
             <b>{t("example")}</b>
           </span>
         </div>
-        <div className="r3">{t("Task — “{label}”", { label: t(a.task) })}</div>
+        {/* A helper that has not started yet has no session to have said
+            anything in — so, exactly as the live pane does for one that is not
+            reachable, its task appears as master's message below rather than
+            as a header line. Never both. */}
+        {a.turns.length > 0 && (
+          <div className="r3">{t("Task — “{label}”", { label: t(a.task) })}</div>
+        )}
       </div>
       <div className="transcript hevents">
         {a.turns.length === 0 ? (
-          <div className="div">{t("queued · not yet started")}</div>
+          <>
+            <div className="msg user">
+              <span className="chip ghost">M</span>
+              <span className="body">
+                <span className="afrom">master</span>
+                {t(a.task)}
+              </span>
+            </div>
+            <div className="div">{t("queued · not yet started")}</div>
+          </>
         ) : (
           a.turns.map((row, i) =>
             row.kind === "tool" ? (

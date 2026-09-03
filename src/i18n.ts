@@ -137,24 +137,44 @@ const ZH: Record<string, string> = {
   "example · real helpers replace this": "示例 · 有真实助手后即被替换",
   example: "示例",
   "example · a real helper's own words appear here": "示例 · 真实助手会在这里说自己的话",
-  "Reading the whole workspace first, so nothing gets rewritten twice.":
-    "先把整个工作区读一遍,免得同一处改两回。",
-  "Four files, all at the top level. `notes.md` is the only one with real content — a page outline. Nothing references anything else, so this can be rebuilt from scratch without breaking a link.":
-    "四个文件,都在顶层。只有 `notes.md` 有实质内容 —— 一份页面提纲。文件之间没有互相引用,所以从头重做也不会弄断链接。",
-  "Building from scout's outline: one file, no build step, opens anywhere.":
-    "照 scout 的提纲来搭:单文件、不用构建,放哪都能打开。",
-  "`today.html` written — one file, no external assets. Header, a three-block day view, and a footer. Style is a placeholder; I left the class names for stylist to work against.":
-    "`today.html` 写好了 —— 单文件,不依赖外部资源。页头、三段式日程、页脚。样式先占个位,类名留给 stylist 接手。",
-  "Type and spacing this pass. Colour is the pass after it.":
-    "这一轮只动字体和间距,颜色留到下一轮。",
-  "Type and spacing done. Publishing the first version now so there is something to compare the next pass against.":
-    "字体和间距调完了。先发一版出去,下一轮改完才有东西可以对比。",
   "ask master for a team and they appear here, each with its task.":
     "让 master 组个小队,他们就会出现在这里,每个人带着自己的任务。",
-  "read the workspace and list what is here": "通读工作区,列出这里都有什么",
-  "write the page structure into today.html": "把页面结构写进 today.html",
-  "restyle it and publish a version": "重新配好样式,发布一版",
-  "compare the last two versions and report": "对比最近两版,汇报差异",
+  "audit the data in raw/":
+    "盘一遍 raw/ 的数据",
+  "Nothing gets touched yet — what we can claim depends on what is actually in raw/.":
+    "先不动任何东西 —— 能下什么结论,取决于 raw/ 里真有什么。",
+  "Three files. `orders_2025q3.csv` is 48,912 rows covering July to September, with enough columns for revenue, order count and average order value. `refunds.csv` and `regions.xlsx` cover the rest.":
+    "三个文件。`orders_2025q3.csv` 有 48,912 行,覆盖 7 到 9 月,字段够算收入、订单数和客单价。`refunds.csv` 和 `regions.xlsx` 补上其余部分。",
+  "Two problems, both from the re-run export on 8/17: 1,204 rows have no `region` (2.5%), and 316 order ids appear twice. Neither is fatal — but any average computed before fixing them is wrong.":
+    "两个问题,都出自 8/17 那次重跑导出:1,204 行没有 `region`(2.5%),316 个 order_id 出现了两次。都不致命 —— 但不先修就算平均值,数字是错的。",
+  "A third one, subtler: refunds are stamped UTC, orders are local. Joined as they are, any refund before 8am local falls back onto the day before — and at the turn of each month, into the month before.":
+    "第三个更隐蔽:退款是 UTC 时间戳,订单是本地时间。直接 join 的话,本地时间早上 8 点之前的退款会退回到前一天 —— 每逢月初,就退到上一个月。",
+  "It can be built. `notes/data-audit.md` now holds the three fixes and the definitions I would hold everyone to: revenue booked by local order time, refunds reported on their own line and never netted off.":
+    "能做。`notes/data-audit.md` 里写好了三处修法,以及要求所有人统一的口径:收入按订单的本地时间归月,退款单独一行汇报、不冲抵收入。",
+  "clean the data and compute the quarter":
+    "清洗数据,算出季度",
+  "Fixes first, numbers second — the other order produces a plausible-looking wrong answer.":
+    "先修,再算 —— 反过来会算出一个看着挺像样的错数。",
+  "316 duplicates dropped. 1,187 of the missing regions came back from the store map in `regions.xlsx`; the last 17 belong to closed stores, so they get their own bucket rather than a guess.":
+    "316 条重复已去掉。缺失的 region 里有 1,187 行靠 `regions.xlsx` 的门店映射补了回来;剩下 17 行属于已关停门店,单独归一类,不猜。",
+  "Q3: revenue ¥8,412,660, up 11.3% on Q2. 48,596 orders, average order value ¥173.1 — down 2.4%. The quarter grew on volume, not on basket size.":
+    "三季度:收入 ¥8,412,660,环比 +11.3%。48,596 单,客单价 ¥173.1,环比 -2.4%。这个季度是靠单量涨起来的,不是靠客单价。",
+  "All of the growth is East and South China. Southwest has been negative two months running — 6.8% then 9.1% — and refunds there run 5.2% against 3.1% nationally. That is the one thing in this quarter worth acting on.":
+    "增长全部来自华东和华南。西南连续两个月负增长 —— 先 -6.8%,再 -9.1% —— 当地退款率 5.2%,全国是 3.1%。这个季度里真正值得动手的就这一件事。",
+  "Cross-checked: the total rebuilt from `data/figures.json` matches the raw sum to the cent. Figures and charts are in `data/` — writer can quote them directly.":
+    "对过账:用 `data/figures.json` 反推的总额,和原始表求和分毫不差。数字和图都在 `data/`,writer 可以直接引。",
+  "write it into a one-page report and publish":
+    "写成一页报告并发布",
+  "One page, one file, no external assets — it has to open for whoever it gets forwarded to. The finding goes at the top.":
+    "一页、一个文件、不依赖外部资源 —— 转发给谁都得能直接打开。结论放最上面。",
+  "Draft is up: the one-line finding, four headline numbers, the regional table, the revenue chart, and the definitions at the foot so nobody re-litigates the numbers. The chart is inlined as base64, so it stays a single file.":
+    "初稿好了:一句话结论、四个关键数、区域对比表、那张收入曲线,页脚放口径说明,免得有人回头再争数字。图 base64 内嵌,所以整页仍然只有一个文件。",
+  "First version published — it should have opened on the right. Reading it back: the Southwest finding is buried in the regional table, which is the wrong place for the only actionable thing in here.":
+    "第一版发出去了 —— 右边应该自动打开了。回头读了一遍:西南那个结论埋在区域对比表里,而它是全篇唯一能落地的东西,位置不对。",
+  "Second pass: Southwest is its own block under the headline, the table drops to supporting evidence, and the type scale is down to two sizes. Publishing so the two versions can sit side by side.":
+    "第二轮:西南单独成块,提到结论下面;表格降为佐证;字号收到两级。这就发出去,两版可以并排看。",
+  "check the numbers in both versions":
+    "核对两版报告的数字",
   "{n} inactive": "{n} 个已结束",
   "{n} running": "{n} 个运行中",
   "on {name}'s team": "{name} 的队员",
@@ -256,8 +276,8 @@ const ZH: Record<string, string> = {
   "attached mid-run · catching up…": "中途连上 · 正在补齐进度…",
   "no conversation yet": "还没有对话",
   "inactive · a message wakes it": "未活动 · 发消息可唤醒",
-  "runs this workspace": "负责这个工作区",
-  "top-left switches workspace · now in {ws}": "点击左上角切换工作区,当前工作区:{ws}",
+  "runs workspace {ws}": "负责工作区 {ws}",
+  "switch top-left": "左上角可切换",
 
   /* composer */
   "Message {name}…": "发消息给 {name}…",
@@ -349,6 +369,19 @@ const ZH: Record<string, string> = {
   "nothing was changed — the review kept everything as it was.":
     "这次学习没有改动 —— 原样保留。",
 
+  /* self-evolution: the two altitudes, and the overview's numbers */
+  "knows now": "现在记着",
+  "learning log": "学习记录",
+  "revised ×{n}": "改过 {n} 次",
+  "undid an earlier lesson": "撤销了一次学习",
+  "looked, found nothing to change": "看过一遍,没有要改的",
+  "it has not run a round yet.": "它还没学过。",
+  "kept now": "现在记着",
+  "rounds run": "学过",
+  "undone": "其中撤销",
+  "changed nothing": "其中没改动",
+  "{n} rounds": "{n} 次",
+  "where it came from": "怎么来的",
   /* learned pane (one lesson's full record) */
   lesson: "经验",
   "pick a lesson on the left to see its full record.": "在左侧点一条经验,查看完整记录。",

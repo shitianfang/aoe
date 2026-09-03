@@ -16,9 +16,14 @@ export interface CatalogItem {
 /** Selected lesson in the Learned column (detail opens in a center pane):
  *  owner is the agent a local lesson belongs to ("master" or a root name),
  *  null for a lesson kept everywhere (global harness). */
+/** What the ⚡ column has picked. The surface shows two altitudes of the same
+ *  mechanism — what the agent knows now ("entry") and the rounds that got it
+ *  there ("lesson") — so the selection has to say which one. */
 export interface LearnedSel {
   owner: string | null;
   id: string;
+  /** Absent on selections made before the entries view existed — read as a lesson. */
+  what?: "lesson" | "entry";
 }
 
 /** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]).

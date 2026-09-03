@@ -1536,7 +1536,13 @@ export function App() {
   }, []);
   /** Rail ⚡ toggles the Learned column on the left. */
   const toggleLearned = useCallback(() => {
-    setState((s) => ({ ...s, column: s.column === "learned" ? "agents" : "learned" }));
+    setState((s) => {
+      const opening = s.column !== "learned";
+      const next = { ...s, column: opening ? ("learned" as const) : ("agents" as const) };
+      // Opening ⚡ opens its pane too — with nothing picked that pane is the
+      // overview, which is the part that says what the mechanism has done.
+      return opening ? popPane(next, { kind: "learned" }) : next;
+    });
   }, []);
   /** A lesson picked in the ⚡ column: its full record pops into a center pane
    *  (split, keeping your focus); picking it again deselects. */
@@ -2059,6 +2065,10 @@ export function App() {
           sel={learnedSel}
           epoch={lessonEpoch}
           roots={learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")}
+          autoRefine={state.autoRefine}
+          online={Boolean(state.bridge?.connected)}
+          onToggleAuto={toggleAutoRefine}
+          onSelect={selectLearned}
           onChanged={() => setLessonEpoch((n) => n + 1)}
         />
       );
@@ -2101,9 +2111,8 @@ export function App() {
       );
     }
     if (p.kind === "root") return renderRootPane(p.name);
-    // master gets the same agent header as root/helper panes, plus the one
-    // line only master can carry: which workspace it is running, and where to
-    // click to change it.
+    // master gets the same one-line agent header as root/helper panes — the
+    // workspace it runs is part of that line, since master is the workspace.
     return (
       <>
         <div className="ahead">
@@ -2111,18 +2120,14 @@ export function App() {
             <span className="chip master" />
             <span className="nm">master</span>
             <span className="rel">
-              {tt("runs this workspace")} ·{" "}
+              {tt("runs workspace {ws}", { ws: state.bridge?.workspace || "general" })} ·{" "}
               {state.master === "working" ? (
                 <span className="run">{tt("running")}</span>
               ) : (
                 <>{tt("idle")}</>
-              )}
+              )}{" "}
+              · {tt("switch top-left")}
             </span>
-          </div>
-          <div className="wsw">
-            {tt("top-left switches workspace · now in {ws}", {
-              ws: state.bridge?.workspace || "general",
-            })}
           </div>
         </div>
         <Timeline items={state.timeline} onExample={sendExample} />
@@ -2417,10 +2422,7 @@ export function App() {
             selected={learnedSel}
             epoch={lessonEpoch}
             roots={learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")}
-            autoRefine={state.autoRefine}
-            online={Boolean(state.bridge?.connected)}
             onSelect={selectLearned}
-            onToggleAuto={toggleAutoRefine}
           />
         ) : state.column === "skills" ? (
           <SkillsColumn />

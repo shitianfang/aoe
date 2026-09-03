@@ -1,10 +1,80 @@
 import { useEffect, useState } from "react";
-import type { LearnedSel } from "../types";
+import type { AutoRefineInfo, LearnedSel } from "../types";
 import { lessonChangeText, lessonSourceText } from "../helperDisplay";
 import { bridgeCmd } from "../runtime/bridge";
 import { getLang, useT } from "../i18n";
 import { BotAvatar } from "./BotAvatar";
-import { fetchLessons, isRollback, type LessonRecord } from "../runtime/learned";
+import {
+  ENTRY_KINDS,
+  fetchHarness,
+  harnessStats,
+  isNoop,
+  isRollback,
+  parseChange,
+  type HarnessData,
+  type HarnessEntry,
+  type LessonRecord,
+} from "../runtime/learned";
+import { LearnedOverview } from "./LearnedOverview";
+
+/** One thing the agent knows, shown as itself: the artifact's own text, then
+ *  the rounds that wrote it. The rounds are clickable — the round is where a
+ *  rollback belongs, because rolling one back undoes every edit it made, not
+ *  just this entry's. */
+function EntryDetail(props: {
+  entry: HarnessEntry;
+  lessons: LessonRecord[];
+  onSelect: (s: LearnedSel) => void;
+}) {
+  const t = useT();
+  const e = props.entry;
+  const verb = { create: "added a {kind}", update: "updated a {kind}", delete: "removed a {kind}" };
+  // A round touched this entry if any of its changes names this id.
+  const touched = props.lessons
+    .map((l) => {
+      const ref = (l.changes ?? []).map(parseChange).find((c) => c !== null && c.id === e.id);
+      return ref === undefined || ref === null ? null : { l, ref };
+    })
+    .filter((x): x is { l: LessonRecord; ref: NonNullable<ReturnType<typeof parseChange>> } => x !== null);
+  const revisions = (e.version ?? 1) - 1;
+  const head = [t(e.kind), e.owner ?? t("for every workspace"), e.path, revisions > 0 ? t("revised ×{n}", { n: revisions }) : null]
+    .filter((p): p is string => p !== null && p !== undefined && p !== "");
+
+  return (
+    <div className="edetail" style={{ marginTop: 0 }}>
+      <div className="eh">
+        {head.map((h, i) => (
+          <span key={i} className={i === 0 ? "kd" : undefined}>
+            {h}
+          </span>
+        ))}
+      </div>
+      <div className="hfull">{e.title || e.id}</div>
+      {/* The artifact itself. This is the answer the old pane never gave. */}
+      {e.content !== undefined && e.content !== "" && <div className="ebody">{e.content}</div>}
+      {touched.length > 0 && (
+        <>
+          <div className="hk" style={{ marginTop: 18 }}>{t("where it came from")}</div>
+          <div className="trace">
+            {touched.map(({ l, ref }, i) => (
+              <button
+                key={l.id}
+                className={i === 0 ? "tr now" : "tr"}
+                onClick={() => props.onSelect({ owner: l.owner, id: l.id, what: "lesson" })}
+              >
+                <span className="w">{when(l.created_at)}</span>
+                <span className="dot" />
+                <span className="tx">
+                  {t(verb[ref.action], { kind: t(e.kind) })} · {l.title || l.trigger}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function when(iso?: string): string {
   if (!iso) return "";
@@ -27,11 +97,20 @@ export function LearnedView(props: {
   epoch: number;
   /** Roster roots — their lessons ride the same merged pull as the column's. */
   roots: string[];
+  /** Master's auto-refine block (schema 27) — the overview's one switch; null
+   *  on old daemons or before attach, and then the switch stays hidden rather
+   *  than showing a state nobody verified. */
+  autoRefine: AutoRefineInfo | null;
+  online: boolean;
+  /** Writes the global setting through the bridge. */
+  onToggleAuto: (enabled: boolean) => Promise<void>;
+  /** Jump to another record — an entry's history rows open their own round. */
+  onSelect: (s: LearnedSel | null) => void;
   /** A rollback / apply changed the record — ask App to bump the epoch. */
   onChanged: () => void;
 }) {
   const t = useT();
-  const [rows, setRows] = useState<LessonRecord[] | null>(null);
+  const [data, setData] = useState<HarnessData | null>(null);
   const [rolled, setRolled] = useState<Record<string, "pending" | "done">>({});
   const [globalRun, setGlobalRun] = useState<"idle" | "pending" | "done">("idle");
   const [err, setErr] = useState<string | null>(null);
@@ -40,13 +119,14 @@ export function LearnedView(props: {
   const rootsKey = props.roots.join("\n");
   useEffect(() => {
     let live = true;
-    fetchLessons(props.epoch, rootsKey === "" ? [] : rootsKey.split("\n")).then((r) => {
-      if (live) setRows(r);
+    fetchHarness(props.epoch, rootsKey === "" ? [] : rootsKey.split("\n")).then((d) => {
+      if (live) setData(d);
     });
     return () => {
       live = false;
     };
   }, [props.epoch, rootsKey]);
+  const rows = data?.lessons ?? null;
 
   // Action state is per lesson — never carried across a selection. The fold
   // resets too: every lesson opens on its short answer.
@@ -98,21 +178,39 @@ export function LearnedView(props: {
     }
   };
 
-  if (!props.sel) {
+  if (data !== null && !props.sel) {
     return (
       <div className="learn">
-        <div className="colnote" style={{ padding: 0 }}>
-          {t("pick a lesson on the left to see its full record.")}
-        </div>
+        <LearnedOverview
+          data={data}
+          stats={harnessStats(data)}
+          autoRefine={props.autoRefine}
+          online={props.online}
+          onToggleAuto={props.onToggleAuto}
+        />
       </div>
     );
   }
-  if (rows === null) {
+  if (rows === null || data === null) {
     return (
       <div className="learn">
         <div className="colnote" style={{ padding: 0 }}>
           {t("loading…")}
         </div>
+      </div>
+    );
+  }
+  if (props.sel !== null && (props.sel.what ?? "lesson") === "entry") {
+    const e = data.entries.find((x) => x.id === props.sel?.id && x.owner === props.sel?.owner);
+    return (
+      <div className="learn">
+        {e === undefined ? (
+          <div className="colnote" style={{ padding: 0 }}>
+            {t("this lesson is no longer in the record.")}
+          </div>
+        ) : (
+          <EntryDetail entry={e} lessons={data.lessons} onSelect={props.onSelect} />
+        )}
       </div>
     );
   }

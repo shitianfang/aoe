@@ -375,10 +375,15 @@ const ZH: Record<string, string> = {
   "looked, found nothing to change": "看过一遍,没有要改的",
   "it has not run a round yet.": "它还没学过。",
   "kept now": "现在记着",
-  "rounds run": "学过",
+  /* "学过" alone collided with the curve's "学到" — one counts rounds, the
+     other counts lessons, and side by side they read as the same word. */
+  "rounds run": "学过几次",
   "undone": "其中撤销",
   "changed nothing": "其中没改动",
   "{n} rounds": "{n} 次",
+  /* the two breakdown rows, each labelled with what it counts */
+  "kept, by kind": "记着的种类",
+  "is it helping": "管用吗",
   "where it came from": "怎么来的",
   /* the worked example the ⚡ surface stands in when nothing has been learned */
   "nothing has been learned in this workspace yet.": "这个工作区还没学到东西。",

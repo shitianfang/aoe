@@ -141,25 +141,36 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .ovw { padding: 0; }
 .ovw .ohead { font-size: 12px; line-height: 1.6; color: var(--t2); max-width: 52ch; }
 /* Four numbers, not four charts: at this data volume a bar chart of them is
-   decoration. The two smaller ones are subsets of "rounds run", which is why
-   their labels say so. */
+   decoration. But they are not four peers — "kept now" is the state, the other
+   three are the process, and the last two are subsets of "rounds run". The gap
+   splits state from process; the smaller type marks the subsets. Nothing here
+   is separated by a line. */
 .kpi { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 14px; }
 .kpi .t { flex: 1 1 96px; min-width: 0; background: var(--soft); padding: 9px 10px 10px; }
+/* one wider gap, where state ends and process begins — a group boundary the
+   tiles keep when the row wraps, which a wrapper div would not */
+.kpi .t.grp { margin-left: 8px; }
 .kpi .n { font-size: 21px; line-height: 1.1; color: var(--t1); }
 .kpi .n.q { color: var(--t3); }
 .kpi .k { margin-top: 3px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.kpi .t.sub { flex: 1 1 78px; }
+.kpi .t.sub .n { font-size: 15px; line-height: 1.5; color: var(--t2); }
 /* Composition as words. Four nominal classes have no order to ramp, and the
-   categorical hues in this shell already mean "which agent". */
-.kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 14px; }
+   categorical hues in this shell already mean "which agent".
+   Both rows count the entries kept right now — one by kind, one by whether a
+   round has judged them useful — so each carries the label of what it counts.
+   Unlabelled they read as a single list of seven categories. */
+.brk { margin-top: 15px; }
+.brk + .brk { margin-top: 12px; }
+.brk .bl { margin-bottom: 5px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .kinds .kd { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--t2); }
 .kinds .kd .c { font-family: var(--mono); font-size: 11px; color: var(--t1); }
 .kinds .kd.z, .kinds .kd.z .c { color: var(--t3); }
-/* the verdict row sits under the composition row and reads as its sibling */
-.kinds.vd { margin-top: 7px; }
 /* Written versus still standing, one point per round. Step segments, hairline
    baseline, no grid, no legend box — the two lines are labelled at their ends.
    The gap between them is the reading: learning that did not survive. */
-.curve { margin-top: 18px; max-width: 430px; }
+.curve { margin-top: 20px; max-width: 430px; }
 .curve .ax { stroke: var(--hair); stroke-width: 1; }
 .curve .ln { fill: none; stroke-width: 1.25; stroke-linejoin: miter; }
 .curve .ln.written { stroke: var(--t3); stroke-dasharray: 3 2; }
@@ -171,16 +182,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .curve .lb.on { fill: var(--t1); }
 .curve .tk { font-family: var(--mono); font-size: 8px; fill: var(--t3); }
 
-/* The one thing a number cannot say: is it still learning, or did it stop.
-   One column per day over a fixed window; a quiet day is a baseline hairline,
-   not a track, so silence reads as silence. */
-.spark { margin-top: 18px; }
-.spark .row { display: flex; align-items: flex-end; gap: 2px; height: 30px; }
-.spark .b { width: 6px; flex: none; height: 100%; display: flex; align-items: flex-end; }
-.spark .b i { width: 100%; min-height: 2px; background: var(--t1); }
-.spark .b.z i { height: 1px; min-height: 1px; background: var(--hair-hi); }
-.spark .b.open i { background: var(--t3); }
-.spark .ax { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); }
 .ovw .orule { margin-top: 20px; padding-top: 13px; border-top: 1px dashed var(--hair); }
 .ovw .orule .lauto { padding: 0; }
 .ovw .orule .dim { margin-top: 6px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
@@ -757,6 +758,7 @@ html[lang="zh-CN"] .colnote,
 html[lang="zh-CN"] .edetail .hk,
 html[lang="zh-CN"] .edetail .more,
 html[lang="zh-CN"] .kpi .k,
+html[lang="zh-CN"] .brk .bl,
 html[lang="zh-CN"] .segs button,
 html[lang="zh-CN"] .ovw .orule .dim,
 html[lang="zh-CN"] .ovw .egnote,

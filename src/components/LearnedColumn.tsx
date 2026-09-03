@@ -128,7 +128,9 @@ export function LearnedColumn(props: {
     const meta = [
       r.owner,
       src === null ? null : t("from {source}", { source: src }),
-      spent ? t("undone") : null,
+      // Not the overview's "其中撤销" — that one is a share of the rounds, and
+      // this is one round saying it was taken back.
+      spent ? t("rolled back") : null,
     ].filter((part): part is string => part !== null);
     // What the round actually touched, by name. A summary sentence alone never
     // says which lesson moved; these do, and they are the same words the

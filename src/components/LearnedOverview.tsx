@@ -5,26 +5,13 @@ import { ENTRY_KINDS, harnessStats, hasVerdicts, type HarnessData, type HarnessS
 import { SAMPLE_HARNESS } from "../sampleHarness";
 import { LearnedCurve } from "./LearnedCurve";
 
-/** Days the activity strip covers. Fixed, so the strip means the same thing
- *  every time it is opened — a window that grows with the data would make a
- *  quiet week and a busy week look alike. */
-const WINDOW_DAYS = 21;
-
-function dayLabel(day: string): string {
-  const d = new Date(`${day}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return day;
-  const locale = getLang() === "zh" ? "zh-CN" : undefined;
-  return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
-}
-
 function clock(ms: number): string {
   const locale = getLang() === "zh" ? "zh-CN" : undefined;
   return new Date(ms).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
-/** The ⚡ pane with nothing picked: what this mechanism has actually done.
- *  Four numbers, the composition in words, and one strip for rhythm — the only
- *  question a chart answers here that a number cannot is "is it still going".
+/** The ⚡ pane with nothing picked: what this mechanism has actually done, in
+ *  three bands — the counts, the composition in words, and the one chart.
  *  Four nominal kinds at n≈10 do not earn a stacked bar, and the categorical
  *  hues in this shell already mean "which agent", so the counts stay as text. */
 export function LearnedOverview(props: {
@@ -43,30 +30,6 @@ export function LearnedOverview(props: {
   const s = eg ? harnessStats(SAMPLE_HARNESS) : props.stats;
   const entries = eg ? SAMPLE_HARNESS.entries : props.data.entries;
 
-  // Right-align the window on the last round so the newest column is always
-  // the rightmost one, and pad the left with quiet days.
-  const tail = s.days.slice(-WINDOW_DAYS);
-  const pad = Math.max(0, WINDOW_DAYS - tail.length);
-  const back = (day: string, n: number) => {
-    const d = new Date(`${day}T00:00:00`);
-    d.setDate(d.getDate() - n);
-    const p = (v: number) => String(v).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  };
-  const first = tail.length > 0 ? tail[0].day : "";
-  const strip = [
-    // Pad days carry their real date so the axis can label the window's start,
-    // not just the first day that happened to have a round in it.
-    ...Array.from({ length: pad }, (_, i) => ({ day: first === "" ? "" : back(first, pad - i), n: 0, kept: 0 })),
-    ...tail,
-  ];
-  const peak = Math.max(1, ...strip.map((d) => d.n));
-  // Today's column is still filling up. Drawn, but paler — a bar that will
-  // grow before midnight must not read like a settled measurement.
-  const now = new Date();
-  const pad2 = (v: number) => String(v).padStart(2, "0");
-  const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-
   const ar = props.autoRefine;
   const toggle = (enabled: boolean) => {
     setPending(true);
@@ -76,8 +39,11 @@ export function LearnedOverview(props: {
       .finally(() => setPending(false));
   };
 
-  const tile = (n: number, label: string) => (
-    <div className="t">
+  // `mark` is the tile's place in the group: "grp" opens the second group,
+  // "sub" is a subset of the tile before it — drawn smaller, so the two totals
+  // are what the eye lands on first.
+  const tile = (n: number, label: string, mark?: "grp" | "sub") => (
+    <div className={mark === undefined ? "t" : `t ${mark}`}>
       <div className={n === 0 ? "n q" : "n"}>{n}</div>
       <div className="k">{label}</div>
     </div>
@@ -97,42 +63,53 @@ export function LearnedOverview(props: {
       )}
 
       <div className={eg ? "egblock" : undefined}>
+      {/* Two groups, not four peers: what it knows now, then how it got there.
+          The last two are subsets of "rounds run" and read as its subordinates. */}
       <div className="kpi">
         {tile(s.entries, t("kept now"))}
-        {tile(s.rounds, t("rounds run"))}
-        {tile(s.rollbacks, t("undone"))}
-        {tile(s.noops, t("changed nothing"))}
+        {tile(s.rounds, t("rounds run"), "grp")}
+        {tile(s.rollbacks, t("undone"), "sub")}
+        {tile(s.noops, t("changed nothing"), "sub")}
       </div>
 
-      <div className="kinds">
-        {ENTRY_KINDS.map((kind) => {
-          const n = s.byKind.find((b) => b.kind === kind)?.n ?? 0;
-          return (
-            <span className={n === 0 ? "kd z" : "kd"} key={kind}>
-              {t(kind)}
-              <span className="c">{n}</span>
-            </span>
-          );
-        })}
+      {/* Both rows below count the same population — the entries kept right now.
+          Stacked bare they read as one list of seven categories, so each says
+          what it counts. */}
+      <div className="brk">
+        <div className="bl">{t("kept, by kind")}</div>
+        <div className="kinds">
+          {ENTRY_KINDS.map((kind) => {
+            const n = s.byKind.find((b) => b.kind === kind)?.n ?? 0;
+            return (
+              <span className={n === 0 ? "kd z" : "kd"} key={kind}>
+                {t(kind)}
+                <span className="c">{n}</span>
+              </span>
+            );
+          })}
+        </div>
       </div>
 
       {/* Is any of it doing anything. Hidden until a round running the counters
           has judged at least one entry — a row of zeroes would read as "none of
           it works" when it actually means "nobody has looked". */}
       {hasVerdicts(entries) && (
-        <div className="kinds vd">
-          <span className="kd">
-            {t("helped")}
-            <span className="c">{s.verdicts.helped}</span>
-          </span>
-          <span className={s.verdicts.hindered === 0 ? "kd z" : "kd"}>
-            {t("got in the way")}
-            <span className="c">{s.verdicts.hindered}</span>
-          </span>
-          <span className={s.verdicts.unjudged === 0 ? "kd z" : "kd"}>
-            {t("not judged yet")}
-            <span className="c">{s.verdicts.unjudged}</span>
-          </span>
+        <div className="brk">
+          <div className="bl">{t("is it helping")}</div>
+          <div className="kinds">
+            <span className="kd">
+              {t("helped")}
+              <span className="c">{s.verdicts.helped}</span>
+            </span>
+            <span className={s.verdicts.hindered === 0 ? "kd z" : "kd"}>
+              {t("got in the way")}
+              <span className="c">{s.verdicts.hindered}</span>
+            </span>
+            <span className={s.verdicts.unjudged === 0 ? "kd z" : "kd"}>
+              {t("not judged yet")}
+              <span className="c">{s.verdicts.unjudged}</span>
+            </span>
+          </div>
         </div>
       )}
 

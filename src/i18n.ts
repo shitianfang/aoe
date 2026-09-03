@@ -160,12 +160,21 @@ const ZH: Record<string, string> = {
 
   /* first open: example asks + sample lesson */
   "first time here — try one:": "第一次来 —— 试试这些:",
-  "Put together a small team: one helper researches this workspace, another drafts a summary, then report back to me.":
-    "组一个小分队:一个助手调研这个工作区,另一个起草摘要,最后向我汇报。",
-  "Tidy the files in this workspace into folders by topic, and tell me what moved.":
-    "把这个工作区的文件按主题归类整理,并告诉我动了哪些。",
-  "Check in with me every morning at 9 with a one-line plan for the day.":
-    "每天早上 9 点向我报到,给我一行今日计划。",
+  "Three helpers, one each: a name, a palette, a tagline for a new app — then pick the best set.":
+    "三个助手各领一件:给一个新应用起名字、配色、想一句标语 —— 最后你挑出最好的一套。",
+  "a team of 3 · watch the left column": "3 人小队 · 左边那栏能看到他们",
+  "Send fourteen helpers out, one idea each: things a desktop agent could do for me. Then rank them.":
+    "派十四个助手出去,一人一个点子:桌面智能体能替我做的事。然后排个序。",
+  "14 at once · the left column fills up": "14 个同时开工 · 左边那栏会挤满",
+  "Write a single-file HTML day planner to today.html — style and script inline — then publish it.":
+    "写一个单文件 HTML 日程页,样式和脚本都放里面,存成 today.html,然后发布出来。",
+  "a real file · Preview opens on its own": "会真写出文件 · 预览自己就打开了",
+  "Make a poster in poster.html, then improve it three times — layout, colour, type — publishing each pass.":
+    "先做一张海报 poster.html,再改三轮:版式、配色、字体 —— 每改一轮就发一版。",
+  "versions · Preview shows the change side by side": "多个版本 · 预览里并排看得见变化",
+  "Keep an eye on this workspace while I'm away: log what changes, and what you'd do about it.":
+    "我不在的时候帮我盯着这个工作区:记下有什么变化,还有你打算怎么办。",
+  "long-running on · it picks its own driver": "长程自主已开 · 它自己挑驱动方式",
   "e.g. ask master for a small team — one helper to research, one to draft.":
     "例如:让 master 组个小组 —— 一个助手调研,一个起草。",
   "keep reports under three sentences": "汇报控制在三句话以内",

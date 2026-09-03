@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { LessonResult, TimelineItem } from "../types";
 import { LessonCard } from "./LessonCard";
+import { FirstRun } from "./FirstRun";
 import { BotAvatar } from "./BotAvatar";
 import { Markdown } from "../markdown";
 import { useT } from "../i18n";
@@ -27,18 +28,11 @@ function LessonRow(props: { result: LessonResult; at: string }) {
   );
 }
 
-/** First-open example asks (master timeline only). English keys, ZH in the
- *  dictionary; each sends as-is on click and the block leaves for good once
- *  any real conversation exists. */
-const EXAMPLES = [
-  "Put together a small team: one helper researches this workspace, another drafts a summary, then report back to me.",
-  "Tidy the files in this workspace into folders by topic, and tell me what moved.",
-  "Check in with me every morning at 9 with a one-line plan for the day.",
-];
-
 export function Timeline(props: {
   items: TimelineItem[];
-  onExample?: (text: string) => void;
+  /** Master timeline only. `opts` lets a showcase card ask for the send it
+   *  needs — long-running mode is a real switch, not a hidden preamble. */
+  onExample?: (text: string, opts?: { longRun?: boolean }) => void;
   /** Set in a root pane: assistant rows get this root's avatar, not master's chip. */
   botSeed?: string;
 }) {
@@ -140,16 +134,7 @@ export function Timeline(props: {
   return (
     <div className="transcript" ref={ref}>
       {props.items.map(row)}
-      {fresh && (
-        <div className="firstrun">
-          <div className="frh">{t("first time here — try one:")}</div>
-          {EXAMPLES.map((x) => (
-            <button key={x} className="frx" onClick={() => props.onExample?.(t(x))}>
-              {t(x)}
-            </button>
-          ))}
-        </div>
-      )}
+      {fresh && props.onExample ? <FirstRun onExample={props.onExample} /> : null}
     </div>
   );
 }

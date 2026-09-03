@@ -333,6 +333,9 @@ export interface AppState {
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
   target: ComposerTarget;
+  /** Long-running mode: the next message asks the subject to set up one of the
+   *  three drivers itself. Sticky per workspace; never turns anything on here. */
+  longRun: boolean;
   /** Runtime's own "what am I doing" line (setWorkingMessage), shown while working. */
   working?: string;
   /** Last error surfaced to the strip, if any. */

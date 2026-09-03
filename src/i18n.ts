@@ -210,6 +210,10 @@ const ZH: Record<string, string> = {
   /* composer */
   "Message {name}…": "发消息给 {name}…",
   "delivered now": "立即送达",
+  "long-running": "长程自主",
+  "{name} sets up an objective, a wake-up schedule or unattended itself, and says which.":
+    "让 {name} 自己选一种方式跑下去——设目标、定时唤醒、或自动运行——并说明选了哪个。",
+  "long-running · asked it to set up its own driver": "长程自主 · 已请它自行安排驱动方式",
   "to {name}": "发往 {name}",
   SEND: "发送",
   STOP: "停止",

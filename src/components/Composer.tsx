@@ -48,6 +48,11 @@ export function Composer(props: {
   /** Pane-bound mode: this composer lives in a root's pane and always messages
    *  that root — the to ▾ popup is hidden, the label is fixed. */
   fixedRoot?: string;
+  /** Long-running mode: master (or the pane's root) is asked to set up one of
+   *  the three drivers itself. Helpers have none of their own, so the switch
+   *  is hidden when the target is one. */
+  longRun: boolean;
+  onLongRun: (v: boolean) => void;
   onTarget: (t: ComposerTarget) => void;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -174,10 +179,23 @@ export function Composer(props: {
                 ))}
               </select>
             )}
-            {!props.fixedRoot && props.target.kind === "helper" && (
+            {!props.fixedRoot && props.target.kind === "helper" ? (
               <div className="dmode">
                 <span className="static">{t("delivered now")}</span>
               </div>
+            ) : (
+              props.bridge?.connected && (
+                <button
+                  className={props.longRun ? "lrun on" : "lrun"}
+                  title={t("{name} sets up an objective, a wake-up schedule or unattended itself, and says which.", {
+                    name: targetName,
+                  })}
+                  onClick={() => props.onLongRun(!props.longRun)}
+                >
+                  <span className="box">{props.longRun ? "✓" : ""}</span>
+                  {t("long-running")}
+                </button>
+              )
             )}
             {props.fixedRoot ? (
               <span className="to fixed">{t("to {name}", { name: targetName })}</span>

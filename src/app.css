@@ -344,6 +344,14 @@ body.resizing iframe { pointer-events: none; }
 .crow .mpick:hover, .crow .mpick:focus { color: var(--t2); }
 .dmode { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
 .dmode span.static { cursor: default; color: var(--t3); }
+/* Long-running switch: same quiet mono register as the delivery note it sits
+   in place of. Checked state borrows the accent, never a filled button — this
+   is a modifier on the next message, not an action. */
+.lrun { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; cursor: pointer; background: none; }
+.lrun:hover { color: var(--t2); }
+.lrun.on { color: var(--green); }
+.lrun .box { display: inline-flex; align-items: center; justify-content: center; width: 11px; height: 11px; font-size: 8px; line-height: 1; border: 1px solid var(--hair-hi); color: inherit; }
+.lrun.on .box { border-color: var(--green); }
 .send { min-width: 56px; height: 26px; padding: 0 12px; color: var(--hi-fg); font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--hi-bg); }
 .send:hover { opacity: .92; }
 .send:disabled { opacity: .5; cursor: default; }

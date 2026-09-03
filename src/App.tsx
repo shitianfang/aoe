@@ -49,12 +49,24 @@ import {
 } from "./runtime/bridge";
 import { fetchPreviewFiles } from "./runtime/preview";
 import { fetchLessons } from "./runtime/learned";
+import { withLongRun } from "./runtime/longrun";
 import type { ChatMessage } from "./runtime/nim";
 import type { LearnedSel } from "./types";
 import { t as tr, useT } from "./i18n";
 
 let nextId = 1;
 const id = () => `t${nextId++}`;
+
+/** The row that records a long-running send. The preamble itself is not shown
+ *  — what matters is that the ask was made; what it produced shows up as the
+ *  real goal / check-in / unattended state in DRIVERS moments later. */
+const longRunNote = (): TimelineItem => ({
+  kind: "note",
+  id: id(),
+  text: tr("long-running · asked it to set up its own driver"),
+  rt: clock(),
+  ts: Date.now(),
+});
 
 function filePathFromArgs(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
@@ -380,6 +392,7 @@ export function App() {
     heartbeats: [],
     autonomous: null,
     target: { kind: "master" },
+    longRun: false,
     timeline: [{ kind: "divider", id: id(), text: tr("session started · {at}", { at: clock() }) }],
   }));
   const tt = useT();
@@ -1021,6 +1034,7 @@ export function App() {
             heartbeats: [],
             autonomous: null,
             target: { kind: "master" },
+    longRun: false,
             error: undefined,
             timeline: [{ kind: "divider", id: id(), text: tr("workspace {ws} · {at}", { ws, at: clock() }) }],
             ...restoreSplit(splitKey),
@@ -1178,6 +1192,11 @@ export function App() {
   );
   // Picking a to ▾ target also jumps the view to that conversation's tab —
   // the input follows the pane, so the pane follows the pick.
+  /** Long-running mode is deliberately session-scoped: a switch that adds an
+   *  instruction to every message should not come back silently after a
+   *  restart. Switching workspaces clears it with the rest of the state. */
+  const setLongRun = useCallback((v: boolean) => setState((s) => ({ ...s, longRun: v })), []);
+
   const setTarget = useCallback(
     (target: ComposerTarget) =>
       setState((s) => {
@@ -1429,18 +1448,22 @@ export function App() {
   const postRoot = useCallback(async (name: string, text: string) => {
     const busy = (stateRef.current.rootStates[name] ?? "idle") === "working";
     const op = busy ? "root_steer" : "root_prompt";
-    const userItem: TimelineItem = { kind: "user", id: id(), text, at: clock() };
+    const longRun = stateRef.current.longRun;
+    // The timeline keeps the user's own words; the long-running ask rides
+    // along as a note row, never disguised as something they typed.
+    const rows: TimelineItem[] = [{ kind: "user", id: id(), text, at: clock() }];
+    if (longRun) rows.push(longRunNote());
     setState((s) => ({
       ...s,
       error: undefined,
       rootStates: busy ? s.rootStates : { ...s.rootStates, [name]: "working" },
       rootTimelines: {
         ...s.rootTimelines,
-        [name]: [...(s.rootTimelines[name] ?? []), userItem],
+        [name]: [...(s.rootTimelines[name] ?? []), ...rows],
       },
     }));
     try {
-      await bridgeCmd(op, text, { target: name });
+      await bridgeCmd(op, longRun ? withLongRun(text) : text, { target: name });
     } catch (e) {
       setState((s) => ({
         ...s,
@@ -1474,18 +1497,21 @@ export function App() {
       if (bridgeRef.current) {
         const busy = current.master === "working";
         const op = busy ? "steer" : "prompt";
+        const longRun = current.longRun;
+        const rows = longRun ? [userItem, longRunNote()] : [userItem];
         setState((s) => {
           const jumped = showFocused(s, { kind: "timeline" });
           return {
             ...jumped,
             master: "working",
             error: undefined,
-            timeline: [...jumped.timeline, userItem],
+            timeline: [...jumped.timeline, ...rows],
           };
         });
+        const sent = longRun ? withLongRun(text) : text;
         try {
-          if (op === "steer") await steer(text);
-          else await bridgeCmd("prompt", text);
+          if (op === "steer") await steer(sent);
+          else await bridgeCmd("prompt", sent);
         } catch (e) {
           setState((s) => ({
             ...s,
@@ -1631,6 +1657,8 @@ export function App() {
       target={state.target}
       working={state.working}
       error={state.error}
+      longRun={state.longRun}
+      onLongRun={setLongRun}
       onTarget={setTarget}
       onSend={send}
       onStop={stop}
@@ -1654,6 +1682,8 @@ export function App() {
       error={state.error}
       viewRoot={{ name, state: rootStateOf(name), working: state.rootWorking[name] || undefined }}
       fixedRoot={name}
+      longRun={state.longRun}
+      onLongRun={setLongRun}
       onTarget={setTarget}
       onSend={(t) => postRoot(name, t)}
       onStop={() => stopRoot(name)}

@@ -117,6 +117,58 @@ function diffWorkspace() {
 }
 // ---------------------------------------------------------------------------
 
+/** Plain text of an AgentMessage content (string or content-block array). */
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((b) => (b && typeof b.text === "string" ? b.text : "")).join("");
+  }
+  return "";
+}
+
+/** Slim the attach snapshot's transcript for history replay: the renderer only
+ *  needs [{role, text, at?, from?}], not full message objects. Keeps user and
+ *  assistant text plus agent_message customs (bare details.message — content is
+ *  the model-facing envelope); drops autonomous_status and every other custom,
+ *  drops empty entries, caps at the most recent 200. */
+function slimHistory(messages) {
+  const out = [];
+  for (const m of messages ?? []) {
+    if (!m || typeof m !== "object") continue;
+    const at = typeof m.timestamp === "number" ? m.timestamp : undefined;
+    if (m.role === "user" || m.role === "assistant") {
+      const text = contentText(m.content);
+      if (text) out.push({ role: m.role, text, ...(at !== undefined ? { at } : {}) });
+    } else if (m.role === "custom" && m.customType === "agent_message") {
+      const text = typeof m.details?.message === "string" ? m.details.message : "";
+      if (!text) continue;
+      const from = m.details?.from?.sessionName;
+      out.push({
+        role: "agent_message",
+        text,
+        ...(from ? { from } : {}),
+        ...(at !== undefined ? { at } : {}),
+      });
+    }
+  }
+  return out.slice(-200);
+}
+
+/** Root sessions beyond this bridge's masters (rlmDepth 0, non-master names),
+ *  read-only in the Agents column. */
+async function agentsPayload() {
+  if (!daemonClient) return { agents: [] };
+  const listed = await daemonClient.request({ type: "list", all: true });
+  if (!listed.success) throw new Error(listed.error || "list failed");
+  const agents = (listed.data.sessions || [])
+    .filter((s) => (s.rlmDepth ?? 0) === 0 && !String(s.sessionName ?? "").startsWith("master"))
+    .map((s) => ({
+      name: s.sessionName || String(s.firstMessage ?? "").slice(0, 40) || "unnamed",
+      state: s.isSessionActive ? (s.isStreaming ? "running" : "idle") : "inactive",
+    }));
+  return { agents };
+}
+
 function canConnect(socketPath) {
   return new Promise((resolve) => {
     const sock = createConnection(socketPath);
@@ -249,7 +301,7 @@ async function attachMaster() {
       sessionDir: snapshot.state?.sessionDir ?? null,
     },
     children: snapshot.children ?? [],
-    messages: [],
+    messages: slimHistory(snapshot.messages),
   };
   broadcast({ type: "hello", daemon });
   broadcast(lastSnapshot);
@@ -461,6 +513,18 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { ...cors, "content-type": "application/json" });
       return res.end(JSON.stringify({ error: e?.message || "not found" }));
     }
+  }
+  if (req.url === "/bridge/agents") {
+    agentsPayload()
+      .then((p) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(p));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
   }
   if (req.url === "/bridge/health") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

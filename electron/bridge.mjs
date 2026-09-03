@@ -12,7 +12,8 @@
  *                               |"watch_root"|"unwatch_root"|"root_prompt"
  *                               |"root_steer"|"root_follow_up"|"root_abort"
  *                               |"root_heartbeat_set"|"root_heartbeat_update"
- *                               |"root_refine_rollback",
+ *                               |"root_refine"|"root_refine_rollback"
+ *                               |"set_auto_refine",
  *                             text?, target? }
  *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
  *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
@@ -1014,6 +1015,49 @@ async function handleCmd(body) {
       // action "pause" | "resume" | "clear" — the root's own heartbeat only
       const { conn } = await ensureRootConn(String(body.target ?? ""));
       return { job: (await conn.updateHeartbeat(String(body.action ?? ""))) ?? null };
+    }
+    case "root_refine": {
+      // Learn-now for another root: a real /refine on the root's own session
+      // and harness (empty instructions = plain refine). Mirrors master's
+      // "refine" op; can take minutes (the SDK allows 10).
+      const { conn } = await ensureRootConn(String(body.target ?? ""));
+      return { result: await conn.refine(body.text ? { instructions: String(body.text) } : {}) };
+    }
+    case "set_auto_refine": {
+      // The auto-refine switch is a GLOBAL setting: settings.json autoRefine
+      // (core settings-manager getAutoRefineSettings; enabled defaults true).
+      // Sessions cache settings at start — the daemon's `reload` command is
+      // the real pickup path (session.reload → settingsManager.reload), so
+      // after the write every live root worker is reloaded (helpers never
+      // auto-refine: the session gates on rlmDepth 0).
+      if (!daemonClient) throw new Error("daemon not connected");
+      const enabled = Boolean(body.enabled);
+      const file = path.join(AGENT_HOME, "settings.json");
+      const cur = readJsonFile(file) ?? {};
+      cur.autoRefine = {
+        ...(cur.autoRefine && typeof cur.autoRefine === "object" ? cur.autoRefine : {}),
+        enabled,
+      };
+      fs.mkdirSync(AGENT_HOME, { recursive: true });
+      // Atomic replace, like the core's own settings writes.
+      const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(tmp, `${JSON.stringify(cur, null, 2)}\n`, { mode: 0o600 });
+      fs.renameSync(tmp, file);
+      let reloaded = 0;
+      let live = 0;
+      const listed = await daemonClient.request({ type: "list", all: true }).catch(() => null);
+      const sessions = listed?.success ? listed.data.sessions || [] : [];
+      for (const s of sessions) {
+        if ((s.rlmDepth ?? 0) !== 0 || !s.activeSessionId) continue;
+        live++;
+        const r = await daemonClient
+          .request({ type: "reload", activeSessionId: s.activeSessionId })
+          .catch(() => null);
+        if (r?.success) reloaded++;
+      }
+      // Read back from master's connection state — session truth, not the file.
+      const { autoRefine } = await statusPayload().catch(() => ({ autoRefine: null }));
+      return { enabled: autoRefine?.enabled ?? enabled, reloaded, live };
     }
     case "root_refine_rollback": {
       // Undo one of a root's own lessons through the root's own connection

@@ -123,12 +123,22 @@ export function lessonRowTitle(lesson: { title?: string; trigger?: string }): st
   return clause.length > LESSON_TITLE_MAX ? `${clause.slice(0, LESSON_TITLE_MAX - 1).trimEnd()}…` : clause;
 }
 
-/** Lesson source → product words ("who asked for this lesson"). */
+/** Lesson source → product words ("who asked for this lesson"). Detail panes
+ *  keep the precise three-way wording (manual / auto / the agent itself). */
 export function lessonSourceText(source: string | undefined): string | null {
   if (source === "auto") return t("auto");
-  if (source === "manual") return t("you asked");
+  if (source === "manual") return t("manual");
   if (source === "agent") return t("the agent");
   return null; // unknown/older record — say nothing rather than guess
+}
+
+/** Row-suffix variant: 主动/自动 only — an agent-invoked lesson was not asked
+ *  for by you either, so it reads as 自动 in the terse suffix; the detail pane
+ *  still says precisely who. */
+export function lessonRowSourceText(source: string | undefined): string | null {
+  if (source === "auto" || source === "agent") return t("auto");
+  if (source === "manual") return t("manual");
+  return null;
 }
 
 /** Epoch ms → HH:MM for compact status rows. */

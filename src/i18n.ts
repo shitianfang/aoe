@@ -84,7 +84,7 @@ const ZH: Record<string, string> = {
   /* rail + columns */
   Agents: "智能体",
   Files: "文件",
-  Learned: "经验",
+  "Self-evolution": "自进化",
   Skills: "技能",
   Extensions: "扩展",
   Preview: "预览",
@@ -163,12 +163,15 @@ const ZH: Record<string, string> = {
   "open an html, md, png or pdf file to preview it.": "打开 html、md、png 或 pdf 文件即可预览。",
   diff: "对比",
 
-  /* learned column (⚡) */
+  /* self-evolution column (⚡) */
   "what agents pick up while working — later work uses it.":
     "agent 工作中自己学到的改进 —— 之后的工作会用上。",
-  "nothing learned yet.": "还没有经验。",
+  "nothing learned yet.": "还没有自进化的记录。",
   "agents keep small improvements as they work — they appear here on their own.":
     "agent 干活时会自己记下小改进,自动出现在这里。",
+  "let agents learn on their own": "允许 agent 自动积累经验",
+  "about every {n} turns, or when it tidies its context — at most once per {m} minutes.":
+    "大约每 {n} 轮、或整理上下文时自动学一次;两次至少间隔 {m} 分钟。",
   "for one agent": "只属于某个 agent",
   "for every workspace": "所有工作区通用",
   "something new": "有新内容",
@@ -269,7 +272,7 @@ const ZH: Record<string, string> = {
   "roll back failed": "撤销失败",
   "apply everywhere failed": "应用到所有工作区失败",
   auto: "自动",
-  "you asked": "你要求的",
+  manual: "主动",
   "the agent": "智能体",
 
   /* harness entry kinds (HANDOFF §2) — subagent is a helper in product words */
@@ -358,6 +361,15 @@ const ZH: Record<string, string> = {
   active: "进行中",
   budget_limited: "预算用尽",
   complete: "已完成",
+
+  /* inspector · self-evolution (manual /refine + auto rhythm readout) */
+  "learn now": "学习一次",
+  "anything to focus on? (optional)": "想让它注意什么?(可选)",
+  "start learning": "开始学习",
+  "learning… this can take a few minutes.": "正在学习… 可能需要几分钟。",
+  "learn failed": "学习失败",
+  "last auto review {at}": "上次自动评估 {at}",
+  "next auto learn no earlier than {at}": "下次自动学习不早于 {at}",
 
   /* inspector · subject binding */
   Task: "任务",

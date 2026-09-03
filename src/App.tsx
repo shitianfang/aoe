@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AgentState,
   AppState,
+  AutoRefineInfo,
   AutonomousInfo,
   ChildInfo,
   ColumnView,
@@ -364,6 +365,8 @@ export function App() {
     rootWorking: {},
     rootGoals: {},
     rootAutonomous: {},
+    autoRefine: null,
+    rootAutoRefine: {},
     bridge: null,
     goal: null,
     children: [],
@@ -483,6 +486,7 @@ export function App() {
           ...s,
           rootGoals: { ...s.rootGoals, [name]: d.goal },
           rootAutonomous: { ...s.rootAutonomous, [name]: d.autonomous },
+          rootAutoRefine: { ...s.rootAutoRefine, [name]: d.autoRefine },
         }));
       })
       .catch(() => {
@@ -1003,6 +1007,8 @@ export function App() {
             rootWorking: {},
             rootGoals: {},
             rootAutonomous: {},
+            autoRefine: null,
+            rootAutoRefine: {},
             goal: null,
             children: [],
             helperEvents: {},
@@ -1103,6 +1109,9 @@ export function App() {
           rootAutonomous: rstate
             ? { ...s.rootAutonomous, [m.root]: (rstate.autonomous as AutonomousInfo | null) ?? null }
             : s.rootAutonomous,
+          rootAutoRefine: rstate
+            ? { ...s.rootAutoRefine, [m.root]: (rstate.autoRefine as AutoRefineInfo | null) ?? null }
+            : s.rootAutoRefine,
         }));
       } else if (m.type === "root_event") {
         onRootEvent(m.root, m.event);
@@ -1124,6 +1133,7 @@ export function App() {
         // client attaching after a continuation still shows the last reason.
         const snapAuto = (m.state.autonomous as AutonomousInfo | null | undefined) ?? null;
         if (snapAuto?.lastInjection) lastInjectionSeenRef.current = snapAuto.lastInjection.at;
+        const snapRefine = (m.state.autoRefine as AutoRefineInfo | null | undefined) ?? null;
         setState((s) => {
           const children = roster.map((c) => {
             const prev = s.children.find((p) => p.id === c.id);
@@ -1135,6 +1145,7 @@ export function App() {
               ...s,
               goal: (m.state.goal as GoalInfo) ?? null,
               autonomous: snapAuto ?? s.autonomous,
+              autoRefine: snapRefine ?? s.autoRefine,
               children,
               timeline: history.length > 0 ? [...s.timeline, ...history] : s.timeline,
               selectedAgent: has(s.selectedAgent) ? s.selectedAgent : null,
@@ -1222,6 +1233,24 @@ export function App() {
     setLearnedSel(sel);
     if (sel) setState((s) => popPane(s, { kind: "learned" }));
   }, []);
+
+  /** The ⚡ column's one checkbox: the GLOBAL auto-refine setting
+   *  (settings.json autoRefine.enabled). The bridge writes the file and
+   *  reloads every live root worker — the response carries the value read
+   *  back from master's connection state, which is what we keep. */
+  const toggleAutoRefine = useCallback(
+    async (enabled: boolean) => {
+      const d = await bridgeCmd("set_auto_refine", undefined, { enabled });
+      const now = Boolean(d.enabled);
+      setState((s) => ({
+        ...s,
+        autoRefine: s.autoRefine ? { ...s.autoRefine, enabled: now } : { enabled: now },
+      }));
+      const sel = stateRef.current.selectedRoot;
+      if (sel) refreshRootStatus(sel); // its effective value moved with the file
+    },
+    [refreshRootStatus],
+  );
 
   // ⚡ unread dot: lessons newer than when the column was last open. Reads the
   // same cached pull the column uses — one fetch per epoch/roster, no hammering.
@@ -1732,7 +1761,7 @@ export function App() {
   const focusedPane = currentPane(state);
 
   const paneTitle = (p: PaneView): string => {
-    if (p.kind === "learned") return tt("Learned");
+    if (p.kind === "learned") return tt("Self-evolution");
     if (p.kind === "preview") return tt("Preview");
     if (p.kind === "helper") {
       const c = state.children.find((x) => x.id === p.childId);
@@ -1941,7 +1970,10 @@ export function App() {
             selected={learnedSel}
             epoch={lessonEpoch}
             roots={learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")}
+            autoRefine={state.autoRefine}
+            online={Boolean(state.bridge?.connected)}
             onSelect={selectLearned}
+            onToggleAuto={toggleAutoRefine}
           />
         ) : state.column === "skills" ? (
           <SkillsColumn />
@@ -1982,6 +2014,10 @@ export function App() {
           rootGoal={state.selectedRoot ? state.rootGoals[state.selectedRoot] ?? null : null}
           rootAutonomous={
             state.selectedRoot ? state.rootAutonomous[state.selectedRoot] ?? null : null
+          }
+          autoRefine={state.autoRefine}
+          rootAutoRefine={
+            state.selectedRoot ? state.rootAutoRefine[state.selectedRoot] ?? null : null
           }
           rootLoaded={
             state.selectedRoot !== null &&

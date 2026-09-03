@@ -302,6 +302,11 @@ export interface AppState {
   rootGoals: Record<string, GoalInfo | null>;
   /** Per-root unattended status (root_snapshot state + status re-pulls). */
   rootAutonomous: Record<string, AutonomousInfo | null>;
+  /** Master's auto-refine rhythm (attach snapshot state.autoRefine, schema 27);
+   *  null on old daemons — the related controls stay hidden then. */
+  autoRefine: AutoRefineInfo | null;
+  /** Per-root auto-refine rhythm (root_snapshot state + status re-pulls). */
+  rootAutoRefine: Record<string, AutoRefineInfo | null>;
   bridge: BridgeState | null;
   goal: GoalInfo | null;
   children: ChildInfo[];

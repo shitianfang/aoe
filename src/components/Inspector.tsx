@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
+  AutoRefineInfo,
   AutonomousInfo,
   BridgeState,
   ChildInfo,
@@ -133,6 +134,10 @@ export function Inspector(props: {
   /** The selected root's own state (null until its snapshot lands). */
   rootGoal: GoalInfo | null;
   rootAutonomous: AutonomousInfo | null;
+  /** Auto-refine rhythm readout (schema 27; null on old daemons — the
+   *  self-evolution panel then shows the learn-now control alone). */
+  autoRefine: AutoRefineInfo | null;
+  rootAutoRefine: AutoRefineInfo | null;
   /** The selected root's connection state has arrived — until then the panels
    *  say "loading", never "none". */
   rootLoaded: boolean;
@@ -171,6 +176,14 @@ export function Inspector(props: {
   const [hbEvery, setHbEvery] = useState<string>("30m");
   const [hbText, setHbText] = useState("");
   const [hbErr, setHbErr] = useState<string | null>(null);
+  // Self-evolution (learn now = a real /refine on this agent's own session).
+  // Busy is keyed by subject and never reset on selection change: the refine
+  // keeps running while you look elsewhere; its lesson lands in the timeline
+  // and ⚡ regardless.
+  const [learnOpen, setLearnOpen] = useState(false);
+  const [learnText, setLearnText] = useState("");
+  const [learnErr, setLearnErr] = useState<string | null>(null);
+  const [learnBusy, setLearnBusy] = useState<Record<string, boolean>>({});
   const [crons, setCrons] = useState<CronInfo[]>([]);
   // Elapsed unattended time is derived from startedAt; re-render it on the minute.
   const [, setTick] = useState(0);
@@ -200,6 +213,9 @@ export function Inspector(props: {
     setHbErr(null);
     setObjText("");
     setHbText("");
+    setLearnErr(null);
+    setLearnText("");
+    setLearnOpen(false);
   }, [child?.id, root]);
 
   const startedAt = auto?.enabled ? auto.startedAt : undefined;
@@ -266,6 +282,26 @@ export function Inspector(props: {
     } catch (e) {
       setAutoErr(e instanceof Error ? e.message : t("failed"));
     }
+  };
+
+  /** Learn now: a real refine on the subject's own session and harness.
+   *  Empty instruction = plain refine. Can take minutes; the finished lesson
+   *  arrives as refine_complete (timeline card + ⚡ re-pull) on its own. */
+  const submitLearn = () => {
+    const key = subjectName;
+    const text = learnText.trim();
+    setLearnErr(null);
+    setLearnBusy((m) => ({ ...m, [key]: true }));
+    const call = root
+      ? bridgeCmd("root_refine", text || undefined, { target: root })
+      : bridgeCmd("refine", text || undefined);
+    call
+      .then(() => {
+        setLearnText("");
+        setLearnOpen(false);
+      })
+      .catch((e) => setLearnErr(e instanceof Error ? e.message : t("learn failed")))
+      .finally(() => setLearnBusy((m) => ({ ...m, [key]: false })));
   };
 
   const updateCheckin = (action: "pause" | "resume" | "clear") => {
@@ -539,6 +575,62 @@ export function Inspector(props: {
           </div>
         )
       )}
+
+      {/* Self-evolution: the /refine mechanism, surfaced. "Learn now" runs a
+          real refine on this agent's own session (helpers have none — this
+          panel never renders for them); the muted line is the auto rhythm's
+          honest readout (last review checkpoint + cooldown). The on/off
+          switch lives at the top of the ⚡ column — the setting is global. */}
+      {online &&
+        (() => {
+          const ar = root ? props.rootAutoRefine : props.autoRefine;
+          const busy = Boolean(learnBusy[subjectName]);
+          const last = ar?.lastReviewAt !== undefined ? hhmmEpoch(ar.lastReviewAt) : null;
+          const next =
+            ar?.enabled && ar.lastReviewAt !== undefined && typeof ar.cooldownMs === "number"
+              ? hhmmEpoch(ar.lastReviewAt + ar.cooldownMs)
+              : null;
+          return (
+            <div className="panel">
+              <div className="phead">
+                <span>{t("Self-evolution")}</span>
+              </div>
+              {busy ? (
+                <div className="rule">{t("learning… this can take a few minutes.")}</div>
+              ) : learnOpen ? (
+                <div className="hbnew" style={{ marginTop: 0 }}>
+                  <input
+                    className="iin"
+                    placeholder={t("anything to focus on? (optional)")}
+                    value={learnText}
+                    onChange={(e) => setLearnText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitLearn();
+                    }}
+                  />
+                  <button className="btn" onClick={submitLearn}>
+                    {t("start learning")}
+                  </button>
+                </div>
+              ) : (
+                <div className="brow" style={{ marginTop: 0 }}>
+                  <button className="btn" onClick={() => setLearnOpen(true)}>
+                    {t("learn now")}
+                  </button>
+                </div>
+              )}
+              {last !== null && (
+                <div className="rule" style={{ paddingTop: 8 }}>
+                  {t("last auto review {at}", { at: last })}
+                  {next !== null
+                    ? ` · ${t("next auto learn no earlier than {at}", { at: next })}`
+                    : ""}
+                </div>
+              )}
+              {learnErr && <div className="ierr">{learnErr}</div>}
+            </div>
+          );
+        })()}
 
       {(heartbeats.length > 0 || crons.length > 0 || online) && (
         <div className="panel">

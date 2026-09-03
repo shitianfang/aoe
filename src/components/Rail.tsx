@@ -41,7 +41,7 @@ export function Rail(props: {
       </button>
       <button
         className={props.learnedOn ? "rbtn on" : "rbtn"}
-        title={props.learnedUnread ? `${t("Learned")} · ${t("something new")}` : t("Learned")}
+        title={props.learnedUnread ? `${t("Self-evolution")} · ${t("something new")}` : t("Self-evolution")}
         onClick={props.onLearned}
       >
         <svg viewBox="0 0 24 24">

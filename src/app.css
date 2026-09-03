@@ -217,8 +217,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .f.ro:hover { background: none; }
 .f.ro .fm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .colnote { padding: 12px 8px 0; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
-/* learned column (⚡): one quiet explainer + lesson rows grouped by owner */
+/* self-evolution column (⚡): one quiet explainer + lesson rows grouped by owner */
 .lhint { padding: 0 8px 12px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
+/* the one auto-learn checkbox — plain row, no border, no background */
+.lauto { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px; font-family: var(--mono); font-size: 9px; color: var(--t2); cursor: pointer; }
+.lauto input { margin: 0; width: 11px; height: 11px; accent-color: var(--t2); flex-shrink: 0; }
+.lauto input:disabled { cursor: default; }
 .lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
 .lsn:hover { background: var(--soft); }
 .lsn.on { background: var(--soft); border-color: var(--hair); }

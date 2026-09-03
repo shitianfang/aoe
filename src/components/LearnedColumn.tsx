@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { LearnedSel } from "../types";
-import { lessonRowTitle, lessonSourceText } from "../helperDisplay";
+import type { AutoRefineInfo, LearnedSel } from "../types";
+import { lessonRowSourceText, lessonRowTitle } from "../helperDisplay";
 import { getLang, useT } from "../i18n";
 import { fetchLessons, type LessonRecord } from "../runtime/learned";
 
@@ -20,20 +20,32 @@ function shortWhen(iso?: string): string {
     : d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
-/** The Learned home (rail ⚡): every kept lesson, grouped by who it belongs
- *  to. A row is the lesson's short title with the time trailing, plus a muted
- *  owner/source suffix — the full record (summary and all) opens as a center
- *  pane when clicked (App owns that). */
+/** The self-evolution home (rail ⚡): every kept lesson, grouped by who it
+ *  belongs to. A row is the lesson's short title with the time trailing, plus
+ *  a muted owner/source suffix — the full record (summary and all) opens as a
+ *  center pane when clicked (App owns that). At the top sits the one switch
+ *  for the mechanism's auto side: settings.json autoRefine.enabled, a GLOBAL
+ *  setting (one value for every agent and workspace) — which is why it lives
+ *  here and not per agent in the Inspector. */
 export function LearnedColumn(props: {
   selected: LearnedSel | null;
   /** Bumped when a new lesson lands — re-pulls the list. */
   epoch: number;
   /** Other root agents currently in the roster — their own lessons ride along. */
   roots: string[];
+  /** Master's auto-refine block (schema 27) — the checkbox's current truth;
+   *  null on old daemons or before attach: the checkbox stays hidden then
+   *  rather than showing a state nobody verified. */
+  autoRefine: AutoRefineInfo | null;
+  online: boolean;
   onSelect: (s: LearnedSel | null) => void;
+  /** Writes the global setting through the bridge; resolves once every live
+   *  agent has been told to re-read it. */
+  onToggleAuto: (enabled: boolean) => Promise<void>;
 }) {
   const t = useT();
   const [rows, setRows] = useState<LessonRecord[] | null>(null);
+  const [togglePending, setTogglePending] = useState(false);
   const rootsKey = props.roots.join("\n");
   useEffect(() => {
     let live = true;
@@ -50,7 +62,7 @@ export function LearnedColumn(props: {
 
   const row = (r: LessonRecord) => {
     const on = props.selected !== null && props.selected.id === r.id && props.selected.owner === r.owner;
-    const src = lessonSourceText(r.source);
+    const src = lessonRowSourceText(r.source);
     // No avatars here — attribution is the muted "owner · source" suffix.
     const meta = [r.owner, src].filter((part): part is string => part !== null);
     return (
@@ -69,10 +81,45 @@ export function LearnedColumn(props: {
     );
   };
 
+  const ar = props.autoRefine;
+  const toggleAuto = (enabled: boolean) => {
+    setTogglePending(true);
+    props
+      .onToggleAuto(enabled)
+      .catch(() => undefined) // write failed — the checkbox simply stays put
+      .finally(() => setTogglePending(false));
+  };
+
   return (
     <aside className="col2">
-      <div className="sec">{t("Learned")}</div>
+      <div className="sec">{t("Self-evolution")}</div>
       <div className="lhint">{t("what agents pick up while working — later work uses it.")}</div>
+      {/* The auto side's one real control. Hidden (not faked) when the daemon
+          predates the status block or the bridge is detached. */}
+      {ar !== null && (
+        <>
+          <label className="lauto">
+            <input
+              type="checkbox"
+              checked={ar.enabled}
+              disabled={togglePending || !props.online}
+              onChange={(e) => toggleAuto(e.target.checked)}
+            />
+            <span>{t("let agents learn on their own")}</span>
+          </label>
+          {ar.enabled && (
+            <div className="lhint">
+              {t(
+                "about every {n} turns, or when it tidies its context — at most once per {m} minutes.",
+                {
+                  n: ar.turnInterval ?? 25,
+                  m: Math.round((ar.cooldownMs ?? 20 * 60_000) / 60_000),
+                },
+              )}
+            </div>
+          )}
+        </>
+      )}
       {rows !== null && rows.length === 0 && (
         <div className="colnote">
           {t("nothing learned yet.")}

@@ -129,8 +129,14 @@ const ZH: Record<string, string> = {
   "new agent": "新建智能体",
   "new agent name…": "新智能体名称…",
   "create failed": "创建失败",
-  "master runs this workspace.": "master 负责这个工作区。",
-  "helpers appear here when it starts them.": "它启动的助手会出现在这里。",
+  /* agents column: task lines + the sample crew shown before anything has run */
+  "example · real helpers replace this": "示例 · 有真实助手后即被替换",
+  "ask master for a team and they appear here, each with its task.":
+    "让 master 组个小队,他们就会出现在这里,每个人带着自己的任务。",
+  "read the workspace and list what is here": "通读工作区,列出这里都有什么",
+  "write the page structure into today.html": "把页面结构写进 today.html",
+  "restyle it and publish a version": "重新配好样式,发布一版",
+  "compare the last two versions and report": "对比最近两版,汇报差异",
   "{n} inactive": "{n} 个已结束",
   "{n} running": "{n} 个运行中",
   "on {name}'s team": "{name} 的队员",
@@ -177,8 +183,6 @@ const ZH: Record<string, string> = {
   "Keep an eye on this workspace while I'm away: log what changes, and what you'd do about it.":
     "我不在的时候帮我盯着这个工作区:记下有什么变化,还有你打算怎么办。",
   "long-running on · it picks its own driver": "长程自主已开 · 它自己挑驱动方式",
-  "e.g. ask master for a small team — one helper to research, one to draft.":
-    "例如:让 master 组个小组 —— 一个助手调研,一个起草。",
   "keep reports under three sentences": "汇报控制在三句话以内",
   "example · real records replace this": "示例 · 有真实记录后即被替换",
 

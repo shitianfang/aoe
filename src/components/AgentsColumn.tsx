@@ -12,11 +12,22 @@ interface Node {
   key: string;
   label: string;
   avatar: React.ReactNode;
-  /** The agent's own little self-tag ("heads down", "sulking in the lobby"). */
+  /** The line under the name: what this agent was given to do. Falls back to
+   *  its own self-tag ("heads down") only when there is no task to show. */
   tag: string;
   state: { cls: string; glyph: string; word: string };
   selectable: string | null; // child id when clickable
   draggable: boolean;
+  /** A dimmed, inert sample row — never a real agent. */
+  eg?: true;
+}
+
+/** A helper's task, collapsed to one line. `label` is the prompt master spawned
+ *  it with, so it is the honest answer to "what is this one doing" — the flavor
+ *  tag only ever stood in because nothing was reading this field. */
+function taskLine(c: ChildInfo): string {
+  const s = (c.label ?? "").replace(/\s+/g, " ").trim();
+  return s === "" || s === (c.sessionName ?? "") ? "" : s;
 }
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -114,11 +125,15 @@ export function AgentsColumn(props: {
       // helpers and older daemons show the tag alone.
       const terminal = c.status === "done" || c.status === "error" || c.status === "cancelled";
       const doneAt = terminal && typeof c.completedAt === "number" ? ` · ${hhmmEpoch(c.completedAt)}` : "";
+      // What it was told to do beats how it feels about it. The runtime's own
+      // working line still wins when it set one — that is the agent narrating
+      // its current step, which is more specific than the task it started from.
+      const head = props.helperWorking[c.id] || taskLine(c) || flavorTag(name, word);
       map.set(c.id, {
         key: c.id,
         label: name,
         avatar: <BotAvatar seed={name} />,
-        tag: `${flavorTag(name, word, props.helperWorking[c.id])}${doneAt}`,
+        tag: `${head}${doneAt}`,
         state: statusIcon(word),
         selectable: c.id,
         draggable: true,
@@ -168,6 +183,32 @@ export function AgentsColumn(props: {
         });
       });
     });
+    // Nothing has ever run here: show what a crew looks like rather than a
+    // master on its own. Inert and dimmed, labelled as a sample below the
+    // tree, and gone the instant a real helper exists — the same bargain the
+    // Self-evolution column already makes with its one sample lesson. States
+    // are mixed on purpose: the column's job is to answer "who is doing what,
+    // and what is already finished", and one row per state shows all of it.
+    if (props.children.length === 0 && props.claudeAgents.length === 0) {
+      const crew: [string, string, string][] = [
+        ["scout", "read the workspace and list what is here", "done"],
+        ["drafter", "write the page structure into today.html", "done"],
+        ["stylist", "restyle it and publish a version", "running"],
+        ["checker", "compare the last two versions and report", "queued"],
+      ];
+      crew.forEach(([name, task, word], i) => {
+        map.set(`eg:${i}`, {
+          key: `eg:${i}`,
+          label: name,
+          avatar: <BotAvatar seed={name} />,
+          tag: t(task),
+          state: statusIcon(word === "queued" ? "idle" : word),
+          selectable: null,
+          draggable: false,
+          eg: true,
+        });
+      });
+    }
     return { nodes: map, kin };
   }, [
     props.master,
@@ -280,7 +321,7 @@ export function AgentsColumn(props: {
     return (
       <div key={n.key}>
         <div
-          className={`a tree${selected ? " sel" : ""}${dropOn === n.key ? " droptgt" : ""}`}
+          className={`a tree${selected ? " sel" : ""}${dropOn === n.key ? " droptgt" : ""}${n.eg ? " eg" : ""}`}
           style={{ marginLeft: depth * 14, width: `calc(100% - ${depth * 14}px)` }}
           draggable={n.draggable}
           onDragStart={(e) => e.dataTransfer.setData("text/agent-key", n.key)}
@@ -296,6 +337,7 @@ export function AgentsColumn(props: {
             if (key) drop(key, n.key);
           }}
           onClick={() => {
+            if (n.eg) return; // a sample row stands for an agent; there is none to open
             if (rootName !== null) props.onSelectRoot(rootName);
             else if (n.key === "master") props.onSelect(null);
             else if (n.selectable) props.onSelect(n.selectable);
@@ -366,13 +408,13 @@ export function AgentsColumn(props: {
         </div>
       )}
       {roots.map((n) => renderNode(n, 0))}
-      {props.children.length === 0 && others.length === 0 && props.claudeAgents.length === 0 && (
+      {/* Says out loud that the crew above is a sample. It sits under the rows
+          it labels, so the first thing read is the shape of a real team. */}
+      {props.children.length === 0 && props.claudeAgents.length === 0 && (
         <div className="colnote">
-          {t("master runs this workspace.")}
+          {t("example · real helpers replace this")}
           <br />
-          {t("helpers appear here when it starts them.")}
-          <br />
-          {t("e.g. ask master for a small team — one helper to research, one to draft.")}
+          {t("ask master for a team and they appear here, each with its task.")}
         </div>
       )}
       {inactiveCount > 0 && (

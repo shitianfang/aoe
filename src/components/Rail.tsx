@@ -4,7 +4,10 @@ export function Rail(props: {
   column: ColumnView;
   workspace: string;
   bridge: BridgeState | null;
+  /** A center pane currently shows Learned. */
+  learnedOn: boolean;
   onColumn: (v: ColumnView) => void;
+  onLearned: () => void;
   onLogo: () => void;
   onSettings: () => void;
 }) {
@@ -30,6 +33,15 @@ export function Rail(props: {
       >
         <svg viewBox="0 0 24 24">
           <path d="M4 6h6l2 2h8v11H4Z" />
+        </svg>
+      </button>
+      <button
+        className={props.learnedOn ? "rbtn on" : "rbtn"}
+        title="Learned"
+        onClick={props.onLearned}
+      >
+        <svg viewBox="0 0 24 24">
+          <path d="M13 3 5 14h5l-1 7 8-11h-5l1-7Z" />
         </svg>
       </button>
       <div className="rbtn" title="Skills — placeholder">

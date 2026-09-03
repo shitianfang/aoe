@@ -34,7 +34,8 @@
 | goal | `state.goal`(GoalState) | `goal_update` | `get_connection_state` | `config.initialGoal` 或发 `/goal ...` prompt |
 | heartbeat(本 session) | `state.heartbeat` | `heartbeats_changed`(无载荷,全局广播,需节流重拉) | `heartbeat_get` | `setHeartbeat(schedule, text, mode)` |
 | 全局 heartbeats | — | `heartbeats_changed` | `heartbeats_list`(不带 sessionId) | `manageHeartbeat` |
-| autonomous | **无** | **无** | **无非阻塞命令** | 发 `/autonomous on|off|status` prompt;状态从 `customType:"autonomous_status"` 的 custom message 读 `details` |
+| cron(定时再入) | — | **无**(`heartbeats_changed` 只按 heartbeat 目录签名触发,`cron-jobs.ts:818`) | `cron_list`(`listCronJobs({includeInactive})`,按 activeSessionId 过滤,返回含 heartbeat 源的作业,需自行按 `source` 筛) | `addCronJob(schedule, prompt)`、`cancelCronJob(jobId)` |
+| autonomous | **无** | **无** | **无非阻塞命令** | 发 `/autonomous on|off|status` prompt;状态从 `customType:"autonomous_status"` 的 custom message 读 `details`(`AgentAutonomousStatus`:含 `tokensUsed`、`startedAt`、`limits.maxTokens/timeoutMs`) |
 | refinement | — | `refine_complete` / `refine_failed` | 历史:transcript custom `prime-agent.refinement`;状态:直读 `harness/harness_state.json`(local)与 `~/.prime/agent/harness/`(global) | `refine({instructions?, rollbackId?, global?})`(10min 超时) |
 | RLM 子代理 | `snapshot.children` | `rlm_child_update` | `get_rlm_children`(需 `authoritative_child_roster` 能力) | `cancelRlmChild`、`delete_rlm_subagent` |
 | 全局 roster | — | `roster_update` | `roster_subscribe`(需 `agent_roster`,仅 supervisor 连接) | — |

@@ -5,13 +5,15 @@
  *
  *   GET  /bridge/events   SSE stream of session events + snapshots
  *   POST /bridge/cmd      { op: "prompt"|"steer"|"follow_up"|"abort"|"refine"
- *                               |"heartbeat_set"|"heartbeat_update"
+ *                               |"heartbeat_set"|"heartbeat_update"|"cron_cancel"
  *                               |"refine_rollback"|"refine_global"
  *                               |"agent_message"|"stop_helper"|"remove_helper"
  *                               |"watch_helper"|"unwatch_helper"
  *                               |"watch_root"|"unwatch_root"|"root_prompt"
  *                               |"root_steer"|"root_follow_up"|"root_abort",
  *                             text?, target? }
+ *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
+ *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
  *   GET  /bridge/health   { connected, master, capabilities }
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
@@ -677,6 +679,9 @@ async function handleCmd(body) {
     case "heartbeat_update":
       // action "pause" | "resume" | "clear" — master's own heartbeat only
       return { job: (await masterConn.updateHeartbeat(String(body.action ?? ""))) ?? null };
+    case "cron_cancel":
+      // Cancel one scheduled re-entry (cron_cancel); heartbeats use heartbeat_update.
+      return { job: await masterConn.cancelCronJob(String(body.target ?? "")) };
     case "create_agent": {
       const name = String(body.text ?? "").trim();
       if (!WS_NAME_RE.test(name)) throw new Error("invalid agent name");
@@ -794,6 +799,36 @@ const server = http.createServer(async (req, res) => {
       .then((heartbeats) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify({ heartbeats }));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
+  }
+  if (req.url === "/bridge/crons") {
+    // Scheduled re-entries for master's session (DaemonAgentConnection.listCronJobs
+    // → cron_list, scoped to activeSessionId). Heartbeat-sourced jobs are dropped:
+    // they already have their own rows via /bridge/heartbeats.
+    if (!masterConn) {
+      res.writeHead(200, { ...cors, "content-type": "application/json" });
+      return res.end(JSON.stringify({ crons: [] }));
+    }
+    masterConn
+      .listCronJobs()
+      .then((jobs) => {
+        const crons = (jobs ?? [])
+          .filter((j) => (j.source ?? "cron") === "cron")
+          .map((j) => ({
+            id: j.id,
+            status: j.status,
+            ...(j.label ? { label: j.label } : {}),
+            prompt: j.prompt ?? "",
+            ...(j.schedule?.expression ? { schedule: { expression: j.schedule.expression } } : {}),
+            ...(j.nextRunAt ? { nextRunAt: j.nextRunAt } : {}),
+          }));
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ crons }));
       })
       .catch((e) => {
         res.writeHead(500, { ...cors, "content-type": "application/json" });

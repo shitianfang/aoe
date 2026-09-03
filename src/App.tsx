@@ -22,6 +22,7 @@ import { SettingsPopup, WorkspacePopup } from "./components/Overlays";
 import { Rail } from "./components/Rail";
 import { AgentsColumn } from "./components/AgentsColumn";
 import { BotAvatar } from "./components/BotAvatar";
+import { helperName } from "./helperDisplay";
 import { FilesColumn } from "./components/FilesColumn";
 import { Timeline } from "./components/Timeline";
 import { LearnedView } from "./components/LearnedView";
@@ -255,6 +256,9 @@ export function App() {
     timeline: [{ kind: "divider", id: id(), text: `session started · ${clock()}` }],
   }));
   const [wsOpen, setWsOpen] = useState(false);
+  // Bumped when the bridge-pulled rows the inspector owns (scheduled re-entries,
+  // lessons) may have moved: attach, heartbeats_changed, refine_complete.
+  const [inspectorKey, setInspectorKey] = useState(0);
   // send() reads fresh state without re-binding the callback per keystroke.
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -591,6 +595,7 @@ export function App() {
           }
         }
       } else if (t === "refine_complete") {
+        setInspectorKey((n) => n + 1); // the learned summary in DRIVERS re-pulls
         const result = event.result as LessonResult | undefined;
         if (result?.id) {
           push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
@@ -783,9 +788,13 @@ export function App() {
           refreshHeartbeats();
           refreshPreview();
           refreshOthers();
+          setInspectorKey((n) => n + 1);
         }
       } else if (m.type === "heartbeats_changed") {
         refreshHeartbeats();
+        // Scheduled jobs live in the same store; the signal is the closest
+        // push the daemon gives for them.
+        setInspectorKey((n) => n + 1);
       } else if (m.type === "preview_update") {
         refreshPreview();
       } else if (m.type === "file_activity") {
@@ -931,12 +940,30 @@ export function App() {
       }),
     [],
   );
-  // reset layout: back to the default single pane — the selected agent's
-  // timeline (master when nothing is selected). The save effect clears the key.
-  const resetLayout = useCallback(
-    () => setState((s) => ({ ...s, split: null, view: "timeline" })),
-    [],
-  );
+  /** Close one pane's tab. Split: that pane goes away, the other stays (and
+   *  takes focus if the closed one had it). Single pane: back to the master
+   *  timeline (the timeline tab itself has no ×). */
+  const closePane = useCallback((side: "left" | "right" | null) => {
+    setState((s) => {
+      if (!s.split || side === null) {
+        if (currentPane(s).kind === "timeline") return s;
+        return { ...s, ...panePatch({ kind: "timeline" }), split: null };
+      }
+      const keep = side === s.split.focusSide ? s.split.other : currentPane(s);
+      return { ...s, ...panePatch(keep), split: null };
+    });
+  }, []);
+  /** Rail ⚡: open Learned in the focused pane; click again to close it. */
+  const toggleLearned = useCallback(() => {
+    setState((s) => {
+      if (currentPane(s).kind === "learned") {
+        if (!s.split) return { ...s, ...panePatch({ kind: "timeline" }) };
+        return { ...s, ...panePatch(s.split.other), split: null };
+      }
+      if (s.split?.other.kind === "learned") return { ...s, split: null };
+      return showFocused(s, { kind: "learned" });
+    });
+  }, []);
   /** A tab dropped on the left/right half of the center area. */
   const dropPane = useCallback((v: PaneView, side: "left" | "right") => {
     setState((s) => {
@@ -1071,6 +1098,35 @@ export function App() {
     }
   }, []);
 
+  /** Message another root: prompt when idle (wakes it — normal daemon
+   *  behavior), steer when running. Shared by the root pane's own composer
+   *  and the to ▾ target path. */
+  const postRoot = useCallback(async (name: string, text: string) => {
+    const busy = (stateRef.current.rootStates[name] ?? "idle") === "working";
+    const op = busy ? "root_steer" : "root_prompt";
+    const userItem: TimelineItem = { kind: "user", id: id(), text, at: clock() };
+    setState((s) => ({
+      ...s,
+      error: undefined,
+      rootStates: busy ? s.rootStates : { ...s.rootStates, [name]: "working" },
+      rootTimelines: {
+        ...s.rootTimelines,
+        [name]: [...(s.rootTimelines[name] ?? []), userItem],
+      },
+    }));
+    try {
+      await bridgeCmd(op, text, { target: name });
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        error: e instanceof Error ? e.message : "bridge command failed",
+      }));
+    }
+  }, []);
+  const stopRoot = useCallback((name: string) => {
+    bridgeCmd("root_abort", undefined, { target: name }).catch(() => undefined);
+  }, []);
+
   const send = useCallback(
     async (text: string) => {
       const current = stateRef.current;
@@ -1083,31 +1139,11 @@ export function App() {
       }
       const userItem: TimelineItem = { kind: "user", id: id(), text, at: clock() };
       if (current.target.kind === "root") {
-        // Another root session: prompt when idle (wakes it — normal daemon
-        // behavior), steer when running. Jump the view to it, like master's send.
+        // Another root session via the to ▾ target: jump the view to it, like
+        // master's send, then post through the shared pane-send path.
         const name = current.target.name;
-        const busy = (current.rootStates[name] ?? "idle") === "working";
-        const op = busy ? "root_steer" : "root_prompt";
-        setState((s) => {
-          const jumped = showFocused(s, { kind: "root", name });
-          return {
-            ...jumped,
-            error: undefined,
-            rootStates: busy ? jumped.rootStates : { ...jumped.rootStates, [name]: "working" },
-            rootTimelines: {
-              ...jumped.rootTimelines,
-              [name]: [...(jumped.rootTimelines[name] ?? []), userItem],
-            },
-          };
-        });
-        try {
-          await bridgeCmd(op, text, { target: name });
-        } catch (e) {
-          setState((s) => ({
-            ...s,
-            error: e instanceof Error ? e.message : "bridge command failed",
-          }));
-        }
+        setState((s) => showFocused(s, { kind: "root", name }));
+        await postRoot(name, text);
         return;
       }
       if (bridgeRef.current) {
@@ -1150,7 +1186,7 @@ export function App() {
       });
       await sendViaNim(text, masterId);
     },
-    [sendViaNim, sendToHelper],
+    [sendViaNim, sendToHelper, postRoot],
   );
 
   const selectedChild = state.selectedAgent
@@ -1233,6 +1269,26 @@ export function App() {
     saveJson(key, JSON.parse(splitSave));
   }, [splitSave]);
 
+  // An agent writing files this turn auto-opens Preview in the second pane
+  // (right of the focused one), without stealing focus. Each new live snapshot
+  // signature triggers once — closing the pane doesn't reopen it for the same
+  // write, the next write brings it back.
+  const liveSig = state.previewFiles
+    .filter((f) => f.live)
+    .map((f) => `${f.path}:${f.versions.length}`)
+    .sort()
+    .join("|");
+  const autoPreviewRef = useRef("");
+  useEffect(() => {
+    if (!liveSig || liveSig === autoPreviewRef.current) return;
+    autoPreviewRef.current = liveSig;
+    setState((s) => {
+      if (currentPane(s).kind === "preview" || s.split?.other.kind === "preview") return s;
+      if (!s.split) return { ...s, split: { other: { kind: "preview" }, focusSide: "left" } };
+      return { ...s, split: { ...s.split, other: { kind: "preview" } } };
+    });
+  }, [liveSig]);
+
   // A root's run state: its own event stream once attached, else the roster word.
   const rootStateOf = (name: string): AgentState =>
     state.rootStates[name] ??
@@ -1241,7 +1297,7 @@ export function App() {
   const targetState: AgentState =
     state.target.kind === "root" ? rootStateOf(state.target.name) : state.master;
 
-  const composer = (viewRoot?: { name: string; state: AgentState; working?: string }) => (
+  const composer = () => (
     <Composer
       master={state.master}
       targetState={targetState}
@@ -1254,10 +1310,32 @@ export function App() {
       target={state.target}
       working={state.working}
       error={state.error}
-      viewRoot={viewRoot}
       onTarget={setTarget}
       onSend={send}
       onStop={stop}
+    />
+  );
+
+  // A root pane's own composer: fixed to that root — the chat input follows
+  // the pane, wherever the to ▾ target of the master composer points.
+  const rootComposer = (name: string) => (
+    <Composer
+      master={state.master}
+      targetState={rootStateOf(name)}
+      goal={state.goal}
+      autonomous={state.autonomous}
+      heartbeats={state.heartbeats}
+      bridge={state.bridge}
+      children={state.children}
+      others={state.others}
+      target={state.target}
+      working={state.working}
+      error={state.error}
+      viewRoot={{ name, state: rootStateOf(name), working: state.rootWorking[name] || undefined }}
+      fixedRoot={name}
+      onTarget={setTarget}
+      onSend={(t) => postRoot(name, t)}
+      onStop={() => stopRoot(name)}
     />
   );
 
@@ -1343,60 +1421,41 @@ export function App() {
   };
 
   const focusedPane = currentPane(state);
-  const focusedRootInfo =
-    focusedPane.kind === "root"
-      ? {
-          name: focusedPane.name,
-          state: rootStateOf(focusedPane.name),
-          working: state.rootWorking[focusedPane.name] || undefined,
-        }
-      : undefined;
+
+  const paneTitle = (p: PaneView): string => {
+    if (p.kind === "learned") return "Learned";
+    if (p.kind === "preview") return "Preview";
+    if (p.kind === "helper") {
+      const c = state.children.find((x) => x.id === p.childId);
+      return c ? helperName(c) : "helper";
+    }
+    if (p.kind === "root") return p.name;
+    return "master · timeline";
+  };
+
+  /** The chat input follows its pane: master timeline gets the to ▾ composer,
+   *  a root pane gets one fixed to that root; helpers carry their own input. */
+  const paneComposer = (p: PaneView) => {
+    if (p.kind === "timeline") return composer();
+    if (p.kind === "root") return rootComposer(p.name);
+    return null;
+  };
 
   const center = () => {
     if (state.split) {
-      // Two panes, fixed 50/50, separated by the recessed gutter color. The
-      // one composer sits below both, bound to the focused pane when that
-      // pane is a conversation (root header case), else to the to ▾ target.
+      // Two panes, fixed 50/50, separated by the recessed gutter color; each
+      // pane carries its own tab strip and (for conversations) its own input.
       const fs = state.split.focusSide;
       const leftP = fs === "left" ? focusedPane : state.split.other;
       const rightP = fs === "left" ? state.split.other : focusedPane;
       return (
-        <>
-          <div className="panes">
-            <div
-              className={fs === "left" ? "pane" : "pane away"}
-              onMouseDownCapture={() => focusPane("left")}
-            >
-              {paneBody(leftP)}
-            </div>
-            <div
-              className={fs === "right" ? "pane" : "pane away"}
-              onMouseDownCapture={() => focusPane("right")}
-            >
-              {paneBody(rightP)}
-            </div>
-          </div>
-          {composer(focusedRootInfo)}
-        </>
-      );
-    }
-    if (focusedPane.kind === "root") {
-      return (
-        <div className="view">
-          {renderRootPane(focusedPane.name)}
-          {composer(focusedRootInfo)}
+        <div className="panes">
+          {renderPane(leftP, "left", fs !== "left")}
+          {renderPane(rightP, "right", fs !== "right")}
         </div>
       );
     }
-    if (focusedPane.kind === "timeline") {
-      return (
-        <div className="view">
-          <Timeline items={state.timeline} />
-          {composer()}
-        </div>
-      );
-    }
-    return paneBody(focusedPane);
+    return renderPane(focusedPane, null, false);
   };
 
   /* ---- tab drag → split (drop on a half), tab bar drop = plain switch ---- */
@@ -1444,16 +1503,55 @@ export function App() {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
   };
-  const tabsDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  /** A tab dropped on a pane's own strip moves the view into that pane. */
+  const tabsDropOn = (side: "left" | "right" | null) => (e: React.DragEvent<HTMLDivElement>) => {
     const v = dragViewRef.current;
     dragViewRef.current = null;
     setDropHint(null);
     if (!v) return;
     e.preventDefault();
-    setState((s) => showFocused(s, v));
+    e.stopPropagation();
+    if (side) dropPane(v, side);
+    else setState((s) => showFocused(s, v));
   };
 
-  const timelineTabOn = state.view === "timeline" && !selectedChild && !state.selectedRoot;
+  /** One pane's tab strip: the pane's view as its (active) tab, closable with
+   *  ×. The strip follows the pane — there is no global tab bar. */
+  const paneTabs = (p: PaneView, side: "left" | "right" | null) => {
+    const closable = side !== null || p.kind !== "timeline";
+    return (
+      <div className="tabs" onDragOver={tabsDragOver} onDrop={tabsDropOn(side)}>
+        <div className="tab on" draggable onDragStart={tabDragStart(p)} onDragEnd={tabDragEnd}>
+          {paneTitle(p)}
+          {closable && (
+            <button
+              className="tx"
+              title="close"
+              onClick={(e) => {
+                e.stopPropagation();
+                closePane(side);
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPane = (p: PaneView, side: "left" | "right" | null, away: boolean) => (
+    <div
+      key={side ?? "solo"}
+      className={away ? "pane away" : "pane"}
+      onMouseDownCapture={side ? () => focusPane(side) : undefined}
+    >
+      {paneTabs(p, side)}
+      <div className="pbody">{paneBody(p)}</div>
+      {paneComposer(p)}
+    </div>
+  );
+
   return (
     <div className="app">
       {wsOpen && (
@@ -1477,7 +1575,9 @@ export function App() {
           column={state.column}
           workspace={state.bridge?.workspace || "general"}
           bridge={state.bridge}
+          learnedOn={focusedPane.kind === "learned" || state.split?.other.kind === "learned" || false}
           onColumn={setColumn}
+          onLearned={toggleLearned}
           onLogo={() => setWsOpen((v) => !v)}
           onSettings={() => setSetOpen((v) => !v)}
         />
@@ -1501,40 +1601,6 @@ export function App() {
           <FilesColumn files={state.files} onOpenPreview={openPreview} />
         )}
         <div className="center">
-          <div className="tabs" onDragOver={tabsDragOver} onDrop={tabsDrop}>
-            <button
-              className={timelineTabOn ? "tab on" : "tab"}
-              draggable
-              onDragStart={tabDragStart({ kind: "timeline" })}
-              onDragEnd={tabDragEnd}
-              onClick={() => selectAgent(null)}
-            >
-              master · timeline
-            </button>
-            <button
-              className={state.view === "learned" ? "tab on" : "tab"}
-              draggable
-              onDragStart={tabDragStart({ kind: "learned" })}
-              onDragEnd={tabDragEnd}
-              onClick={() => setView("learned")}
-            >
-              Learned
-            </button>
-            <button
-              className={state.view === "preview" ? "tab on" : "tab"}
-              draggable
-              onDragStart={tabDragStart({ kind: "preview" })}
-              onDragEnd={tabDragEnd}
-              onClick={() => setView("preview")}
-            >
-              Preview
-            </button>
-            {state.split && (
-              <button className="reset" onClick={resetLayout}>
-                reset layout
-              </button>
-            )}
-          </div>
           <div className="cbody" onDragOver={bodyDragOver} onDragLeave={bodyDragLeave} onDrop={bodyDrop}>
             {center()}
             {dropHint && <div className={`drophint ${dropHint}`} />}
@@ -1546,6 +1612,7 @@ export function App() {
           bridge={state.bridge}
           heartbeats={state.heartbeats}
           autonomous={state.autonomous}
+          refreshKey={inspectorKey}
           onOpenLearn={() => setView("learned")}
         />
       </div>

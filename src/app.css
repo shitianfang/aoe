@@ -224,6 +224,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tab.on { color: var(--t1); background: var(--soft); }
 .tab:hover { color: var(--t2); }
 .tab.on:hover { color: var(--t1); }
+.tab .tx { font-size: 9px; line-height: 1; color: var(--t3); padding: 1px 2px; margin-right: -4px; }
+.tab .tx:hover { color: var(--t1); }
 
 .view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
@@ -235,12 +237,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .panes { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--soft); gap: 3px; }
 .pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--win); transition: opacity 120ms ease; }
 .pane.away { opacity: .8; }
+.pbody { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .drophint { position: absolute; top: 0; bottom: 0; width: 50%; background: var(--hair); pointer-events: none; }
 .drophint.left { left: 0; }
 .drophint.right { right: 0; }
 /* reset layout — small muted text at the right end of the tab bar, split only */
-.reset { margin-left: auto; padding: 0 14px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
-.reset:hover { color: var(--t2); }
 
 /* agent header (helper views) */
 .ahead { padding: 14px 18px 12px; border-bottom: 1px dashed var(--hair); flex-shrink: 0; }

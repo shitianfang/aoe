@@ -43,6 +43,9 @@ export function Composer(props: {
   /** Set when the center shows another root's timeline; the strip then
    *  reflects that root's state (where known), not master's. */
   viewRoot?: { name: string; state: AgentState; working?: string };
+  /** Pane-bound mode: this composer lives in a root's pane and always messages
+   *  that root — the to ▾ popup is hidden, the label is fixed. */
+  fixedRoot?: string;
   onTarget: (t: ComposerTarget) => void;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -57,11 +60,12 @@ export function Composer(props: {
       ? props.children.find((c) => c.id === (props.target as { childId: string }).childId)
       : undefined;
   const targetName =
-    props.target.kind === "root"
+    props.fixedRoot ??
+    (props.target.kind === "root"
       ? props.target.name
       : targetChild
         ? helperName(targetChild)
-        : "master";
+        : "master");
 
   // Hand focus back to the input whenever the target finishes.
   useEffect(() => {
@@ -146,14 +150,18 @@ export function Composer(props: {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
-            {props.target.kind === "helper" && (
+            {!props.fixedRoot && props.target.kind === "helper" && (
               <div className="dmode">
                 <span className="static">delivered now</span>
               </div>
             )}
-            <span className="to" onClick={() => setPopOpen((v) => !v)}>
-              to {targetName} ▾
-            </span>
+            {props.fixedRoot ? (
+              <span className="to fixed">to {targetName}</span>
+            ) : (
+              <span className="to" onClick={() => setPopOpen((v) => !v)}>
+                to {targetName} ▾
+              </span>
+            )}
             {busy ? (
               <button className="send" onClick={canSendBusy && text.trim() ? submit : props.onStop}>
                 {canSendBusy && text.trim() ? "SEND" : "STOP"}
@@ -164,7 +172,7 @@ export function Composer(props: {
               </button>
             )}
           </div>
-          {popOpen && (
+          {popOpen && !props.fixedRoot && (
             <div className="topop">
               <button className="tr" onClick={() => pick({ kind: "master" })}>
                 <span className="chip master sm" />

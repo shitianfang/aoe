@@ -171,8 +171,22 @@ export interface AutonomousInfo {
   continuationsUsed?: number;
   turnsUsed?: number;
   tokensUsed?: number;
+  /** epoch ms when unattended was switched on; absent while it is off. The
+   *  only clock the runtime gives us — elapsed time is derived from it. */
+  startedAt?: number;
   limits?: { maxContinuations?: number; maxTurns?: number; maxTokens?: number; timeoutMs?: number };
   lastGateFailure?: { command?: string; attempt?: number };
+}
+
+/** AgentCronJob subset for the schedule rows in Re-entry (GET /bridge/crons).
+ *  Heartbeat-sourced jobs are filtered out by the bridge — they have their own rows. */
+export interface CronInfo {
+  id: string;
+  status: string;
+  label?: string;
+  prompt: string;
+  schedule?: { expression?: string };
+  nextRunAt?: string;
 }
 
 /** What one center pane can show. In single-pane layout this is implied by

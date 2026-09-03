@@ -1,15 +1,78 @@
-import { useState } from "react";
-import type { AgentState, AutonomousInfo, BridgeState, GoalInfo, HeartbeatInfo } from "../types";
-import { bridgeCmd } from "../runtime/bridge";
+import { useCallback, useEffect, useState } from "react";
+import type {
+  AgentState,
+  AutonomousInfo,
+  BridgeState,
+  CronInfo,
+  GoalInfo,
+  HeartbeatInfo,
+} from "../types";
+import { bridgeCmd, bridgeUrl } from "../runtime/bridge";
+
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 function hbWhen(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return hhmm(d);
 }
 
 const trunc = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/** 41234 → "41k". Counters only — the runtime reports tokens, never money. */
+function tk(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(Math.max(0, Math.round(n)));
+}
+
+const asMinutes = (ms: number) => `${Math.max(0, Math.round(ms / 60_000))}m`;
+
+/** Refinement rows in the harness state files (GET /bridge/learned). */
+interface LearnedSummary {
+  today: number;
+  last: string;
+}
+
+function stamp(d: Date): string {
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  return sameDay
+    ? hhmm(d)
+    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${hhmm(d)}`;
+}
+
+/** Count today's lessons and find the newest, across both scopes. Returns null
+ *  when the harness has no dated refinement — nothing to say, so nothing shown. */
+function summarizeLearned(data: unknown): LearnedSummary | null {
+  const scopes = ["local", "global"] as const;
+  const dates: Date[] = [];
+  for (const scope of scopes) {
+    const rows = (data as Record<string, { refinements?: { created_at?: string }[] } | null>)?.[scope]
+      ?.refinements;
+    for (const r of rows ?? []) {
+      if (!r?.created_at) continue;
+      const d = new Date(r.created_at);
+      if (!Number.isNaN(d.getTime())) dates.push(d);
+    }
+  }
+  if (dates.length === 0) return null;
+  const now = new Date();
+  const today = dates.filter(
+    (d) =>
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate(),
+  ).length;
+  const last = dates.reduce((a, b) => (b.getTime() > a.getTime() ? b : a));
+  return { today, last: stamp(last) };
+}
 
 export function Inspector(props: {
   master: AgentState;
@@ -17,6 +80,9 @@ export function Inspector(props: {
   bridge: BridgeState | null;
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
+  /** Bumped by App when the bridge state behind the pulled rows may have moved
+   *  (attach, heartbeats_changed, refine_complete) — re-pulls crons and lessons. */
+  refreshKey?: number;
   onOpenLearn: () => void;
 }) {
   const goal = props.goal;
@@ -29,6 +95,34 @@ export function Inspector(props: {
   const [autoErr, setAutoErr] = useState<string | null>(null);
   const [hbText, setHbText] = useState("");
   const [hbErr, setHbErr] = useState<string | null>(null);
+  const [crons, setCrons] = useState<CronInfo[]>([]);
+  const [learned, setLearned] = useState<LearnedSummary | null>(null);
+  // Elapsed unattended time is derived from startedAt; re-render it on the minute.
+  const [, setTick] = useState(0);
+
+  const refreshKey = props.refreshKey ?? 0;
+
+  const loadCrons = useCallback(() => {
+    fetch(bridgeUrl("/bridge/crons"))
+      .then((r) => r.json())
+      .then((d) => setCrons(Array.isArray(d?.crons) ? (d.crons as CronInfo[]) : []))
+      .catch(() => setCrons([])); // bridge offline — no rows rather than stale ones
+  }, []);
+
+  useEffect(() => {
+    loadCrons();
+    fetch(bridgeUrl("/bridge/learned"))
+      .then((r) => r.json())
+      .then((d) => setLearned(summarizeLearned(d)))
+      .catch(() => setLearned(null));
+  }, [loadCrons, refreshKey]);
+
+  const startedAt = auto?.enabled ? auto.startedAt : undefined;
+  useEffect(() => {
+    if (typeof startedAt !== "number") return;
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [startedAt]);
 
   // Objective writes are "/goal …" prompts intercepted by the session (no model
   // turn); state comes back via goal_update. Same pattern for unattended.
@@ -64,6 +158,13 @@ export function Inspector(props: {
     bridgeCmd("heartbeat_update", undefined, { action }).catch((e) =>
       setHbErr(e instanceof Error ? e.message : "failed"),
     );
+  };
+
+  const cancelCron = (jobId: string) => {
+    setHbErr(null);
+    bridgeCmd("cron_cancel", undefined, { target: jobId })
+      .then(loadCrons)
+      .catch((e) => setHbErr(e instanceof Error ? e.message : "failed"));
   };
 
   const submitCheckin = () => {
@@ -106,7 +207,8 @@ export function Inspector(props: {
               <div className="kv">
                 <span className="k">Budget</span>
                 <span className="v faint">
-                  {Math.round(((goal.tokensUsed ?? 0) / goal.tokenBudget) * 100)}% used
+                  {tk(goal.tokensUsed ?? 0)} of {tk(goal.tokenBudget)} ·{" "}
+                  {Math.round(((goal.tokensUsed ?? 0) / goal.tokenBudget) * 100)}%
                 </span>
               </div>
             )}
@@ -176,6 +278,26 @@ export function Inspector(props: {
               {auto.turnsUsed ?? 0} of {auto.limits?.maxTurns ?? "?"}
             </span>
           </div>
+          {typeof auto.limits?.maxTokens === "number" && auto.limits.maxTokens > 0 && (
+            <div className="kv">
+              <span className="k">Tokens</span>
+              <span className="v">
+                {tk(auto.tokensUsed ?? 0)} of {tk(auto.limits.maxTokens)}
+              </span>
+            </div>
+          )}
+          {typeof auto.limits?.timeoutMs === "number" && auto.limits.timeoutMs > 0 && (
+            <div className="kv">
+              <span className="k">Time</span>
+              {/* startedAt is the only clock the runtime gives; without it we
+                  show the limit alone rather than guess how long it has run. */}
+              <span className="v">
+                {typeof auto.startedAt === "number"
+                  ? `${asMinutes(Math.max(0, Date.now() - auto.startedAt))} of ${asMinutes(auto.limits.timeoutMs)}`
+                  : `limit ${asMinutes(auto.limits.timeoutMs)}`}
+              </span>
+            </div>
+          )}
           {auto.lastGateFailure?.command && (
             <div className="ierr">last check failed · {trunc(auto.lastGateFailure.command, 40)}</div>
           )}
@@ -203,7 +325,7 @@ export function Inspector(props: {
         )
       )}
 
-      {(props.heartbeats.length > 0 || online) && (
+      {(props.heartbeats.length > 0 || crons.length > 0 || online) && (
         <div className="panel">
           <div className="phead">
             <span>Re-entry</span>
@@ -234,6 +356,27 @@ export function Inspector(props: {
               )}
             </div>
           ))}
+          {crons.map((c) => {
+            // Schedules run days out as easily as minutes — stamp() adds the
+            // date when the next run is not today.
+            const at = c.nextRunAt ? new Date(c.nextRunAt) : null;
+            const next = at && !Number.isNaN(at.getTime()) ? stamp(at) : "";
+            return (
+              <div className="kv hbrow" key={c.id} title={c.prompt}>
+                <span className="k">
+                  sched{c.schedule?.expression ? ` · ${c.schedule.expression}` : ""}
+                </span>
+                <span className="v faint">{next ? `next ${next}` : c.status}</span>
+                {online && (
+                  <span className="hbops">
+                    <button className="btn xs" onClick={() => cancelCron(c.id)}>
+                      cancel
+                    </button>
+                  </span>
+                )}
+              </div>
+            );
+          })}
           {online && (
             <input
               className="iin"
@@ -253,6 +396,18 @@ export function Inspector(props: {
         <div className="phead">
           <span>Learned</span>
         </div>
+        {learned && (
+          <>
+            <div className="kv">
+              <span className="k">Today</span>
+              <span className="v">{learned.today}</span>
+            </div>
+            <div className="kv">
+              <span className="k">Last lesson</span>
+              <span className="v faint">{learned.last}</span>
+            </div>
+          </>
+        )}
         <button className="open" onClick={props.onOpenLearn}>
           open learned →
         </button>

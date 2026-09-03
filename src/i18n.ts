@@ -244,7 +244,7 @@ const ZH: Record<string, string> = {
   "nothing learned yet.": "还没学到东西。",
   "agents keep small improvements as they work — they appear here on their own.":
     "智能体干活时会自己记下小改进,自动出现在这里。",
-  "let agents learn on their own": "让智能体自己学",
+  "let agents learn on their own": "开启自主学习",
   "about every {n} turns, or when it tidies its context — at most once per {m} minutes.":
     "大约每 {n} 轮学一次,清理旧对话时也会学;两次之间至少隔 {m} 分钟。",
   "for one agent": "只给某个智能体",

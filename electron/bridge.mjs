@@ -11,7 +11,8 @@
  *                               |"watch_helper"|"unwatch_helper"
  *                               |"watch_root"|"unwatch_root"|"root_prompt"
  *                               |"root_steer"|"root_follow_up"|"root_abort"
- *                               |"root_heartbeat_set"|"root_heartbeat_update",
+ *                               |"root_heartbeat_set"|"root_heartbeat_update"
+ *                               |"root_refine_rollback",
  *                             text?, target? }
  *   GET  /bridge/crons    { crons } — master's scheduled re-entries (cron_list,
  *                         heartbeat-sourced jobs excluded; those are /bridge/heartbeats)
@@ -785,7 +786,12 @@ async function resolveRoot(name) {
  *  renderer shows loading, never "nothing happened" (session_resynced backfills). */
 async function ensureRootConn(name) {
   const existing = rootConns.get(name);
-  if (existing) return existing;
+  if (existing) {
+    // A watch for a root we already hold means the page reloaded (its unwatch
+    // never arrived). Re-attach so the fresh page gets its root_snapshot —
+    // returning the old entry silently would leave it on "loading history…".
+    await unwatchRoot(name);
+  }
   if (!sdkRef) throw new Error("daemon not connected");
   const activeSessionId = await resolveRoot(name);
   const conn = await sdkRef.DaemonAgentConnection.attach(daemonClient, activeSessionId, {
@@ -1009,6 +1015,12 @@ async function handleCmd(body) {
       const { conn } = await ensureRootConn(String(body.target ?? ""));
       return { job: (await conn.updateHeartbeat(String(body.action ?? ""))) ?? null };
     }
+    case "root_refine_rollback": {
+      // Undo one of a root's own lessons through the root's own connection
+      // (its harness, not master's); recorded there as a new refinement.
+      const { conn } = await ensureRootConn(String(body.target ?? ""));
+      return { result: await conn.refine({ rollbackId: String(body.id ?? "") }) };
+    }
     case "remove_helper": {
       if (!daemonClient || !masterSessionId) throw new Error("daemon not connected");
       const r = await daemonClient.request({
@@ -1063,22 +1075,31 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.url && req.url.split("?")[0] === "/bridge/learned") {
-    // autoRefine rides along so the Learned surfaces can render
-    // "next review not before" without a second pull; null on old daemons.
-    // ?root=<name> scopes the local harness + autoRefine to a watched root
-    // session (its uuid is captured at attach); default is master.
+    // autoRefine rides along; null on old daemons. ?root=<name> scopes the
+    // local harness to that root session: a watched root's uuid is captured at
+    // attach; an unwatched one is resolved read-only from the daemon list, so
+    // the ⚡ column sees every roster root's lessons without attaching.
     const rootName = new URL(req.url, "http://localhost").searchParams.get("root");
-    const uuid = rootName ? rootConns.get(rootName)?.uuid ?? null : masterUuid;
-    const status = rootName ? rootStatusPayload(rootName) : statusPayload();
-    status
-      .then(({ autoRefine }) => {
-        res.writeHead(200, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ ...learnedPayload(uuid), autoRefine }));
-      })
-      .catch(() => {
-        res.writeHead(200, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ ...learnedPayload(uuid), autoRefine: null }));
-      });
+    (async () => {
+      let uuid = rootName ? rootConns.get(rootName)?.uuid ?? null : masterUuid;
+      if (rootName && !uuid && daemonClient) {
+        const listed = await daemonClient.request({ type: "list", all: true }).catch(() => null);
+        const s = listed?.success
+          ? (listed.data.sessions || []).find(
+              (x) => (x.rlmDepth ?? 0) === 0 && x.sessionName === rootName,
+            )
+          : null;
+        uuid = s?.sessionId ?? null;
+      }
+      const { autoRefine } = await (rootName ? rootStatusPayload(rootName) : statusPayload()).catch(
+        () => ({ autoRefine: null }),
+      );
+      res.writeHead(200, { ...cors, "content-type": "application/json" });
+      res.end(JSON.stringify({ ...learnedPayload(uuid), autoRefine }));
+    })().catch(() => {
+      res.writeHead(200, { ...cors, "content-type": "application/json" });
+      res.end(JSON.stringify({ local: null, global: null, autoRefine: null }));
+    });
     return;
   }
   if (req.url && req.url.split("?")[0] === "/bridge/root-status") {

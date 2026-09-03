@@ -47,6 +47,7 @@ import {
   type BridgeMessage,
 } from "./runtime/bridge";
 import { fetchPreviewFiles } from "./runtime/preview";
+import { fetchLessons } from "./runtime/learned";
 import type { ChatMessage } from "./runtime/nim";
 import type { LearnedSel } from "./types";
 import { t as tr, useT } from "./i18n";
@@ -379,18 +380,20 @@ export function App() {
   }));
   const tt = useT();
   const [wsOpen, setWsOpen] = useState(false);
-  // Learned: the entry the left column selected (detail in the center pane),
-  // and a counter bumped per kept lesson so column + pane re-pull.
+  // Learned: the lesson the ⚡ column selected (detail in the center pane),
+  // a counter bumped per kept lesson so column + pane re-pull, and whether
+  // lessons landed since the column was last opened (rail dot).
   const [learnedSel, setLearnedSel] = useState<LearnedSel | null>(null);
   const [lessonEpoch, setLessonEpoch] = useState(0);
+  const [learnedUnread, setLearnedUnread] = useState(false);
   // Split width: the left pane's share [0.2, 0.8], persisted per workspace.
   const ratioKey = `pane-ratio:${state.bridge?.workspace || "general"}`;
   const [paneRatio, setPaneRatio] = useState(0.5);
   useEffect(() => {
     setPaneRatio(loadJson(ratioKey, 0.5));
   }, [ratioKey]);
-  // Bumped when the bridge-pulled rows the inspector owns (scheduled re-entries,
-  // lessons) may have moved: attach, heartbeats_changed, refine_complete.
+  // Bumped when the bridge-pulled rows the inspector owns (scheduled
+  // re-entries) may have moved: attach, heartbeats_changed.
   const [inspectorKey, setInspectorKey] = useState(0);
   // send() reads fresh state without re-binding the callback per keystroke.
   const stateRef = useRef(state);
@@ -789,8 +792,7 @@ export function App() {
           }
         }
       } else if (t === "refine_complete") {
-        setInspectorKey((n) => n + 1); // the learned summary in DRIVERS re-pulls
-        setLessonEpoch((n) => n + 1); // Learned column/pane re-pull
+        setLessonEpoch((n) => n + 1); // ⚡ column / pane / rail dot re-pull
         const result = event.result as LessonResult | undefined;
         if (result?.id) {
           push({ kind: "lesson", id: id(), result, at: clock(), ts: Date.now() });
@@ -946,6 +948,9 @@ export function App() {
             x.id === toolId && x.kind === "tool" ? { ...x, status: event.isError ? "error" : "done" } : x,
           ),
         );
+      } else if (t === "refine_complete") {
+        // A watched root kept a lesson of its own — the ⚡ surfaces re-pull.
+        setLessonEpoch((n) => n + 1);
       }
     };
 
@@ -1019,6 +1024,7 @@ export function App() {
           refreshPreview();
           refreshOthers();
           setInspectorKey((n) => n + 1);
+          setLessonEpoch((n) => n + 1); // workspace switch = a different harness
         }
       } else if (m.type === "heartbeats_changed") {
         refreshHeartbeats();
@@ -1065,15 +1071,27 @@ export function App() {
         });
       } else if (m.type === "root_snapshot") {
         // Canonical transcript for a watched root: same slim/replay/fold shape
-        // as master's attach history. Replaces wholesale (resync semantics).
+        // as master's attach history. Replaces wholesale (resync semantics) —
+        // except the tail of live tool rows from the turn in flight: the
+        // snapshot carries only messages, and wiping a running "python" row
+        // mid-turn reads as a glitch.
         const items = foldHistory(historyToItems((m.messages as HistoryMessage[]) ?? []));
+        const liveTail = (prev: TimelineItem[] | undefined): TimelineItem[] => {
+          if (!prev) return [];
+          let i = prev.length;
+          while (i > 0 && (prev[i - 1].kind === "tool" || prev[i - 1].kind === "note")) i--;
+          return prev.slice(i).filter((x) => x.kind === "tool");
+        };
         clearRootStream(m.root);
         // The snapshot carries the root's own status blocks (schema 27) — the
         // Inspector binds to them; a key present (even null) means "loaded".
         const rstate = m.state;
         setState((s) => ({
           ...s,
-          rootTimelines: { ...s.rootTimelines, [m.root]: items },
+          rootTimelines: {
+            ...s.rootTimelines,
+            [m.root]: [...items, ...liveTail(s.rootTimelines[m.root])],
+          },
           rootLoad: { ...s.rootLoad, [m.root]: m.partial ? "partial" : "full" },
           rootStates:
             m.running === undefined
@@ -1198,12 +1216,52 @@ export function App() {
   const toggleLearned = useCallback(() => {
     setState((s) => ({ ...s, column: s.column === "learned" ? "agents" : "learned" }));
   }, []);
-  /** A row picked in the Learned column: its detail pops into a center pane
-   *  (split, keeping your focus); picking it again clears back to history. */
+  /** A lesson picked in the ⚡ column: its full record pops into a center pane
+   *  (split, keeping your focus); picking it again deselects. */
   const selectLearned = useCallback((sel: LearnedSel | null) => {
     setLearnedSel(sel);
     if (sel) setState((s) => popPane(s, { kind: "learned" }));
   }, []);
+
+  // ⚡ unread dot: lessons newer than when the column was last open. Reads the
+  // same cached pull the column uses — one fetch per epoch/roster, no hammering.
+  const learnedRootsKey = state.others
+    .map((a) => a.name)
+    .sort()
+    .join("\n");
+  const learnedSeenKey = `learned-seen:${state.bridge?.workspace || "general"}`;
+  const learnedColumnOpen = state.column === "learned";
+  const learnedConnected = Boolean(state.bridge?.connected);
+  useEffect(() => {
+    if (!learnedConnected) return;
+    let live = true;
+    fetchLessons(lessonEpoch, learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")).then((rows) => {
+      if (!live) return;
+      const newest = rows.reduce((a, r) => ((r.created_at ?? "") > a ? (r.created_at as string) : a), "");
+      if (learnedColumnOpen) {
+        // Looking at the list marks everything seen.
+        if (newest !== "") {
+          try {
+            localStorage.setItem(learnedSeenKey, newest);
+          } catch {
+            /* private mode */
+          }
+        }
+        setLearnedUnread(false);
+        return;
+      }
+      let seen = "";
+      try {
+        seen = localStorage.getItem(learnedSeenKey) ?? "";
+      } catch {
+        /* private mode */
+      }
+      setLearnedUnread(newest !== "" && newest > seen);
+    });
+    return () => {
+      live = false;
+    };
+  }, [learnedConnected, lessonEpoch, learnedRootsKey, learnedSeenKey, learnedColumnOpen]);
   /** A tab (or agent row) dropped on the left/right half of the center area. */
   const dropPane = useCallback((v: PaneView, side: "left" | "right") => {
     setState((s) => moveTab(s, v, side));
@@ -1606,7 +1664,15 @@ export function App() {
         <div className="pnote">{tt("nothing open — pick an agent on the left, or drag one here")}</div>
       );
     }
-    if (p.kind === "learned") return <LearnedView sel={learnedSel} epoch={lessonEpoch} onSelect={setLearnedSel} />;
+    if (p.kind === "learned")
+      return (
+        <LearnedView
+          sel={learnedSel}
+          epoch={lessonEpoch}
+          roots={learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")}
+          onChanged={() => setLessonEpoch((n) => n + 1)}
+        />
+      );
     if (p.kind === "preview") {
       return (
         <PreviewView
@@ -1864,13 +1930,19 @@ export function App() {
           workspace={state.bridge?.workspace || "general"}
           bridge={state.bridge}
           learnedOn={state.column === "learned"}
+          learnedUnread={learnedUnread}
           onColumn={setColumn}
           onLearned={toggleLearned}
           onLogo={() => setWsOpen((v) => !v)}
           onSettings={() => setSetOpen((v) => !v)}
         />
         {state.column === "learned" ? (
-          <LearnedColumn selected={learnedSel} epoch={lessonEpoch} onSelect={selectLearned} />
+          <LearnedColumn
+            selected={learnedSel}
+            epoch={lessonEpoch}
+            roots={learnedRootsKey === "" ? [] : learnedRootsKey.split("\n")}
+            onSelect={selectLearned}
+          />
         ) : state.column === "skills" ? (
           <SkillsColumn />
         ) : state.column === "extensions" ? (
@@ -1901,7 +1973,6 @@ export function App() {
           </div>
         </div>
         <Inspector
-          master={state.master}
           goal={state.goal}
           bridge={state.bridge}
           heartbeats={state.heartbeats}
@@ -1916,15 +1987,8 @@ export function App() {
             state.selectedRoot !== null &&
             Object.prototype.hasOwnProperty.call(state.rootGoals, state.selectedRoot)
           }
-          rootState={state.selectedRoot ? rootStateOf(state.selectedRoot) : "idle"}
           refreshKey={inspectorKey}
           onRootRefresh={refreshRootStatus}
-          onOpenLearn={() => {
-            // Fresh look at the history (newest record opens expanded), not a
-            // stale entry selection from an earlier click.
-            setLearnedSel(null);
-            setState((s) => popPane({ ...s, column: "learned" }, { kind: "learned" }));
-          }}
         />
       </div>
     </div>

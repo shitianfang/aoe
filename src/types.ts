@@ -13,10 +13,11 @@ export interface CatalogItem {
   detail?: string;
 }
 
-/** Selected entry in the Learned column/view (scope words match the bridge). */
+/** Selected lesson in the Learned column (detail opens in a center pane):
+ *  owner is the agent a local lesson belongs to ("master" or a root name),
+ *  null for a lesson kept everywhere (global harness). */
 export interface LearnedSel {
-  scope: "this workspace" | "everywhere";
-  kind: string;
+  owner: string | null;
   id: string;
 }
 

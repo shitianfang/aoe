@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
-  AgentState,
-  AutoRefineInfo,
   AutonomousInfo,
   BridgeState,
   ChildInfo,
@@ -63,12 +61,6 @@ const CHECKIN_INTERVALS = [
   { id: "daily", schedule: "@daily", label: "daily" },
 ] as const;
 
-/** Refinement rows in the harness state files (GET /bridge/learned). */
-interface LearnedSummary {
-  today: number;
-  last: string;
-}
-
 function stamp(d: Date): string {
   const now = new Date();
   const sameDay =
@@ -78,32 +70,6 @@ function stamp(d: Date): string {
   return sameDay
     ? hhmm(d)
     : `${d.toLocaleDateString(getLang() === "zh" ? "zh-CN" : undefined, { month: "short", day: "numeric" })} ${hhmm(d)}`;
-}
-
-/** Count today's lessons and find the newest, across both scopes. Returns null
- *  when the harness has no dated refinement — nothing to say, so nothing shown. */
-function summarizeLearned(data: unknown): LearnedSummary | null {
-  const scopes = ["local", "global"] as const;
-  const dates: Date[] = [];
-  for (const scope of scopes) {
-    const rows = (data as Record<string, { refinements?: { created_at?: string }[] } | null>)?.[scope]
-      ?.refinements;
-    for (const r of rows ?? []) {
-      if (!r?.created_at) continue;
-      const d = new Date(r.created_at);
-      if (!Number.isNaN(d.getTime())) dates.push(d);
-    }
-  }
-  if (dates.length === 0) return null;
-  const now = new Date();
-  const today = dates.filter(
-    (d) =>
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate(),
-  ).length;
-  const last = dates.reduce((a, b) => (b.getTime() > a.getTime() ? b : a));
-  return { today, last: stamp(last) };
 }
 
 /** Honest helper panel: helpers have no objective / unattended / check-ins of
@@ -156,7 +122,6 @@ function HelperInspector(props: { child: ChildInfo }) {
 }
 
 export function Inspector(props: {
-  master: AgentState;
   goal: GoalInfo | null;
   bridge: BridgeState | null;
   heartbeats: HeartbeatInfo[];
@@ -171,11 +136,9 @@ export function Inspector(props: {
   /** The selected root's connection state has arrived — until then the panels
    *  say "loading", never "none". */
   rootLoaded: boolean;
-  rootState: AgentState;
   /** Bumped by App when the bridge state behind the pulled rows may have moved
-   *  (attach, heartbeats_changed, refine_complete) — re-pulls crons and lessons. */
+   *  (attach, heartbeats_changed) — re-pulls the cron rows. */
   refreshKey?: number;
-  onOpenLearn: () => void;
   /** Ask App to re-pull the selected root's status blocks (after a write). */
   onRootRefresh: (name: string) => void;
 }) {
@@ -209,8 +172,6 @@ export function Inspector(props: {
   const [hbText, setHbText] = useState("");
   const [hbErr, setHbErr] = useState<string | null>(null);
   const [crons, setCrons] = useState<CronInfo[]>([]);
-  const [learned, setLearned] = useState<LearnedSummary | null>(null);
-  const [autoRefine, setAutoRefine] = useState<AutoRefineInfo | null>(null);
   // Elapsed unattended time is derived from startedAt; re-render it on the minute.
   const [, setTick] = useState(0);
 
@@ -230,20 +191,7 @@ export function Inspector(props: {
 
   useEffect(() => {
     loadCrons();
-    // Lessons follow the subject: a root's own local harness rides
-    // ?root=<name>; the global scope is shared either way.
-    fetch(bridgeUrl(root ? `/bridge/learned?root=${encodeURIComponent(root)}` : "/bridge/learned"))
-      .then((r) => r.json())
-      .then((d) => {
-        setLearned(summarizeLearned(d));
-        // autoRefine rides along (schema 27); null on older daemons.
-        setAutoRefine((d as { autoRefine?: AutoRefineInfo | null })?.autoRefine ?? null);
-      })
-      .catch(() => {
-        setLearned(null);
-        setAutoRefine(null);
-      });
-  }, [loadCrons, refreshKey, root]);
+  }, [loadCrons, refreshKey]);
 
   // Error rows and drafts are per subject — never carried across a selection.
   useEffect(() => {
@@ -356,14 +304,14 @@ export function Inspector(props: {
 
   if (child) return <HelperInspector child={child} />;
 
+  // The header's third word answers "who is driving this agent" — the state
+  // words (idle/running) live in the panes; here they were redundant.
   const subjectHeader = (
     <div className="subj">
       {root ? <BotAvatar seed={root} /> : <span className="chip master" />}
       <span className="nm">{subjectName}</span>
       <span className="st">
-        {root
-          ? t(props.rootState === "working" ? "running" : loaded ? "idle" : "loading…")
-          : t("runs this workspace")}
+        {root && !loaded ? t("loading…") : goalActive ? t("driven by objective") : t("driven by you")}
       </span>
     </div>
   );
@@ -387,11 +335,8 @@ export function Inspector(props: {
     <aside className="insp">
       {subjectHeader}
 
+      {/* Who drives sits in the header above; this panel is the objective itself. */}
       <div className="panel">
-        <div className="phead">
-          <span>{t("Driving")}</span>
-          <code>{goalActive ? t("objective") : t("you")}</code>
-        </div>
         {goalActive ? (
           <>
             <div className="rule">“{goal?.objective}”</div>
@@ -548,6 +493,11 @@ export function Inspector(props: {
               <span>{t("Unattended")}</span>
               <code>{t("off")}</code>
             </div>
+            <div className="rule">
+              {t(
+                "Turns on with these limits. It steps in only after a failed check or a turn without evidence.",
+              )}
+            </div>
             <div className="lims">
               <label>
                 <span>{t("turns")}</span>
@@ -676,44 +626,6 @@ export function Inspector(props: {
           {hbErr && <div className="ierr">{hbErr}</div>}
         </div>
       )}
-
-      <div className="panel">
-        <div className="phead">
-          <span>{t("Learned")}</span>
-        </div>
-        {learned && (
-          <>
-            <div className="kv">
-              <span className="k">{t("Today")}</span>
-              <span className="v">{learned.today}</span>
-            </div>
-            <div className="kv">
-              <span className="k">{t("Last lesson")}</span>
-              <span className="v faint">{learned.last}</span>
-            </div>
-          </>
-        )}
-        {/* last review + cooldown bound the next auto review (schema 27);
-            without both numbers there is nothing honest to show. */}
-        {autoRefine?.enabled &&
-          typeof autoRefine.lastReviewAt === "number" &&
-          typeof autoRefine.cooldownMs === "number" && (
-            <div className="kv">
-              <span className="k">{t("Next review")}</span>
-              <span className="v faint">
-                {t("not before {at}", {
-                  at: stamp(new Date(autoRefine.lastReviewAt + autoRefine.cooldownMs)),
-                })}
-              </span>
-            </div>
-          )}
-        {/* The Learned view is master's history — only offered there. */}
-        {!root && (
-          <button className="open" onClick={props.onOpenLearn}>
-            {t("open learned →")}
-          </button>
-        )}
-      </div>
     </aside>
   );
 }

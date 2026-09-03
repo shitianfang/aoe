@@ -163,9 +163,15 @@ const ZH: Record<string, string> = {
   "open an html, md, png or pdf file to preview it.": "打开 html、md、png 或 pdf 文件即可预览。",
   diff: "对比",
 
-  /* learned column */
+  /* learned column (⚡) */
+  "what agents pick up while working — later work uses it.":
+    "agent 工作中自己学到的改进 —— 之后的工作会用上。",
   "nothing learned yet.": "还没有经验。",
-  "lessons master keeps appear here.": "master 记下的经验会出现在这里。",
+  "agents keep small improvements as they work — they appear here on their own.":
+    "agent 干活时会自己记下小改进,自动出现在这里。",
+  "for one agent": "只属于某个 agent",
+  "for every workspace": "所有工作区通用",
+  "something new": "有新内容",
   "kept everywhere": "已在所有工作区",
 
   /* timeline */
@@ -271,19 +277,12 @@ const ZH: Record<string, string> = {
   memory: "记忆",
   subagent: "助手",
 
-  /* learned view */
-  "← history": "← 历史",
-  History: "历史",
-  "this workspace": "本工作区",
-  everywhere: "所有工作区",
-  "updated {when}": "更新于 {when}",
-  "last changed by {id}": "最近由 {id} 修改",
-  "no lesson recorded this change": "没有经验对应这次修改",
-  "no content stored for this entry.": "该条目没有存储内容。",
-  "no lessons yet. When master keeps a lesson it appears here — with its evidence, edits, and a one-step roll back.":
-    "还没有经验。master 记下经验后会出现在这里 —— 附带依据、改动,以及一步撤销。",
+  /* learned pane (one lesson's full record) */
   lesson: "经验",
-  "{n} edits": "{n} 处改动",
+  "pick a lesson on the left to see its full record.": "在左侧点一条经验,查看完整记录。",
+  "this lesson is no longer in the record.": "这条经验已不在记录里。",
+  "why it was kept": "为什么记下",
+  "what changed": "改了什么",
 
   /* preview */
   "nothing published yet — files an agent writes will preview here.":
@@ -297,8 +296,8 @@ const ZH: Record<string, string> = {
   /* inspector */
   "check-in": "定时跟进",
   unattended: "无人值守",
-  Driving: "谁在推进",
-  you: "你",
+  "driven by you": "由你推进",
+  "driven by objective": "目标推进中",
   Status: "状态",
   Budget: "预算",
   Objective: "目标",
@@ -317,24 +316,26 @@ const ZH: Record<string, string> = {
   "{name} acts when you message it. Objectives and check-ins need the runtime (bridge offline).":
     "你发消息时 {name} 才行动。目标与定时跟进需要运行时(bridge 离线)。",
   Unattended: "无人值守",
+  "Turns on with these limits. It steps in only after a failed check or a turn without evidence.":
+    "按下面这些上限开启。仅在检查失败、或某轮没有交付证据时才介入。",
   on: "开",
   "Steps in only after a failed check or a turn without evidence; stops at any limit. The objective continues regardless.":
     "仅在检查失败、或某轮没有证据时介入;触及任一上限即停止。目标不受影响,继续推进。",
-  Continued: "继续次数",
+  Continued: "介入次数",
   Turns: "轮数",
   Tokens: "用量",
   Time: "时间",
   "{used} of {max}": "{used}/{max}",
   "limit {max}": "上限 {max}",
   "{n}m": "{n} 分钟",
-  "Last continued": "上次继续",
+  "Last continued": "上次介入",
   "last check failed · {command}": "上次检查失败 · {command}",
   "turn off": "关闭",
   "turn unattended on": "开启无人值守",
   turns: "轮数",
   tokens: "用量",
   time: "时长",
-  continued: "继续",
+  continued: "介入次数",
   "Re-entry": "自动唤醒",
   "check-in · agent": "定时跟进 · 智能体设的",
   paused: "已暂停",
@@ -352,11 +353,6 @@ const ZH: Record<string, string> = {
   "wake it with this prompt…": "到点用这条提示唤醒它…",
   add: "添加",
   apply: "设定",
-  Today: "今天",
-  "Last lesson": "最近一条经验",
-  "Next review": "下次评估",
-  "not before {at}": "不早于 {at}",
-  "open learned →": "打开经验 →",
   "after a failed check": "检查失败后",
   "no evidence in the turn": "本轮没有证据",
   active: "进行中",

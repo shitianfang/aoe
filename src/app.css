@@ -86,19 +86,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .wsnew input::placeholder { color: var(--t3); }
 .wsnew input:focus { border-color: var(--t3); }
 
-/* learned view */
+/* learned pane (one lesson's full record) */
 .learn { flex: 1; overflow-y: auto; padding: 18px; }
 .learn .sec { padding-left: 0; }
-.lrow { display: grid; grid-template-columns: 64px 96px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 10.5px; }
-.lrow .id { color: var(--t1); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lrow .tm { color: var(--t3); font-size: 9px; }
-.lrow .tx { color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lrow .scope { color: var(--t3); }
-.lrow .scope.g { color: var(--violet-tx); }
-.lrow .op { text-align: right; }
-.lrow.click { cursor: pointer; }
-.lrow.click:hover { background: var(--soft); }
-.lrow.click.on { background: var(--soft); }
 .lk { color: var(--t3); border-bottom: 1px solid var(--hair-hi); cursor: pointer; }
 .lk:hover { color: var(--t2); }
 
@@ -115,6 +105,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .edetail .hv { color: var(--t2); overflow-wrap: break-word; }
 .edetail .hv .hline { display: block; }
 .edetail .lf .note { font-family: var(--mono); font-size: 8px; color: var(--t3); }
+.edetail .hv .dim { color: var(--t3); font-style: italic; }
 
 /* lesson card (timeline, expanded) */
 .lwrap { margin-left: 34px; }
@@ -143,10 +134,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: grid; place-items: center; cursor: pointer; margin-bottom: 10px;
   font-family: var(--mono); font-size: 12px; font-weight: 700;
 }
-.rbtn { width: 38px; height: 38px; display: grid; place-items: center; color: var(--t3); }
+.rbtn { position: relative; width: 38px; height: 38px; display: grid; place-items: center; color: var(--t3); }
 .rbtn:hover { color: var(--t2); }
 .rbtn.on { color: var(--t1); background: var(--soft); }
 .rbtn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+/* quiet "new since you looked" marker (⚡) — a dot, never a number */
+.rbtn .ldot { position: absolute; top: 8px; right: 8px; width: 5px; height: 5px; background: var(--green); }
 .rail .sp { flex: 1; }
 .uav { position: relative; width: 26px; height: 26px; background: var(--you); color: #141517; font-family: var(--mono); font-size: 9px; font-weight: 700; display: grid; place-items: center; cursor: pointer; }
 .uav:hover { filter: brightness(1.06); }
@@ -224,13 +217,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .f.ro:hover { background: none; }
 .f.ro .fm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .colnote { padding: 12px 8px 0; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
-/* learned column rows */
-.lentry { display: flex; align-items: baseline; gap: 7px; width: 100%; text-align: left; padding: 7px 8px; border: 1px solid transparent; margin-bottom: 2px; }
-.lentry:hover { background: var(--soft); }
-.lentry.on { background: var(--soft); border-color: var(--hair); }
-.lentry .kd { font-family: var(--mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); flex-shrink: 0; }
-.lentry .tt { font-family: var(--mono); font-size: 11px; color: var(--t1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lentry .gd { width: 5px; height: 5px; background: var(--violet); margin-left: auto; flex-shrink: 0; }
+/* learned column (⚡): one quiet explainer + lesson rows grouped by owner */
+.lhint { padding: 0 8px 12px; font-family: var(--mono); font-size: 8.5px; color: var(--t3); line-height: 1.7; }
+.lsn { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 1px solid transparent; margin-bottom: 2px; }
+.lsn:hover { background: var(--soft); }
+.lsn.on { background: var(--soft); border-color: var(--hair); }
+.lsn .meta { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
+.lsn .meta .who { color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lsn .meta .tm { margin-left: auto; flex-shrink: 0; }
+.lsn .sum { display: block; margin-top: 3px; font-size: 11px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lsn .sum .src { font-family: var(--mono); font-size: 8.5px; color: var(--t3); }
 /* empty center pane */
 .pnote { flex: 1; display: grid; place-items: center; padding: 24px; font-family: var(--mono); font-size: 9px; color: var(--t3); text-align: center; }
 

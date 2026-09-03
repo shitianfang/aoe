@@ -5,8 +5,10 @@ export function Rail(props: {
   column: ColumnView;
   workspace: string;
   bridge: BridgeState | null;
-  /** A center pane currently shows Learned. */
+  /** The Learned column is the one open. */
   learnedOn: boolean;
+  /** Lessons landed since the Learned column was last opened. */
+  learnedUnread: boolean;
   onColumn: (v: ColumnView) => void;
   onLearned: () => void;
   onLogo: () => void;
@@ -39,12 +41,13 @@ export function Rail(props: {
       </button>
       <button
         className={props.learnedOn ? "rbtn on" : "rbtn"}
-        title={t("Learned")}
+        title={props.learnedUnread ? `${t("Learned")} · ${t("something new")}` : t("Learned")}
         onClick={props.onLearned}
       >
         <svg viewBox="0 0 24 24">
           <path d="M13 3 5 14h5l-1 7 8-11h-5l1-7Z" />
         </svg>
+        {props.learnedUnread && <span className="ldot" />}
       </button>
       <button
         className={props.column === "skills" ? "rbtn on" : "rbtn"}

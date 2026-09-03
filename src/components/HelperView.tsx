@@ -1,6 +1,14 @@
 import { useRef, useState } from "react";
-import type { ChildInfo, HelperEvent } from "../types";
+import type { ChildInfo, HelperEvent, HelperTranscriptRow } from "../types";
 import { chipGlyph, chipHue, helperName, reachable } from "../helperDisplay";
+
+function hhmm(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 function stateLine(c: ChildInfo): JSX.Element {
   if (c.status === "queued") return <>queued · not yet started</>;
@@ -43,6 +51,10 @@ export function HelperView(props: {
   child: ChildInfo;
   index: number;
   events: HelperEvent[];
+  /** Thinned rows from the helper's live session (watch_helper feed). */
+  transcript: HelperTranscriptRow[];
+  /** Helper runtime's own setWorkingMessage copy, while present. */
+  working?: string;
   onStop: (childId: string) => void;
   onRemove: (childId: string) => void;
   onSend: (child: ChildInfo, text: string) => void;
@@ -84,6 +96,43 @@ export function HelperView(props: {
         {c.label && <div className="r3">Task — “{c.label}”</div>}
       </div>
       <div className="transcript hevents">
+        {/* Live transcript from the helper's own session (second attach on the
+            daemon socket). Only helpers with an activeSessionId are watchable. */}
+        {!reachable(c) ? (
+          <div className="div">not reachable — ran inline or removed</div>
+        ) : props.transcript.length === 0 ? (
+          <div className="div">transcript · nothing yet</div>
+        ) : (
+          props.transcript.map((row, i) =>
+            row.kind === "tool" ? (
+              <div className={row.status === "error" ? "ev bad" : "ev"} key={`tr${i}`}>
+                <span className="ic" />
+                <strong>{row.name === "ipython" ? "python" : row.name}</strong>
+                <span className={row.status === "done" ? "rt ok" : "rt"}>{row.status}</span>
+              </div>
+            ) : row.role === "assistant" ? (
+              <div className="msg" key={`tr${i}`}>
+                <span className={`chip ${chipHue(props.index)}`}>{chipGlyph(c)}</span>
+                <span className="body">
+                  {row.text}
+                  {row.at ? <span className="when">{hhmm(row.at)}</span> : null}
+                </span>
+              </div>
+            ) : (
+              // user rows are the task/steer text sent into the helper;
+              // custom rows are agent messages it received
+              <div className="msg user" key={`tr${i}`}>
+                <span className="chip ghost">M</span>
+                <span className="body">
+                  {row.text}
+                  {row.at ? <span className="when">{hhmm(row.at)}</span> : null}
+                </span>
+              </div>
+            ),
+          )
+        )}
+        {props.working ? <div className="div">{props.working.toLowerCase()}</div> : null}
+        <div className="div">observed</div>
         {props.events.length === 0 ? (
           <div className="div">nothing observed yet</div>
         ) : (

@@ -43,6 +43,26 @@ export interface HelperEvent {
   rt: string;
 }
 
+/** Thinned rows of a watched helper's live session (bridge helper_event,
+ *  keyed by activeSessionId on the wire, by child id in AppState). */
+export interface HelperMsgRow {
+  kind: "msg";
+  role: "user" | "assistant" | "custom";
+  text: string;
+  /** ISO timestamp when the message carried one. */
+  at?: string | null;
+}
+export interface HelperToolRow {
+  kind: "tool";
+  /** toolCallId — lets an _end update the row its _start appended. */
+  id?: string;
+  name: string;
+  status: "running" | "done" | "error";
+}
+export type HelperTranscriptRow = HelperMsgRow | HelperToolRow;
+/** What the bridge broadcasts: append msg/tool, replace-all on resync. */
+export type HelperFeedEvent = HelperTranscriptRow | { kind: "resync"; messages: HelperMsgRow[] };
+
 /** One row in the Files column, derived from timeline tool events. */
 export interface FileActivity {
   path: string;
@@ -110,6 +130,10 @@ export interface AppState {
   goal: GoalInfo | null;
   children: ChildInfo[];
   helperEvents: Record<string, HelperEvent[]>;
+  /** Live transcript per child id (watch_helper feed; resync replaces, msg/tool append). */
+  helperTranscripts: Record<string, HelperTranscriptRow[]>;
+  /** Child runtime's setWorkingMessage copy per child id ("" = cleared). */
+  helperWorking: Record<string, string>;
   files: FileActivity[];
   previewFiles: PreviewFile[];
   /** Selected file in the Preview view; null = most recently changed. */

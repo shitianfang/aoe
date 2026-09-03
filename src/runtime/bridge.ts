@@ -4,6 +4,8 @@
  * hosted by Electron main.
  */
 
+import type { HelperFeedEvent } from "../types";
+
 export interface BridgeHello {
   connected: boolean;
   master: { name: string; activeSessionId: string } | null;
@@ -18,7 +20,10 @@ export type BridgeMessage =
   | { type: "heartbeats_changed" }
   | { type: "preview_update" }
   | { type: "file_activity"; file: { path: string; name: string; at: string } }
-  | { type: "working_message"; text: string };
+  | { type: "working_message"; text: string }
+  // Watched helper sessions: sessionId is the helper's activeSessionId.
+  | { type: "helper_event"; sessionId: string; event: HelperFeedEvent }
+  | { type: "helper_working"; sessionId: string; text: string };
 
 // Packaged app: Electron main hosts the daemon bridge and hands its port over
 // via the page query. Dev: same-origin Vite proxy.

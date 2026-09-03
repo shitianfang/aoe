@@ -84,10 +84,12 @@ export function LearnedColumn(props: {
     const hit = on(sel, "entry");
     // Absent counters are not zero — they mean no round has judged this entry —
     // so the row says nothing rather than reporting a zero it cannot stand behind.
+    // The row's meta line is one line that ellipsises, so it carries only what
+    // earns a place at column width: what kind, whose, and the verdict. The
+    // revision count is a detail and lives in the pane.
     const meta = [
       t(e.kind),
       e.owner,
-      (e.version ?? 1) > 1 ? t("revised ×{n}", { n: (e.version ?? 1) - 1 }) : null,
       (e.helpful ?? 0) > 0 ? t("helped ×{n}", { n: e.helpful ?? 0 }) : null,
       (e.harmful ?? 0) > 0 ? t("got in the way ×{n}", { n: e.harmful ?? 0 }) : null,
     ].filter((p): p is string => p !== null && p !== "");

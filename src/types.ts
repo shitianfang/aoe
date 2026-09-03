@@ -60,7 +60,7 @@ export interface LessonResult {
 export type TimelineItem =
   | { kind: "divider"; id: string; text: string; ts?: number }
   | { kind: "user"; id: string; text: string; at: string }
-  | { kind: "master"; id: string; text: string; at: string; streaming?: boolean }
+  | { kind: "master"; id: string; text: string; at: string; streaming?: boolean; ts?: number }
   | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number }
   | { kind: "lesson"; id: string; result: LessonResult; at: string; ts?: number }
   /** Quiet chip row for secondary events (agent messages, queue notes) — no rule line. */
@@ -198,6 +198,9 @@ export interface PreviewVersion {
   at: string;
   /** This version was explicitly published by the agent. */
   declared?: boolean;
+  /** The label the agent published THIS version under — its own account of
+   *  what this round decided. The file-level `label` is only the latest one. */
+  note?: string;
 }
 export interface PreviewFile {
   path: string;

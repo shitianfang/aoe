@@ -486,7 +486,8 @@ function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
     else if (m.role === "assistant") {
       // Tool-only turns replay as empty assistant messages — skip them, an
       // avatar with no words is just a hole in the rhythm.
-      if (m.text.trim() !== "") out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at) });
+      if (m.text.trim() !== "")
+        out.push({ kind: "master", id: id(), text: m.text, at: hhmm(m.at), ts: m.at });
     }
     else if (m.text.trim() !== "") {
       // Another agent's message into this conversation — a real message row.
@@ -980,7 +981,8 @@ export function App() {
         if (!daemonMsgRef.current || daemonMsgRef.current.key !== key) {
           const itemId = id();
           daemonMsgRef.current = { itemId, key };
-          push({ kind: "master", id: itemId, text, at: clock(), streaming: true });
+          // ts: Preview's decision list places a message between two versions.
+          push({ kind: "master", id: itemId, text, at: clock(), ts: Date.now(), streaming: true });
         } else {
           const itemId = daemonMsgRef.current.itemId;
           if (t === "message_end") {

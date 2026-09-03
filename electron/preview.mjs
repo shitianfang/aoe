@@ -117,9 +117,11 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
     if (label) entry.label = String(label);
     const last = entry.versions[entry.versions.length - 1];
     if (last && last.hash === hash) {
-      // Same content re-declared: keep one version, tag it declared.
-      if (declared && !last.declared) {
+      // Same content re-declared: keep one version, tag it declared, and take
+      // the label — a re-publish is usually the agent naming what it decided.
+      if (declared && (!last.declared || (label && last.note !== String(label)))) {
         last.declared = true;
+        if (label) last.note = String(label);
         saveIndex();
         return true;
       }
@@ -139,6 +141,10 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       hash,
       file,
       ...(declared ? { declared: true } : {}),
+      // The label belongs to this version, not just to the file: it is the
+      // agent's account of what this round changed, and the client shows it
+      // on the card. entry.label stays the latest, for the file heading.
+      ...(label ? { note: String(label) } : {}),
     });
     saveIndex();
     return true;
@@ -197,6 +203,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
         label: `v${s.v}`,
         at: s.at,
         ...(s.declared ? { declared: true } : {}),
+        ...(s.note ? { note: s.note } : {}),
       })),
     }));
     for (const rel of touched) {

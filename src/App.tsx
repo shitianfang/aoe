@@ -467,6 +467,45 @@ export function App() {
   useEffect(() => {
     setPaneRatio(loadJson(ratioKey, 0.5));
   }, [ratioKey]);
+  // Side-column widths (left column / inspector) — a personal preference,
+  // one value across workspaces. Dragged via the vgutter handles.
+  const [colW, setColW] = useState(() => loadJson("col-width", 198));
+  const [inspW, setInspW] = useState(() => loadJson("insp-width", 250));
+  /** Drag a side handle; `dir` is which way growing goes (+1 col, -1 insp). */
+  const sideDrag =
+    (which: "col" | "insp") =>
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const start = which === "col" ? colW : inspW;
+      let last = start;
+      document.body.classList.add("resizing");
+      const move = (ev: MouseEvent) => {
+        const d = ev.clientX - startX;
+        last =
+          which === "col"
+            ? Math.min(360, Math.max(150, start + d))
+            : Math.min(480, Math.max(200, start - d));
+        (which === "col" ? setColW : setInspW)(last);
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+        document.body.classList.remove("resizing");
+        saveJson(which === "col" ? "col-width" : "insp-width", last);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    };
+  const resetSide = (which: "col" | "insp") => () => {
+    if (which === "col") {
+      setColW(198);
+      saveJson("col-width", 198);
+    } else {
+      setInspW(250);
+      saveJson("insp-width", 250);
+    }
+  };
   // Bumped when the bridge-pulled rows the inspector owns (scheduled
   // re-entries) may have moved: attach, heartbeats_changed.
   const [inspectorKey, setInspectorKey] = useState(0);
@@ -2110,7 +2149,10 @@ export function App() {
           onClose={() => setSetOpen(false)}
         />
       )}
-      <div className="frame">
+      <div
+        className="frame"
+        style={{ "--colw": `${colW}px`, "--inspw": `${inspW}px` } as React.CSSProperties}
+      >
         <Rail
           column={state.column}
           workspace={state.bridge?.workspace || "general"}
@@ -2156,12 +2198,14 @@ export function App() {
         ) : (
           <FilesColumn files={state.files} onOpenPreview={openPreview} />
         )}
+        <div className="vgutter" onMouseDown={sideDrag("col")} onDoubleClick={resetSide("col")} />
         <div className="center">
           <div className="cbody" onDragOver={bodyDragOver} onDragLeave={bodyDragLeave} onDrop={bodyDrop}>
             {center()}
             {dropHint && <div className={`drophint ${dropHint}`} />}
           </div>
         </div>
+        <div className="vgutter r" onMouseDown={sideDrag("insp")} onDoubleClick={resetSide("insp")} />
         <Inspector
           goal={state.goal}
           bridge={state.bridge}

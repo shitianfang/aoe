@@ -147,7 +147,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .uav .udot.bad { background: var(--red); }
 
 /* ---- agents column ---- */
-.col2 { width: 198px; border-right: 1px dashed var(--hair); padding: 12px 10px 16px; overflow-y: auto; flex-shrink: 0; }
+.col2 { width: var(--colw, 198px); border-right: 1px dashed var(--hair); padding: 12px 10px 16px; overflow-y: auto; flex-shrink: 0; }
+/* draggable width handles beside the left column and the inspector */
+.vgutter { width: 5px; margin-left: -5px; flex-shrink: 0; cursor: col-resize; background: transparent; z-index: 5; }
+.vgutter.r { margin-left: 0; margin-right: -5px; }
+.vgutter:hover { background: var(--hair-hi); }
 .sec { font-family: var(--mono); font-size: 8.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--t3); padding: 0 8px 12px; }
 .sec.row { display: flex; align-items: center; justify-content: space-between; }
 .sec .plus { font-family: var(--mono); font-size: 13px; color: var(--t3); padding: 0 2px; line-height: 1; }
@@ -393,7 +397,7 @@ body.resizing iframe { pointer-events: none; }
 .between .ev { margin-left: 0; margin-top: 8px; }
 
 /* ---- inspector ---- */
-.insp { width: 250px; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--soft); flex-shrink: 0; }
+.insp { width: var(--inspw, 250px); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--soft); flex-shrink: 0; }
 /* Subject header: the agent every panel below binds to. Background separation
    only — the flow strip beneath already carries the dividing line. */
 .insp .subj { display: flex; align-items: center; gap: 9px; min-height: 46px; padding: 0 14px; background: var(--win); flex-shrink: 0; }

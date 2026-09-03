@@ -333,9 +333,11 @@ export interface AppState {
   heartbeats: HeartbeatInfo[];
   autonomous: AutonomousInfo | null;
   target: ComposerTarget;
-  /** Long-running mode: the next message asks the subject to set up one of the
-   *  three drivers itself. Sticky per workspace; never turns anything on here. */
-  longRun: boolean;
+  /** Long-running mode, per subject ("master" or a root's name): the next
+   *  message to that subject asks it to set up one of the three drivers
+   *  itself. Arming it for one agent must not arm it for the others. Never
+   *  turns anything on here — only the agent does that. */
+  longRun: Record<string, boolean>;
   /** Runtime's own "what am I doing" line (setWorkingMessage), shown while working. */
   working?: string;
   /** Last error surfaced to the strip, if any. */

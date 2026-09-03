@@ -49,7 +49,7 @@ import {
 } from "./runtime/bridge";
 import { fetchPreviewFiles } from "./runtime/preview";
 import { fetchLessons } from "./runtime/learned";
-import { withLongRun } from "./runtime/longrun";
+import { stripLongRun, withLongRun } from "./runtime/longrun";
 import type { ChatMessage } from "./runtime/nim";
 import type { LearnedSel } from "./types";
 import { t as tr, useT } from "./i18n";
@@ -60,12 +60,12 @@ const id = () => `t${nextId++}`;
 /** The row that records a long-running send. The preamble itself is not shown
  *  — what matters is that the ask was made; what it produced shows up as the
  *  real goal / check-in / unattended state in DRIVERS moments later. */
-const longRunNote = (): TimelineItem => ({
+const longRunNote = (rt?: string, ts?: number): TimelineItem => ({
   kind: "note",
   id: id(),
   text: tr("long-running · asked it to set up its own driver"),
-  rt: clock(),
-  ts: Date.now(),
+  rt: rt ?? clock(),
+  ts: ts ?? Date.now(),
 });
 
 function filePathFromArgs(args: unknown): string | null {
@@ -309,7 +309,13 @@ function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
       }
       last = m.at;
     }
-    if (m.role === "user") out.push({ kind: "user", id: id(), text: m.text, at: hhmm(m.at) });
+    if (m.role === "user") {
+      // A long-running send was stored with its preamble; replay the user's own
+      // words and put the ask back where it belongs, on its own note row.
+      const { text, longRun } = stripLongRun(m.text);
+      out.push({ kind: "user", id: id(), text, at: hhmm(m.at) });
+      if (longRun) out.push(longRunNote(hhmm(m.at), m.at));
+    }
     else if (m.role === "assistant") {
       // Tool-only turns replay as empty assistant messages — skip them, an
       // avatar with no words is just a hole in the rhythm.
@@ -404,7 +410,7 @@ export function App() {
     heartbeats: [],
     autonomous: null,
     target: { kind: "master" },
-    longRun: false,
+    longRun: {},
     timeline: [{ kind: "divider", id: id(), text: tr("session started · {at}", { at: clock() }) }],
   }));
   const tt = useT();
@@ -1001,10 +1007,14 @@ export function App() {
           // Split layout is per workspace; restore once per key so a
           // reconnect hello never clobbers the user's in-session layout.
           const splitKey = `center-split:${ws ?? "general"}`;
+          // The long-running switch hides itself when the runtime is gone (it
+          // needs the kernel skills). Disarm rather than keep it armed behind a
+          // control the user can no longer see, or it fires on reconnect.
+          const longRun = m.daemon.connected ? s.longRun : {};
           if (!switched) {
-            if (splitKeyRef.current === splitKey) return { ...s, bridge: bridgeState };
+            if (splitKeyRef.current === splitKey) return { ...s, bridge: bridgeState, longRun };
             splitKeyRef.current = splitKey;
-            return { ...s, bridge: bridgeState, ...restoreSplit(splitKey) };
+            return { ...s, bridge: bridgeState, longRun, ...restoreSplit(splitKey) };
           }
           splitKeyRef.current = splitKey;
           // A workspace is its own master, helpers, other roots, files, history.
@@ -1046,7 +1056,7 @@ export function App() {
             heartbeats: [],
             autonomous: null,
             target: { kind: "master" },
-    longRun: false,
+    longRun: {},
             error: undefined,
             timeline: [{ kind: "divider", id: id(), text: tr("workspace {ws} · {at}", { ws, at: clock() }) }],
             ...restoreSplit(splitKey),
@@ -1225,7 +1235,11 @@ export function App() {
   /** Long-running mode is deliberately session-scoped: a switch that adds an
    *  instruction to every message should not come back silently after a
    *  restart. Switching workspaces clears it with the rest of the state. */
-  const setLongRun = useCallback((v: boolean) => setState((s) => ({ ...s, longRun: v })), []);
+  const setLongRun = useCallback(
+    (subject: string, v: boolean) =>
+      setState((s) => ({ ...s, longRun: { ...s.longRun, [subject]: v } })),
+    [],
+  );
 
   const setTarget = useCallback(
     (target: ComposerTarget) =>
@@ -1478,7 +1492,7 @@ export function App() {
   const postRoot = useCallback(async (name: string, text: string) => {
     const busy = (stateRef.current.rootStates[name] ?? "idle") === "working";
     const op = busy ? "root_steer" : "root_prompt";
-    const longRun = stateRef.current.longRun;
+    const longRun = Boolean(stateRef.current.longRun[name]);
     // The timeline keeps the user's own words; the long-running ask rides
     // along as a note row, never disguised as something they typed.
     const rows: TimelineItem[] = [{ kind: "user", id: id(), text, at: clock() }];
@@ -1527,7 +1541,7 @@ export function App() {
       if (bridgeRef.current) {
         const busy = current.master === "working";
         const op = busy ? "steer" : "prompt";
-        const longRun = current.longRun;
+        const longRun = Boolean(current.longRun.master);
         const rows = longRun ? [userItem, longRunNote()] : [userItem];
         setState((s) => {
           const jumped = showFocused(s, { kind: "timeline" });
@@ -1674,6 +1688,10 @@ export function App() {
   const targetState: AgentState =
     state.target.kind === "root" ? rootStateOf(state.target.name) : state.master;
 
+  // The main composer's long-running switch belongs to whoever it is aimed at,
+  // so arming it for one root never arms master or another root.
+  const masterComposerSubject = state.target.kind === "root" ? state.target.name : "master";
+
   const composer = () => (
     <Composer
       master={state.master}
@@ -1687,8 +1705,8 @@ export function App() {
       target={state.target}
       working={state.working}
       error={state.error}
-      longRun={state.longRun}
-      onLongRun={setLongRun}
+      longRun={Boolean(state.longRun[masterComposerSubject])}
+      onLongRun={(v) => setLongRun(masterComposerSubject, v)}
       onTarget={setTarget}
       onSend={send}
       onStop={stop}
@@ -1712,8 +1730,8 @@ export function App() {
       error={state.error}
       viewRoot={{ name, state: rootStateOf(name), working: state.rootWorking[name] || undefined }}
       fixedRoot={name}
-      longRun={state.longRun}
-      onLongRun={setLongRun}
+      longRun={Boolean(state.longRun[name])}
+      onLongRun={(v) => setLongRun(name, v)}
       onTarget={setTarget}
       onSend={(t) => postRoot(name, t)}
       onStop={() => stopRoot(name)}

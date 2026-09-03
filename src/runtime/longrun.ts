@@ -36,3 +36,13 @@ The user's request follows.`;
 export function withLongRun(text: string): string {
   return `${LONG_RUN_PREAMBLE}\n\n${text}`;
 }
+
+/** Undo withLongRun for a replayed transcript. The runtime stores the message
+ *  as it was sent, preamble included, so an attach or restart would otherwise
+ *  redisplay the whole ask as something the user typed. Returns the user's own
+ *  words plus whether the preamble was there. */
+export function stripLongRun(text: string): { text: string; longRun: boolean } {
+  const head = `${LONG_RUN_PREAMBLE}\n\n`;
+  if (!text.startsWith(head)) return { text, longRun: false };
+  return { text: text.slice(head.length), longRun: true };
+}

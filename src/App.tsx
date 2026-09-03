@@ -1773,7 +1773,7 @@ export function App() {
             </span>
           </div>
         </div>
-        <Timeline items={items.length > 0 ? items : [placeholder]} />
+        <Timeline items={items.length > 0 ? items : [placeholder]} botSeed={name} />
       </>
     );
   };

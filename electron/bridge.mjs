@@ -21,6 +21,8 @@
  *                         (get_connection_state; null on pre-schema-27 daemons)
  *   GET  /bridge/root-status?name= { attached, goal, autonomous, autoRefine } —
  *                         same read-only pull for a watched root session
+ *   GET  /bridge/model    { current, models } — master's model + switchable catalog
+ *                         (cmd op "set_model" { text: modelId, provider } switches)
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
@@ -614,6 +616,26 @@ async function switchWorkspace(name) {
   await attachMaster();
 }
 
+/** GET /bridge/model — master's current model plus the switchable catalog,
+ *  filtered to providers that are actually configured (have credentials). */
+async function modelPayload() {
+  if (!daemonClient || !masterSessionId || !masterConn) return { current: null, models: [] };
+  const slim = (m) => ({ id: m.id, name: m.name || m.id, provider: m.provider });
+  const [stateR, catalog] = await Promise.all([
+    daemonClient
+      .request({ type: "get_connection_state", activeSessionId: masterSessionId })
+      .catch(() => null),
+    masterConn.getModelCatalog().catch(() => null),
+  ]);
+  const current = stateR?.success && stateR.data?.model ? slim(stateR.data.model) : null;
+  const configured = new Set(catalog?.configuredProviders ?? []);
+  const models = (catalog?.models ?? [])
+    .filter((m) => configured.has(m.provider))
+    .map(slim)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { current, models };
+}
+
 async function workspacesPayload() {
   fs.mkdirSync(path.join(WORKSPACE_ROOT, "general"), { recursive: true });
   const dirs = fs
@@ -923,6 +945,11 @@ async function handleCmd(body) {
     case "abort":
       await masterConn.abort();
       return {};
+    case "set_model": {
+      // Switch master's model at the runtime (persists into the session).
+      const model = await masterConn.setModel(String(body.provider ?? ""), String(body.text ?? ""));
+      return { model: { id: model.id, name: model.name || model.id, provider: model.provider } };
+    }
     case "refine":
       return { result: await masterConn.refine(body.text ? { instructions: body.text } : {}) };
     case "refine_rollback":
@@ -1315,6 +1342,18 @@ const server = http.createServer(async (req, res) => {
     // Read-only unattended status (counters, limits, lastInjection) via
     // get_connection_state — no transcript write, unlike "/autonomous status".
     statusPayload()
+      .then((p) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(p));
+      })
+      .catch((e) => {
+        res.writeHead(500, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ error: e?.message || String(e) }));
+      });
+    return;
+  }
+  if (req.url === "/bridge/model") {
+    modelPayload()
       .then((p) => {
         res.writeHead(200, { ...cors, "content-type": "application/json" });
         res.end(JSON.stringify(p));

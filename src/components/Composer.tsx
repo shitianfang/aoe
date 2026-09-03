@@ -13,6 +13,7 @@ import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
 import { MODEL_PICKS, setModelPick, useModelPick } from "../runtime/providers";
+import { fetchModels, setDaemonModel, type DaemonModel } from "../runtime/bridge";
 
 function popupStatus(c: ChildInfo): string {
   if (c.status === "running" || c.status === "queued") return t("running");
@@ -61,6 +62,29 @@ export function Composer(props: {
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
   const modelPick = useModelPick();
+  // Runtime model (daemon connected): current + switchable catalog. The same
+  // picker spot as the offline one — connected it drives the daemon instead.
+  const [daemonModels, setDaemonModels] = useState<{
+    current: DaemonModel | null;
+    models: DaemonModel[];
+  } | null>(null);
+  const connected = Boolean(props.bridge?.connected);
+  const workspace = props.bridge?.workspace;
+  useEffect(() => {
+    if (!connected) {
+      setDaemonModels(null);
+      return;
+    }
+    let live = true;
+    fetchModels()
+      .then((v) => {
+        if (live) setDaemonModels(v);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [connected, workspace]);
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -162,23 +186,60 @@ export function Composer(props: {
             onKeyDown={(e) => e.key === "Enter" && submit()}
           />
           <div className="crow">
-            {/* Model-only mode: the reply comes straight from a model, so the
-                pick lives here. Picking one backend is leaving the other. */}
-            {!props.bridge?.connected && !props.fixedRoot && (
-              <select
-                className="mpick"
-                value={modelPick}
-                onChange={(e) => setModelPick(e.target.value)}
-                aria-label={t("model")}
-                title={modelPick}
-              >
-                {MODEL_PICKS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            )}
+            {/* One picker spot, two backends: offline it picks the model-only
+                fallback (claude -p vs NIM); connected it switches the
+                runtime's own model through the daemon. */}
+            {!props.fixedRoot &&
+              (connected
+                ? daemonModels &&
+                  daemonModels.models.length > 0 && (
+                    <select
+                      className="mpick"
+                      value={daemonModels.current ? `${daemonModels.current.provider}::${daemonModels.current.id}` : ""}
+                      aria-label={t("model")}
+                      title={daemonModels.current?.name ?? ""}
+                      onChange={(e) => {
+                        const m = daemonModels.models.find(
+                          (x) => `${x.provider}::${x.id}` === e.target.value,
+                        );
+                        if (!m) return;
+                        setDaemonModels((s) => (s ? { ...s, current: m } : s));
+                        setDaemonModel(m).catch(() =>
+                          // Rejected (e.g. mid-run) — re-pull the truth.
+                          fetchModels().then(setDaemonModels).catch(() => undefined),
+                        );
+                      }}
+                    >
+                      {daemonModels.current &&
+                        !daemonModels.models.some(
+                          (x) => x.provider === daemonModels.current?.provider && x.id === daemonModels.current?.id,
+                        ) && (
+                          <option value={`${daemonModels.current.provider}::${daemonModels.current.id}`}>
+                            {daemonModels.current.name}
+                          </option>
+                        )}
+                      {daemonModels.models.map((m) => (
+                        <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                : (
+                    <select
+                      className="mpick"
+                      value={modelPick}
+                      onChange={(e) => setModelPick(e.target.value)}
+                      aria-label={t("model")}
+                      title={modelPick}
+                    >
+                      {MODEL_PICKS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  ))}
             {!props.fixedRoot && props.target.kind === "helper" ? (
               <div className="dmode">
                 <span className="static">{t("delivered now")}</span>

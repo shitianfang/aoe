@@ -107,6 +107,26 @@ export function removeHelper(childId: string): Promise<Record<string, unknown>> 
   return bridgeCmd("remove_helper", undefined, { target: childId });
 }
 
+/** One switchable runtime model (GET /bridge/model). */
+export interface DaemonModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+/** Master's current model + the catalog of switchable ones (configured
+ *  providers only). Empty models = daemon detached or catalog unavailable. */
+export async function fetchModels(): Promise<{ current: DaemonModel | null; models: DaemonModel[] }> {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/model`);
+  if (!r.ok) throw new Error(`model catalog failed (${r.status})`);
+  const data = (await r.json()) as { current?: DaemonModel | null; models?: DaemonModel[] };
+  return { current: data.current ?? null, models: data.models ?? [] };
+}
+
+export function setDaemonModel(m: DaemonModel): Promise<Record<string, unknown>> {
+  return bridgeCmd("set_model", m.id, { provider: m.provider });
+}
+
 export interface WorkspaceInfo {
   name: string;
   pinned: boolean;

@@ -35,7 +35,12 @@ const EXAMPLES = [
   "Check in with me every morning at 9 with a one-line plan for the day.",
 ];
 
-export function Timeline(props: { items: TimelineItem[]; onExample?: (text: string) => void }) {
+export function Timeline(props: {
+  items: TimelineItem[];
+  onExample?: (text: string) => void;
+  /** Set in a root pane: assistant rows get this root's avatar, not master's chip. */
+  botSeed?: string;
+}) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Expanded collapsed-history blocks, by item id. Local state: folding is a
@@ -117,7 +122,7 @@ export function Timeline(props: { items: TimelineItem[]; onExample?: (text: stri
     }
     return (
       <div className="msg" key={item.id}>
-        <span className="chip master" />
+        {props.botSeed ? <BotAvatar seed={props.botSeed} /> : <span className="chip master" />}
         <span className="body">
           {item.text}
           {item.streaming ? <span className="cursor" /> : null}

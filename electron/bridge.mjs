@@ -448,7 +448,22 @@ function readSkillMd(file, dirName) {
   if (!fm) return null;
   const field = (key) => {
     const m = new RegExp(`^${key}:[ \\t]*(.*)$`, "m").exec(fm[1]);
-    return m ? m[1].trim().replace(/^["']|["']$/g, "") : "";
+    if (!m) return "";
+    const head = m[1].trim();
+    // A folded or literal block (`description: >-`) keeps its value on the
+    // indented lines below the key, and reading just the rest of the line
+    // hands back the indicator. The runtime parses real YAML; this catalog
+    // printed ">-" as the description until it did the same.
+    if (/^[|>][+-]?$/.test(head)) {
+      const body = [];
+      for (const line of fm[1].slice(m.index + m[0].length).split(/\r?\n/)) {
+        if (line.trim() === "") continue;
+        if (!/^[ \t]/.test(line)) break;
+        body.push(line.trim());
+      }
+      return body.join(" ").trim();
+    }
+    return head.replace(/^["']|["']$/g, "");
   };
   const description = field("description");
   if (!description) return null;
@@ -487,11 +502,15 @@ function oneLine(s, cap = 90) {
   return first.length > cap ? `${first.slice(0, cap - 1)}…` : first;
 }
 
-/** GET /bridge/skills — skills the runtime can load, project first, then the
- *  user dir, then what the runtime bundles. Empty when nothing is on disk. */
+/** GET /bridge/skills — skills the runtime can load: the client's own first,
+ *  then project, then the user dir, then what the runtime bundles. Empty when
+ *  nothing is on disk. APP_SKILLS_DIR is in the list because every session AOE
+ *  creates gets it through sessionConfig — leaving it out made the catalog say
+ *  the house method was not loaded, in a client that loads it every time. */
 function skillsPayload() {
   const settings = agentSettings();
   const roots = [
+    APP_SKILLS_DIR,
     path.join(WORKSPACE_DIR, ".prime", "agent", "skills"),
     path.join(AGENT_HOME, "skills"),
     bundledSkillsDir(),

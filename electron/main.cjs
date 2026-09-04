@@ -28,26 +28,79 @@ const BRIDGE_ORIGIN = () => `http://127.0.0.1:${process.env.PRIME_BRIDGE_PORT ||
 const NIM_UPSTREAM = () => `${BRIDGE_ORIGIN()}/nim/v1`;
 const GATEWAY_UPSTREAM = () => `${BRIDGE_ORIGIN()}/gw/v1`;
 
-/** A shell build points at a hosted AOE instead of hosting one. The renderer
- *  already resolves /bridge and /api against its own origin whenever the page
- *  carries no port in its query (that is how the dev browser works), so
- *  loading that origin bare is the whole of it — and this process must then
- *  start no bridge and no daemon of its own, which would answer nothing and
- *  only fight the host for the port.
+/* ---- shell mode ----------------------------------------------------------
  *
- *  The URL is baked at package time into electron/remote.json; the
- *  environment overrides it, so one build can be pointed somewhere else
- *  without repackaging. Neither present means an ordinary self-hosted build. */
-function remoteUrl() {
-  if (process.env.AOE_REMOTE_URL) return process.env.AOE_REMOTE_URL.trim();
+ * A shell build points at a hosted AOE instead of hosting one. The renderer
+ * already resolves /bridge and /api against its own origin whenever the page
+ * carries no port in its query (that is how the dev browser works), so loading
+ * that origin bare is the whole mechanism — and this process must then start
+ * no bridge and no daemon of its own, which would answer nothing and only
+ * fight the host for the port.
+ *
+ * Which host is the user's answer, not the packager's: the app asks on first
+ * run and remembers it. A build therefore carries no address, which is the
+ * point — an address baked into a public download is a published address.
+ */
+
+/** electron/remote.json marks a shell build. Its `url` is only a default, and
+ *  normally empty; a build without the file at all is self-hosted as before. */
+const SHELL_FILE = path.join(__dirname, "remote.json");
+const isShell = () => {
   try {
-    const p = path.join(__dirname, "remote.json");
-    if (fs.existsSync(p)) return String(JSON.parse(fs.readFileSync(p, "utf8")).url || "").trim();
+    return fs.existsSync(SHELL_FILE);
   } catch {
-    /* unreadable — a self-hosted build is the right fallback */
+    return false;
   }
-  return "";
+};
+const readUrl = (file) => {
+  try {
+    return String(JSON.parse(fs.readFileSync(file, "utf8")).url || "");
+  } catch {
+    return "";
+  }
+};
+/** A trailing slash would make every same-origin check compare against a URL
+ *  the host never serves. */
+const tidyHost = (u) => String(u || "").trim().replace(/\/+$/, "");
+const isHost = (u) => /^https?:\/\/[^/\s]+/i.test(tidyHost(u));
+
+/** Where the host the user typed is kept, beside their config. */
+const hostFile = () => path.join(app.getPath("userData"), "host.json");
+const rememberHost = (url) => {
+  try {
+    fs.mkdirSync(path.dirname(hostFile()), { recursive: true });
+    fs.writeFileSync(hostFile(), `${JSON.stringify({ url }, null, 2)}\n`);
+  } catch {
+    /* read-only home — the window still works, it just asks again next time */
+  }
+};
+/** The environment wins (one build, pointed anywhere, without repackaging),
+ *  then what the user typed, then whatever the packager defaulted to. */
+const hostUrl = () => tidyHost(process.env.AOE_REMOTE_URL || readUrl(hostFile()) || readUrl(SHELL_FILE));
+
+/** Does the host answer? Asked before navigating, because a loadURL that fails
+ *  replaces the window with Chromium's own error page — which says
+ *  ERR_CONNECTION_REFUSED to someone who never chose a host, and which nothing
+ *  navigates away from again. */
+function hostAnswers(url) {
+  return new Promise((resolve) => {
+    try {
+      const req = net.request({ method: "GET", url });
+      req.on("response", (r) => {
+        r.on("data", () => {});
+        r.on("end", () => {});
+        resolve(true);
+      });
+      req.on("error", () => resolve(false));
+      req.end();
+    } catch {
+      resolve(false); // a URL net.request will not even accept
+    }
+  });
 }
+
+/** The live shell window, for the IPC handlers registered once at startup. */
+let shellWindow = null;
 
 /** Keys and model come from the environment or <userData>/config.json — never from the bundle. */
 function loadConfig() {
@@ -188,62 +241,62 @@ async function createWindow() {
     external(url);
     return { action: "deny" };
   });
-  const remote = remoteUrl();
-  // A shell's own host is the app; anywhere else is a link someone wrote.
-  const sameHost = (url) => {
-    try {
-      return !!remote && new URL(url).origin === new URL(remote).origin;
-    } catch {
-      return false;
-    }
-  };
+  // A shell's own host is the app; anywhere else is a link someone wrote. The
+  // host can change while the window is open, so this reads the current one.
+  let host = isShell() ? hostUrl() : "";
   win.webContents.on("will-navigate", (e, url) => {
-    if (url === win.webContents.getURL() || sameHost(url)) return;
+    let same = false;
+    try {
+      same = !!host && new URL(url).origin === new URL(host).origin;
+    } catch {
+      same = false;
+    }
+    if (url === win.webContents.getURL() || same) return;
     e.preventDefault();
     external(url);
   });
-  if (remote) {
-    // The host this shell points at is a machine that gets turned off. A
-    // failed load would leave a white window saying nothing, with no way back
-    // once the host returns — so the window says what it is waiting for and
-    // keeps knocking until it answers.
+  if (isShell()) {
+    // The host is a machine someone turns off. A failed load would leave a
+    // white window saying nothing, with no way back once the host returns, so
+    // the window says which host it is waiting for and keeps knocking.
     let waiting = false;
-    // Ask whether the host is back before navigating to it. Retrying with
-    // loadURL instead replaces the waiting page with Chromium's own error
-    // page — which says ERR_CONNECTION_REFUSED to someone who never chose a
-    // host, and which nothing then navigates away from.
-    const answers = () =>
-      new Promise((resolve) => {
-        const req = net.request({ method: "GET", url: remote });
-        req.on("response", (r) => {
-          r.on("data", () => {});
-          r.on("end", () => {});
-          resolve(true);
-        });
-        req.on("error", () => resolve(false));
-        req.end();
+    const local = (file, query) => {
+      waiting = false;
+      win.loadFile(path.join(__dirname, file), { query });
+    };
+    const ask = (why) => local("setup.html", { ...(host ? { url: host } : {}), ...(why ? { why } : {}) });
+    const open = () => {
+      waiting = false;
+      win.loadURL(host).catch(() => {
+        /* did-fail-load puts the waiting page up */
       });
+    };
     const knock = async () => {
       if (!waiting) return;
-      if (await answers()) {
-        waiting = false;
-        win.loadURL(remote).catch(() => {
-          /* did-fail-load puts the waiting page back */
-        });
-      } else {
-        setTimeout(knock, 4000);
-      }
+      if (await hostAnswers(host)) open();
+      else setTimeout(knock, 4000);
     };
     win.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
       // -3 is a load the app itself replaced, not a host that failed to answer.
       if (!isMainFrame || code === -3 || waiting) return;
       waiting = true;
-      win.loadFile(path.join(__dirname, "offline.html"), { query: { url: remote, why: desc || "" } });
+      win.loadFile(path.join(__dirname, "offline.html"), { query: { url: host, why: desc || "" } });
       setTimeout(knock, 4000);
     });
-    win.loadURL(remote).catch(() => {
-      /* did-fail-load has it */
-    });
+    // The IPC handlers are registered once, at startup; this is how they reach
+    // the window that is actually open.
+    shellWindow = {
+      use: (url) => {
+        host = tidyHost(url);
+        rememberHost(host);
+        open();
+      },
+      ask: () => ask(""),
+    };
+    // No host yet is the first run, not an error: ask, and nothing is loaded
+    // from anywhere until the user has said where.
+    if (host) open();
+    else ask("");
     return;
   }
   if (app.isPackaged) {
@@ -265,7 +318,32 @@ async function createWindow() {
   }
 }
 
+/** Only the app's own pages may name a host. The renderer loaded from the
+ *  host is the AOE UI, and it has no business repointing the window at
+ *  somewhere else — so these answer file:// frames and nothing else. */
+const fromOwnPage = (e) => {
+  try {
+    return String(e.senderFrame?.url || "").startsWith("file:");
+  } catch {
+    return false;
+  }
+};
+
 app.whenReady().then(() => {
+  ipcMain.handle("aoe:probe-host", async (e, url) => {
+    if (!fromOwnPage(e) || !isHost(url)) return false;
+    return hostAnswers(tidyHost(url));
+  });
+  ipcMain.handle("aoe:use-host", (e, url) => {
+    if (!fromOwnPage(e) || !isHost(url) || !shellWindow) return false;
+    shellWindow.use(url);
+    return true;
+  });
+  ipcMain.handle("aoe:change-host", (e) => {
+    if (!fromOwnPage(e) || !shellWindow) return false;
+    shellWindow.ask();
+    return true;
+  });
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

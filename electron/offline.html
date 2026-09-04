@@ -29,6 +29,11 @@
         padding: 7px 9px; word-break: break-all;
       }
       .why { margin-top: 10px; font-size: 11px; color: #8a9199; }
+      button {
+        font: inherit; font-size: 12px; margin-top: 14px; padding: 7px 14px;
+        cursor: pointer; background: none; color: #4e565f;
+        border: 1px solid rgba(22, 27, 36, .22);
+      }
       .dot {
         display: inline-block; width: 5px; height: 5px; background: #e5b563;
         margin-right: 6px; vertical-align: 1px;
@@ -43,12 +48,19 @@
       <p>AOE 的运行端还没有应答。它一恢复，这个窗口就会自己接上 —— 不用重开。</p>
       <div class="u" id="u"></div>
       <div class="why" id="why"></div>
+      <!-- Waiting is right when the host is coming back. When the address was
+           simply wrong, waiting forever is not an answer — so there is a way
+           back to the question. -->
+      <button id="change">换一个地址</button>
     </div>
     <script>
       var q = new URLSearchParams(location.search);
       document.getElementById("u").textContent = q.get("url") || "";
       var why = q.get("why");
       if (why) document.getElementById("why").textContent = why;
+      document.getElementById("change").addEventListener("click", function () {
+        window.aoeHost.change();
+      });
     </script>
   </body>
 </html>

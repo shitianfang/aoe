@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AOE</title>
+    <style>
+      /* The app's own tokens, light. This page is the first thing anyone sees,
+         so it is the app's language from the first frame — square corners,
+         separation by background rather than lines. */
+      * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0; }
+      html, body { height: 100%; }
+      body {
+        background: #e9ebee; color: #1b1e23;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 13px; line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        display: flex; align-items: center; justify-content: center;
+        zoom: 1.5; /* the shell reads right at 150% */
+      }
+      .box { width: 360px; }
+      h1 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+      p { color: #4e565f; margin-bottom: 16px; }
+      /* An address is machine text: mono, so a typo in it is visible. */
+      input {
+        width: 100%; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+        font-size: 12px; color: #1b1e23; background: #ffffff;
+        border: 1px solid rgba(22, 27, 36, .22); padding: 9px 10px;
+      }
+      input:focus { outline: 0; border-color: #4accdf; }
+      .row { display: flex; gap: 8px; margin-top: 10px; }
+      button {
+        font: inherit; font-size: 12px; padding: 8px 16px; cursor: pointer;
+        background: #17191c; color: #ffffff; border: 1px solid #17191c;
+      }
+      button.ghost { background: none; color: #4e565f; border-color: rgba(22, 27, 36, .22); }
+      button[disabled] { opacity: .5; cursor: default; }
+      .note { margin-top: 12px; font-size: 11.5px; min-height: 18px; }
+      .note.bad { color: #cd4c42; }
+      .note.busy { color: #8a9199; }
+      .hint { margin-top: 18px; font-size: 11.5px; color: #8a9199; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>连接到运行 AOE 的主机</h1>
+      <p>
+        agent、工作区和模型密钥都在那台主机上，这个客户端是它的窗口。填一次就会记住。
+      </p>
+      <input
+        id="u"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="https://your-host.example"
+      />
+      <div class="row">
+        <button id="go">连接</button>
+        <button id="anyway" class="ghost" style="display: none">仍然使用</button>
+      </div>
+      <div class="note" id="note"></div>
+      <div class="hint">主机就是跑着 <code>npm run dev</code> 的那台机器的地址，含端口。</div>
+    </div>
+    <script>
+      var q = new URLSearchParams(location.search);
+      var input = document.getElementById("u");
+      var go = document.getElementById("go");
+      var anyway = document.getElementById("anyway");
+      var note = document.getElementById("note");
+
+      input.value = q.get("url") || "";
+      input.focus();
+      input.select();
+      if (q.get("why")) say(q.get("why"), "bad");
+
+      function say(text, cls) {
+        note.textContent = text || "";
+        note.className = "note" + (cls ? " " + cls : "");
+      }
+
+      // A bare host is what people type; https is the assumption, and the
+      // check below is what corrects it when that assumption is wrong.
+      function normalize(v) {
+        v = (v || "").trim().replace(/\/+$/, "");
+        if (!v) return "";
+        return /^https?:\/\//i.test(v) ? v : "https://" + v;
+      }
+
+      async function connect() {
+        var url = normalize(input.value);
+        if (!url) return say("填一个地址。", "bad");
+        input.value = url;
+        go.disabled = true;
+        anyway.style.display = "none";
+        say("正在连接 …", "busy");
+        var ok = await window.aoeHost.probe(url);
+        go.disabled = false;
+        if (ok) return void window.aoeHost.use(url);
+        say("连不上这个地址。检查主机是否开着、端口对不对。", "bad");
+        // A host that is merely asleep is still the right answer: keep it, and
+        // the window waits for it instead of refusing to remember it.
+        anyway.style.display = "";
+      }
+
+      go.addEventListener("click", connect);
+      anyway.addEventListener("click", function () {
+        window.aoeHost.use(normalize(input.value));
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") connect();
+      });
+    </script>
+  </body>
+</html>

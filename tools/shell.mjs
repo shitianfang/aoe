@@ -7,11 +7,15 @@
  * browser does. Everything — the runtime, the workspaces, the API keys — lives
  * on the host; the app is a window onto it.
  *
- *   node tools/shell.mjs --url https://host.example --win --mac --linux
+ *   node tools/shell.mjs --win --mac --linux
  *
- * The URL is written to electron/remote.json, which main.cjs reads and
- * electron-builder packages. AOE_REMOTE_URL overrides it at run time, so one
- * build can be pointed elsewhere without repackaging.
+ * The build carries no address. It asks which host on first run and remembers
+ * the answer in <userData>/host.json, which is the only shape that is safe to
+ * hand to someone else: an address baked into a public download is a published
+ * address, and this app's host is a machine with agents and keys on it.
+ *
+ * `--url <host>` bakes a default in anyway, for a build nobody else receives.
+ * AOE_REMOTE_URL overrides either at run time.
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -27,9 +31,13 @@ const value = (name) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 
+// No --url is the normal case: the app asks on first run and remembers the
+// answer. Baking one in makes a build that opens a particular host without
+// being asked — which is only ever right for a build nobody else receives,
+// because an address inside a download is a published address.
 const url = value("url");
-if (!url || !/^https?:\/\//.test(url)) {
-  console.error("shell: --url <http(s)://host> is required");
+if (url !== undefined && !/^https?:\/\//.test(url)) {
+  console.error("shell: --url must be http(s)://host");
   process.exit(1);
 }
 
@@ -38,14 +46,15 @@ if (!url || !/^https?:\/\//.test(url)) {
 const targets = ["win", "mac", "linux"].filter(flag);
 if (targets.length === 0) targets.push({ win32: "win", darwin: "mac" }[process.platform] ?? "linux");
 
-// A trailing slash would make every same-origin check compare against a URL
-// the host never actually serves.
-const clean = url.replace(/\/+$/, "");
+// The file's presence is what marks a shell build; an empty url means the app
+// asks. A trailing slash would make every same-origin check compare against a
+// URL the host never actually serves.
+const clean = (url ?? "").replace(/\/+$/, "");
 fs.writeFileSync(
   path.join(ROOT, "electron", "remote.json"),
   `${JSON.stringify({ url: clean }, null, 2)}\n`,
 );
-console.log(`shell: pointing at ${clean}`);
+console.log(clean ? `shell: pointing at ${clean}` : "shell: asks for its host on first run");
 
 // The renderer is served by the host, not by this bundle — there is nothing to
 // compile here. dist/ still ships because electron-builder's file list names

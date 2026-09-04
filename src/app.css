@@ -725,15 +725,30 @@ body.resizing iframe { pointer-events: none; }
 
 /* ---- preview view ---- */
 .prev { flex: 1; overflow-y: auto; padding: 18px; }
-.ph { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; }
-.ph .fn { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+/* Wraps rather than squeezes: the zoom control and the file name both want
+   the row, and a narrow pane should push the controls to their own line
+   instead of breaking the name in half. */
+.ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding-bottom: 12px; }
+.ph .fn { font-family: var(--mono); font-size: 12px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ph .sub { font-family: var(--mono); font-size: 11px; color: var(--t3); }
 .ph .live { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--green); }
-.ph .mode { margin-left: auto; display: flex; gap: 8px; }
+.ph .mode { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .ph .mode .btn.off { color: var(--t3); }
+/* Which standard screen the projection is of — machine text, so it stays mono
+   in both languages, and quiet: it is the unit under the percentage, not a
+   control. */
+.ph .scr { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; color: var(--t3); white-space: nowrap; }
+/* Manual zoom: three hairline buttons sharing their borders, so they read as
+   one instrument rather than three actions. The middle one is the readout and
+   the way back to the fit — lit only while a hand-set zoom overrides it. */
+.ph .zc { display: inline-flex; }
+.ph .zc .btn + .btn { border-left: 0; }
+.ph .zc .btn.pct { min-width: 40px; text-align: center; }
+.ph .zc .btn:disabled { color: var(--t3); border-color: var(--hair); cursor: default; }
 /* Column count is inline (it follows how many cards fit); minmax(0,…) is the
-   part that matters here — a projected page is 1100px of content inside the
-   column, and a plain 1fr would let that content set the column's width. */
+   part that matters here — a projected page is a 1280px screen of content
+   inside the column, and a plain 1fr would let that content set the column's
+   width. */
 .vgrid { display: grid; gap: 12px; }
 .pstat { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; font-family: var(--mono); font-size: 9px; letter-spacing: .04em; text-transform: uppercase; color: var(--t3); }
 .pstat .dot { width: 6px; height: 6px; background: var(--green); }
@@ -746,8 +761,17 @@ body.resizing iframe { pointer-events: none; }
 .pfiles { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
 .vbox .vdoc { margin: 0; padding: 12px; font-family: var(--mono); font-size: 10px; line-height: 1.6; color: var(--t2); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
 /* The page is taken out of flow so its logical size can never push the box
-   wider than the column — the box measures the column, the page scales to it. */
-.vbox .vshell { position: relative; width: 100%; overflow: hidden; background: #fff; }
+   wider than the column — the box measures the column, the page scales to it.
+   Centred, because a zoomed-out projection is narrower than its card and the
+   dead space should fall on both sides. */
+.vbox .vshell { position: relative; width: 100%; margin: 0 auto; overflow: hidden; background: #fff; }
+/* Nothing out of flow can give a scroll container an extent, so the projection
+   states its own drawn size in one empty block; that is what pans when a
+   hand-set zoom makes the screen bigger than the card. */
+.vbox .vspan { pointer-events: none; }
+/* The pan bars are the app's own hairline scrollbars, in both directions —
+   the global rule only ever set a width. */
+.vbox .vshell::-webkit-scrollbar { width: 6px; height: 6px; }
 /* The projection is a picture of the page, not the page: clicks belong to the
    card (zoom), never to the document inside it. */
 .vbox .vpage { position: absolute; top: 0; left: 0; border: 0; background: #fff; transform-origin: top left; pointer-events: none; }

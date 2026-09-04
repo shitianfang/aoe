@@ -857,6 +857,12 @@ async function attachMaster() {
       if (req?.method === "setWorkingMessage") {
         broadcast({ type: "working_message", text: req.payload?.message ?? "" });
       }
+    } else if (event?.type === "session_resynced") {
+      // After a reconnect the runtime hands over the canonical transcript. A
+      // root rebuilds from it (see ensureRootConn); master's was dropped on the
+      // floor, so everything said while the socket was down stayed missing from
+      // the next page load.
+      if (event.snapshot) applySnapshot(event.snapshot);
     } else if (event?.type === "connection_status" || event?.type === "closed") {
       broadcast({ type: "bridge_status", event });
     } else if (event?.type === "heartbeats_changed") {
@@ -878,6 +884,23 @@ async function attachMaster() {
   // The baseline above hides anything written while we were detached; the
   // preview store compares content, so let it catch up before the first turn.
   preview.reconcile();
+  applySnapshot(snapshot);
+  broadcast({ type: "hello", daemon });
+  broadcast(lastSnapshot);
+}
+
+/** Latest snapshot payload, replayed to late-joining SSE clients. */
+let lastSnapshot = null;
+/** When that payload was last taken from the runtime, and the pull in flight —
+ *  one page opens more than one stream, and they can share a single pull. */
+let snapshotAt = 0;
+/** @type {Promise<void> | null} */ let snapshotPull = null;
+
+/** Rebuild the replay payload from a runtime snapshot. Every caller that has a
+ *  fresher one — the first attach, a reconnect's session_resynced, the pull a
+ *  new page triggers — comes through here, so the replay can never describe a
+ *  different moment than the one it was built from. */
+function applySnapshot(snapshot) {
   lastSnapshot = {
     type: "snapshot",
     state: {
@@ -891,12 +914,44 @@ async function attachMaster() {
     children: snapshot.children ?? [],
     messages: slimHistory(snapshot.messages),
   };
-  broadcast({ type: "hello", daemon });
-  broadcast(lastSnapshot);
+  snapshotAt = Date.now();
+  return lastSnapshot;
 }
 
-/** Latest snapshot payload, replayed to late-joining SSE clients. */
-let lastSnapshot = null;
+/** Take a fresh snapshot before a new page reads its starting state from the
+ *  replay. Without this the replay is whatever was true when the bridge
+ *  attached: reload after an hour of work and the transcript stops where the
+ *  bridge came up, because live events only ever append to an open page.
+ *  A pull that fails or hangs leaves the cached payload in place — a stale
+ *  transcript is worth more than an empty window. */
+async function refreshSnapshot() {
+  if (!masterConn || !lastSnapshot) return;
+  if (Date.now() - snapshotAt < 1000) return;
+  if (snapshotPull) return snapshotPull;
+  snapshotPull = (async () => {
+    let timer;
+    try {
+      const pull = masterConn.getInitialSnapshot();
+      // A late failure of the losing side must not reach the process as an
+      // unhandled rejection, which would take the bridge down with it.
+      pull.catch(() => undefined);
+      const snapshot = await Promise.race([
+        pull,
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(null), 2000);
+        }),
+      ]);
+      if (snapshot) applySnapshot(snapshot);
+    } catch {
+      /* keep the cached payload */
+    } finally {
+      clearTimeout(timer);
+      snapshotAt = Date.now();
+      snapshotPull = null;
+    }
+  })();
+  return snapshotPull;
+}
 
 async function switchWorkspace(name) {
   if (!WS_NAME_RE.test(name)) throw new Error("invalid workspace name");
@@ -2090,6 +2145,8 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify(daemon));
   }
   if (req.url === "/bridge/events") {
+    // The page reads its whole starting state from the replay below.
+    await refreshSnapshot();
     res.writeHead(200, {
       ...cors,
       "content-type": "text/event-stream",

@@ -260,6 +260,10 @@ worker：关掉应用，那队人照跑。
   需要 bridge（它是一条 bridge 路由；自从有了下面那个用量读数，NIM 那条也是了），并且在
   Windows 上跑不通。
 - **NVIDIA NIM**——`.env` 里的 `NIM_API_KEY`，在服务端代理转发，渲染层永远看不到 key。
+- **Vercel AI Gateway**——`.env` 里的 `AI_GATEWAY_API_KEY`，同样在服务端代理转发。一把 key
+  通四家，下拉里给四个模型：`anthropic/claude-opus-5`、`moonshotai/kimi-k3`、
+  `deepseek/deepseek-v4-flash`、`stepfun/step-3.7-flash`。key 在 [Vercel](https://vercel.com)
+  项目的 AI 页签里拿。
 
 ### NIM 用量读数
 
@@ -281,6 +285,26 @@ NVIDIA 不肯告诉你自己的限额：NIM 的响应不管成功还是 429 都*
   `./core/prime-agent.sh` 也一样。想让运行时独立，就把 `baseUrl` 改回
   `https://integrate.api.nvidia.com/v1`，代价是读数只能数到应用自己发的那部分。
 
+### Vercel AI Gateway
+
+网关说的就是 OpenAI 的 chat 协议，把 `厂商/模型` 这样的 id 路由到对应厂商，所以不需要单独的
+客户端——bridge 用 `ALL /gw/*` 转发到 ai-gateway.vercel.sh，key 在那一层挂上。调用方自己带的
+`Authorization` 会被丢掉而不是透传：页面拿不到 key，运行时也不需要拿。
+
+NVIDIA 那边什么都不说，Vercel 会说。`GET /bridge/gateway` 读它的 `/v1/credits`，composer 就把
+余额显示在下拉旁边，形如 `$4.98`，不足一美元时转琥珀色。这个数是账户口径的，运行时花的和应用
+自己花的都算在里面，走哪条路都一样。
+
+想让**运行时**也有这四个模型：在 `~/.prime/agent/models.json` 里加一个 `vercel-ai-gateway`
+provider，`baseUrl` 写 `http://127.0.0.1:3117/gw/v1`，再在 `~/.prime/agent/auth.json` 里给它
+随便一个占位凭据——它只需要算作"已配置"，真正的 key 由 bridge 在出口换上。prime-agent 自带
+两百多个网关模型的生成目录，所以 bridge 把写进 `models.json` 的 provider 当作**声明**而不是
+追加：下拉里就只出现那里列的模型；`models.json` 没提到的 provider 原样全给。
+
+免费档的 key 只够到一部分目录。Opus 5、Kimi K3、DeepSeek V4 Flash 会返回
+`403 Free tier users do not have access to this model`，要账户里有付费额度才行；Step 3.7
+Flash 能跑。网关自己那句话就是 composer 显示的那句。
+
 ## 配置
 
 | 变量 | 作用 | 默认 |
@@ -293,10 +317,12 @@ NVIDIA 不肯告诉你自己的限额：NIM 的响应不管成功还是 429 都*
 | `NIM_API_KEY` | 兜底聊天的 key | — |
 | `NIM_MODEL` | 兜底聊天的模型 | `deepseek-ai/deepseek-v4-pro-0813` |
 | `NIM_RPM` | 用量读数按每分钟多少次算 | `40`（免费档） |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway 的 key | — |
 | `AOE_DEV_URL` | Electron 外壳加载的 dev 地址 | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | 打印每一次 roster 轮次结束 | 关 |
 
-`.env` 放 NIM key，已经在 gitignore 里。
+`.env` 放 NIM 和网关的 key，已经在 gitignore 里。bridge 自己会读它，所以 `npm run bridge`
+不管怎么起都拿得到。
 
 ## 现在到哪一步了
 
@@ -321,8 +347,8 @@ npm run dist:win       # 产出 zip 到 release/；另有 dist:mac（zip）和 d
 
 打包产物**不含** `core/`，所以目标机器上需要：
 
-- 环境变量里有 `NIM_API_KEY`，或 `%APPDATA%/AOE/config.json` 写
-  `{ "nimApiKey": "nvapi-…" }`
+- 环境变量里有 `NIM_API_KEY` / `AI_GATEWAY_API_KEY`，或 `%APPDATA%/AOE/config.json` 写
+  `{ "nimApiKey": "nvapi-…", "gatewayApiKey": "vck_…" }`
 - 要用真运行时：Node ≥ 22.8 和 uv 在 PATH 上，且 `PRIME_AGENT_DIR` 指向一份构建好的 prime-agent；
   否则应用以纯模型模式运行
 

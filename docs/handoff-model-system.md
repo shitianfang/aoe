@@ -76,13 +76,48 @@
   修法是同格放一个 `visibility:hidden` 的**克隆 select(只有当前这一个 option)**撑宽度,真的那个
   `position:absolute; inset:0`。别用隐藏 span 加一个"箭头预留 px"去凑——试过,箭头实际占的比猜的多,
   仍然空一截;让浏览器自己算这一个 option 要多宽才是准的。
+  **2026-09-04 作废**:下拉换成自绘弹层(见 §2e),按钮宽度天然就是当前名字的宽度,克隆 select 已删。
 - **`settings.json` 的 `defaultModel` 会被覆盖**:UI 里换一次模型,`set_model` 就把它写回去。
   所以"设默认模型"不是一劳永逸的,最后一次手选的说了算。
 
+## 2e. Vercel AI Gateway（2026-09-04 追加）
+
+- **为什么加**:一把 key 通四家,用户点名要 `anthropic/claude-opus-5`、`moonshotai/kimi-k3`、
+  `deepseek/deepseek-v4-flash`、`stepfun/step-3.7-flash`。四个 id 都对着实时目录
+  (`GET https://ai-gateway.vercel.sh/v1/models`,369 个)核过,不是照记忆写的。
+- **收口和 NIM 同形**:bridge 的 `handleGateway()` 把 `/gw/*` 透传到 ai-gateway.vercel.sh。
+  和 NIM 有一处**故意不同**:NIM 是"调用方带的 Authorization 优先",网关是**无条件覆盖**——
+  调用方带什么都丢掉,只用 bridge 自己的 key。这样运行时那条路也不必持 key。
+- **bridge 自己读 `.env`**:`process.loadEnvFile()`(Node ≥20.12),所以 `node electron/bridge.mjs`
+  不经 vite 也拿得到 `AI_GATEWAY_API_KEY`;真环境变量优先于文件(实测过)。vite 的 `/api/gw` 代理
+  因此**不注入 Authorization**,和 `/api/nim` 不一样。
+- **额度读数是真数不是自己数的**:Vercel 有 `/v1/credits`(`{balance,total_used}`),
+  `GET /bridge/gateway` 转出来(15s 缓存),Composer 显示 `$4.98`,不足 1 上琥珀。因为是账户口径,
+  运行时直连还是走 bridge 都算得到——这正是 NIM 必须收口而网关不必的原因。
+- **runtime 目录**:prime-agent **自带** `vercel-ai-gateway` provider(`models.generated.ts`,
+  两百多个模型,`baseUrl: https://ai-gateway.vercel.sh`),只要 `auth.json` 里有这个 provider
+  的凭据就会整份出现在下拉里。所以 `models.json` 里写了同名 provider(四个模型,
+  `baseUrl: http://127.0.0.1:3117/gw/v1`),`auth.json` 里放的是**占位符**而不是真 key——
+  真 key 由 bridge 在出口换上。合并是**按模型 id** 的:写了的四个覆盖生成目录里的同 id 条目。
+- **`modelPayload()` 新增一层过滤**:`declaredModels()` —— `models.json` 里带 `models` 数组的
+  provider 视为**声明**而非追加,下拉只出那几个。不加这层,连上 daemon 后下拉是 233 行。
+  没写进 `models.json` 的 provider 不受影响(nvidia-nim 正好是全列,等于无变化)。
+- **改 models.json 不需要重启 daemon**:目录是每次 `getModelCatalog()` 现读的,实测加完立刻可见
+  ——§2a 里"要重启"那句对**目录**不成立(会话解析模型仍在创建/`set_model` 时)。
+- **端到端实测(2026-09-04)**:离线路(vite `/api/gw` → bridge → 网关)流式正常;运行时路在一个
+  临时工作区把 master 切到 `stepfun/step-3.7-flash` 后跑完整一轮(thinking + ipython 工具 +
+  文字,`agent_end`),完事删掉了那个工作区。
+- **这把 key 是免费档**:Opus 5 / Kimi K3 / DeepSeek V4 Flash 一律
+  `403 RestrictedModelsError: Free tier users do not have access to this model`,
+  Step 3.7 Flash 能跑;`deepseek/deepseek-v3.2` 之类是 `429 rate_limit_exceeded`(限速不是禁用)。
+  账户充值后前三个即通,代码不用动。网关的原话直接显示在 composer 的错误位。
+
 ## 3. Composer 模型下拉（src/components/Composer.tsx）
 
-- 在线：`fetchModels()`（`/bridge/model`）填目录，onChange 乐观更新 + `setDaemonModel()`，失败回拉真值。选项 value 用 `provider::id` 防撞。
-- 离线：`useModelPick()`（localStorage `model.pick`）。
+- 2026-09-04 起是**自绘弹层**（`.mpop`，借 `.topop` 的盒子），不再是原生 `<select>`：composer 在窗口底部，原生下拉往下弹会盖住输入框，用户要求"从上面弹"。`bottom: calc(100% + 8px)` 向上开，点外面 / Esc 关。
+- 高度上限**必须用 px 不能用 vh**：外壳是 `zoom: 1.5`，`46vh` 实际画出来占了窗口 69%（vh 按设备高算，再被缩放放大一次）。现在是 `max-height: 300px`。
+- 在线：`fetchModels()`（`/bridge/model`）填目录，按 provider 分组，点选乐观更新 + `setDaemonModel()`，失败回拉真值。行 key 用 `provider::id` 防撞。
+- 离线：`useModelPick()`（localStorage `model.pick`），三组 Claude Code / AI Gateway / NIM。网关的 id 存成 `gw:` 前缀——`deepseek/deepseek-v4-flash` 和 NIM 的 `deepseek-ai/deepseek-v4-flash-0731` 是两条路，裸 id 记不住是哪条。
 - `fixedRoot`（root 面板内嵌 composer）不显示下拉。
 
 ## 4. 同期修掉的可见性 bug（root/test 面板事故的根因）

@@ -285,6 +285,11 @@ const ZH: Record<string, string> = {
     "NIM：本分钟已用 {used} 次，上限约 {limit} 次。免费额度按 key 计、所有模型共用，所以这里也算上了运行时自己发的请求。",
   "NVIDIA just answered 429. {used} of ~{limit} requests this minute; {inflight} in flight — about five at once is where it starts refusing.":
     "NVIDIA 刚返回了 429。本分钟 {used}/{limit} 次，正在飞 {inflight} 个——大约五个并发就会开始被拒。",
+  "Vercel AI Gateway: ${balance} of credit left, ${spent} spent. One key covers all four models, and the free tier reaches only some of them.":
+    "Vercel AI Gateway：余额 ${balance}，已用 ${spent}。一把 key 通四个模型；免费额度只够跑其中一部分。",
+  "NO GATEWAY KEY": "网关无 KEY",
+  "The bridge holds no AI Gateway key. Put AI_GATEWAY_API_KEY in .env (a source checkout) or gatewayApiKey in config.json (an installed app) — never in the page.":
+    "bridge 里没有 AI Gateway 的 key。源码目录写进 .env 的 AI_GATEWAY_API_KEY，安装版写进 config.json 的 gatewayApiKey——都不要放进页面。",
   "long-running": "长程自主",
   "{name} sets up an objective, a wake-up schedule or unattended itself, and says which.":
     "让 {name} 自己选一种方式跑下去——设目标、定时唤醒、或自动运行——并说明选了哪个。",

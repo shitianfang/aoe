@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type {
   AgentState,
   AutonomousInfo,
@@ -11,12 +11,22 @@ import type {
 import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
-import { MODEL_PICKS, isClaudePick, setModelPick, useModelPick } from "../runtime/providers";
 import {
+  CLAUDE_MODELS,
+  GATEWAY_MODELS,
+  MODEL_PICKS,
+  isClaudePick,
+  isGatewayPick,
+  setModelPick,
+  useModelPick,
+} from "../runtime/providers";
+import {
+  fetchGatewayUsage,
   fetchModels,
   fetchNimUsage,
   setDaemonModel,
   type DaemonModel,
+  type GatewayUsage,
   type NimUsage,
 } from "../runtime/bridge";
 
@@ -68,6 +78,12 @@ export function Composer(props: {
   const t = useT();
   const [text, setText] = useState("");
   const [popOpen, setPopOpen] = useState(false);
+  // The model list. It is a popover rather than a <select> because the
+  // composer sits at the bottom of the window: a native select's own popup
+  // drops downward over the message box, and on a short window it has nowhere
+  // to go at all. This one opens upward, into the transcript.
+  const [mpopOpen, setMpopOpen] = useState(false);
+  const mpickRef = useRef<HTMLSpanElement>(null);
   const offlinePick = useModelPick();
   // Runtime model (daemon connected): current + switchable catalog. The same
   // picker spot as the offline one — connected it drives the daemon instead.
@@ -124,6 +140,46 @@ export function Composer(props: {
     };
   }, [showsPicker]);
 
+  // What is left on the gateway key. Vercel does report the account, so this
+  // is Vercel's own number rather than one we keep; the bridge caches it, and
+  // only the composer sitting on a gateway model asks at all.
+  const [gw, setGw] = useState<GatewayUsage | null>(null);
+  const onGateway = !connected && isGatewayPick(offlinePick);
+  useEffect(() => {
+    if (!showsPicker || !onGateway) return;
+    let live = true;
+    const tick = () =>
+      fetchGatewayUsage()
+        .then((u) => live && setGw(u))
+        // Bridge down or too old to answer: say nothing rather than a stale
+        // balance, which is the number you least want to be wrong about.
+        .catch(() => live && setGw(null));
+    tick();
+    const h = window.setInterval(tick, 30_000);
+    return () => {
+      live = false;
+      window.clearInterval(h);
+    };
+  }, [showsPicker, onGateway]);
+
+  // A popover that stays open after you click away is a stuck menu; the model
+  // list closes on an outside click and on Escape, like any other.
+  useEffect(() => {
+    if (!mpopOpen) return;
+    const away = (e: MouseEvent) => {
+      if (!mpickRef.current?.contains(e.target as Node)) setMpopOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMpopOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [mpopOpen]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   // Busy-ness of whatever the message goes to — steer vs prompt, SEND vs STOP.
   const busy = props.targetState === "working";
@@ -154,10 +210,61 @@ export function Composer(props: {
     props.onSend(msg);
   };
 
-  /** One picker spot, two backends: offline it picks the model-only fallback
-   *  (claude -p vs NIM); connected it switches the runtime's own model through
+  /** One row of the model list. */
+  type PickRow = { key: string; label: string; on: boolean; pick: () => void };
+
+  /** The picker: a label that opens a grouped list upward. One spot, two
+   *  backends — offline it picks the model-only fallback (claude -p, the
+   *  gateway or NIM); connected it switches the runtime's own model through
    *  the daemon. It sits on the strip above the box; a pane composer omits it
    *  (the model is the runtime's, one setting, shown once). */
+  const modelPop = (
+    label: string,
+    groups: Array<{ name: string; rows: PickRow[] }>,
+    disabled?: boolean,
+  ) => (
+    <span className="mpickw" ref={mpickRef}>
+      <button
+        className="mpick"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={mpopOpen}
+        aria-label={t("model")}
+        title={label}
+        onClick={() => setMpopOpen((v) => !v)}
+      >
+        <span className="nm">{label}</span>
+        {/* Pointing at where the list will appear, which is up. */}
+        <span className="car">▴</span>
+      </button>
+      {mpopOpen && !disabled && (
+        <div className="topop mpop" role="listbox">
+          {groups
+            .filter((g) => g.rows.length > 0)
+            .map((g) => (
+              <Fragment key={g.name}>
+                <div className="h">{g.name}</div>
+                {g.rows.map((r) => (
+                  <button
+                    className={r.on ? "tr on" : "tr"}
+                    role="option"
+                    aria-selected={r.on}
+                    key={r.key}
+                    onClick={() => {
+                      r.pick();
+                      setMpopOpen(false);
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </Fragment>
+            ))}
+        </div>
+      )}
+    </span>
+  );
+
   const modelPick = () => {
     if (noModel) return null;
     if (!connected) {
@@ -165,87 +272,52 @@ export function Composer(props: {
       // sessions without the runtime.
       if (modelRoot) return null;
       const label = MODEL_PICKS.find((p) => p.id === offlinePick)?.label ?? offlinePick;
-      return (
-        <span className="mpickw">
-          {/* A native select is as wide as its WIDEST option, which left a gap
-              after every shorter name. The width comes from this hidden clone
-              instead: one select, one option, the current name — so the box is
-              exactly what the browser wants for the name on show, arrow and all,
-              with no guess about how much room the arrow needs. */}
-          <select className="mpick sizer" tabIndex={-1} aria-hidden="true" value="" onChange={() => {}}>
-            <option value="">{label}</option>
-          </select>
-          <select
-            className="mpick live"
-            value={offlinePick}
-            onChange={(e) => setModelPick(e.target.value)}
-            aria-label={t("model")}
-            title={label}
-          >
-            {/* Two backends in one list: name the groups so a Claude Code model
-                is never mistaken for a cloud one. */}
-            <optgroup label="Claude Code">
-              {MODEL_PICKS.filter((p) => isClaudePick(p.id)).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="NIM">
-              {MODEL_PICKS.filter((p) => !isClaudePick(p.id)).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </span>
-      );
+      const rows = (picks: ReadonlyArray<{ id: string; label: string }>): PickRow[] =>
+        picks.map((p) => ({
+          key: p.id,
+          label: p.label,
+          on: p.id === offlinePick,
+          pick: () => setModelPick(p.id),
+        }));
+      // Three backends in one list, named — a Claude Code model billed to the
+      // user's own login must never be mistaken for a metered cloud one, and
+      // two of these names appear twice under different groups.
+      return modelPop(label, [
+        { name: "Claude Code", rows: rows(CLAUDE_MODELS) },
+        { name: "AI Gateway", rows: rows(GATEWAY_MODELS) },
+        {
+          name: "NIM",
+          rows: rows(MODEL_PICKS.filter((p) => !isClaudePick(p.id) && !isGatewayPick(p.id))),
+        },
+      ]);
     }
     // The picker stays mounted while the catalog is in flight. Unmounting it
     // made the control disappear and the strip reflow every time the subject
     // changed — the pick is unknown for that moment, which is what the empty
-    // value says; the dropdown itself is not.
+    // label says; the control itself is not.
     const loading = !daemonModels || daemonModels.models.length === 0;
     const cur = daemonModels?.current ?? null;
-    return (
-      <span className="mpickw">
-        {/* Sizer: see the offline branch — the select is as wide as its own
-            current name, not as its longest option. */}
-        <select className="mpick sizer" tabIndex={-1} aria-hidden="true" value="" onChange={() => {}}>
-          <option value="">{cur?.name ?? "—"}</option>
-        </select>
-        <select
-          className="mpick live"
-          value={cur ? `${cur.provider}::${cur.id}` : ""}
-          aria-label={t("model")}
-          disabled={loading}
-          title={cur?.name ?? ""}
-          onChange={(e) => {
-            const m = daemonModels?.models.find((x) => `${x.provider}::${x.id}` === e.target.value);
-            if (!m) return;
+    const models = daemonModels?.models ?? [];
+    // Grouped by provider, in the order the daemon listed them, so switching
+    // model and switching provider are visibly the same act.
+    const groups = Array.from(new Set(models.map((m) => m.provider))).map((provider) => ({
+      name: provider,
+      rows: models
+        .filter((m) => m.provider === provider)
+        .map((m) => ({
+          key: `${m.provider}::${m.id}`,
+          label: m.name,
+          on: cur?.provider === m.provider && cur?.id === m.id,
+          pick: () => {
             setDaemonModels((st) => (st ? { ...st, current: m } : st));
             setDaemonModel(m, modelRoot).catch(() =>
               // Rejected (e.g. mid-run) — re-pull the truth.
               fetchModels(modelRoot).then(setDaemonModels).catch(() => undefined),
             );
-          }}
-        >
-          {/* Not yet knowable (a root before its attach): an empty box beats
-              implying the subject sits on whatever happens to sort first. */}
-          {!cur && <option value="">—</option>}
-          {cur &&
-            !(daemonModels?.models ?? []).some(
-              (x) => x.provider === cur.provider && x.id === cur.id,
-            ) && <option value={`${cur.provider}::${cur.id}`}>{cur.name}</option>}
-          {(daemonModels?.models ?? []).map((m) => (
-            <option key={`${m.provider}::${m.id}`} value={`${m.provider}::${m.id}`}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </span>
-    );
+          },
+        })),
+    }));
+    return modelPop(cur?.name ?? "—", groups, loading);
   };
 
   // The strip above the box: the model pick, then only what is actually
@@ -308,7 +380,7 @@ export function Composer(props: {
     if (!nim || !showsPicker) return null;
     const onNim = connected
       ? daemonModels?.current?.provider === "nvidia-nim"
-      : !isClaudePick(offlinePick);
+      : !isClaudePick(offlinePick) && !isGatewayPick(offlinePick);
     if (!onNim) return null;
     // A 429 is worth shouting about only while it is still true; NIM's window
     // is a minute and it recovers on its own.
@@ -332,6 +404,35 @@ export function Composer(props: {
     );
   };
 
+  /** What is left on the gateway key, in the same spot and the same shape as
+   *  the NIM meter — but a balance, not a count, because Vercel answers for
+   *  the account. Shown only while the pick actually spends it. */
+  const gatewayMeter = () => {
+    if (!onGateway || !gw) return null;
+    if (!gw.configured) {
+      return (
+        <span className="nimq warm nokey" title={t("The bridge holds no AI Gateway key. Put AI_GATEWAY_API_KEY in .env (a source checkout) or gatewayApiKey in config.json (an installed app) — never in the page.")}>
+          <i className="sq" />
+          {t("NO GATEWAY KEY")}
+        </span>
+      );
+    }
+    if (gw.balance === null) return null;
+    const spent = gw.totalUsed ?? 0;
+    return (
+      <span
+        className={`nimq${gw.balance <= 0 ? " hot" : gw.balance < 1 ? " warm" : ""}`}
+        title={t("Vercel AI Gateway: ${balance} of credit left, ${spent} spent. One key covers all four models, and the free tier reaches only some of them.", {
+          balance: gw.balance.toFixed(2),
+          spent: spent.toFixed(2),
+        })}
+      >
+        {gw.balance < 1 && <i className="sq" />}
+        ${gw.balance.toFixed(2)}
+      </span>
+    );
+  };
+
   const pick = (t: ComposerTarget) => {
     props.onTarget(t);
     setPopOpen(false);
@@ -343,6 +444,7 @@ export function Composer(props: {
       <div className="strip">
         {modelPick()}
         {nimMeter()}
+        {gatewayMeter()}
         <span className="segs" title={props.error}>
           {strip()}
         </span>

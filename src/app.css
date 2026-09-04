@@ -620,19 +620,29 @@ body.resizing iframe { pointer-events: none; }
 .crow .to:hover { color: var(--t2); }
 /* model pick — sits on the strip above the box (offline: which backend
    answers; connected: the runtime's own model) */
-/* The picker is exactly as wide as the name it is currently showing. A native
-   select sizes itself to its WIDEST option, which left a dead gap after every
-   shorter model name. The width comes from .sizer instead — a hidden clone of
-   the select holding only the current name — so the browser measures what one
-   option really needs, arrow included. (A hidden span plus a guessed arrow
-   allowance was tried first and still left a gap: the arrow takes more room
-   than it looks like it does.) */
+/* The picker is exactly as wide as the name it is currently showing, which is
+   what a button does for free. It was a native <select> until the list had to
+   open upward; that one sized itself to its WIDEST option and needed a hidden
+   clone beside it to measure the current name. Both are gone. */
 .mpickw { position: relative; display: inline-block; flex-shrink: 0; max-width: 200px; }
-.mpickw > .sizer { visibility: hidden; pointer-events: none; max-width: 100%; }
-.mpickw > .live { position: absolute; inset: 0; width: 100%; }
-.mpick { border: 0; background: none; padding: 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
+.mpick { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 0; background: none; padding: 0; font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); outline: none; border-radius: 0; cursor: pointer; }
+.mpick .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpick .car { flex-shrink: 0; font-size: 7px; }
 .mpick:hover, .mpick:focus { color: var(--t2); }
 .mpick:disabled { color: var(--t3); opacity: .6; cursor: default; }
+/* The model list wears .topop's box, hung off the left edge of the picker
+   instead of the right. It opens upward for the reason that popup does: this
+   strip sits at the bottom of the window, and a list that dropped would cover
+   the message box you are about to type in.
+   The height cap is in px, not vh: the shell runs at zoom 1.5, where a vh is a
+   percentage of the *device* height and then gets scaled again — 46vh drew a
+   box filling 69% of the window. 300px lands at 450 device px, half a default
+   window, and still clears the composer at the 680px minimum height. */
+.mpop { left: 0; right: auto; min-width: 170px; max-height: 300px; overflow-y: auto; }
+.mpop > .h:first-child { border-top: 0; margin-top: 0; padding-top: 3px; }
+.mpop .tr { color: var(--t2); }
+.mpop .tr.on { color: var(--t1); background: var(--soft); }
+.mpop .tr:hover { color: var(--t1); }
 /* NIM's minute budget, beside the picker. NVIDIA sends no rate-limit header
    and has no usage endpoint, so this number is the bridge's own count of what
    it proxied. Same quiet mono register as the picker; digits stay mono in both
@@ -808,6 +818,11 @@ html[lang="zh-CN"] .insp .phead code {
 html[lang="zh-CN"] .insp .kv .k { font-size: 11.5px; }
 /* The remaining 8–8.5px captions the block above never reached: the driver
    line in the subject header and the unattended limit labels. */
+/* The one word in the meter row that is prose, not machine text: every other
+   thing that sits there is digits (25/40 RPM, $4.98) and stays mono. */
+html[lang="zh-CN"] .nimq.nokey {
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
+}
 html[lang="zh-CN"] .insp .subj .st,
 html[lang="zh-CN"] .insp .lims span {
   font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;

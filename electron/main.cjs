@@ -6,13 +6,18 @@ const http = require("node:http");
 const DEV_URL = process.env.AOE_DEV_URL || process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
 // Not NVIDIA directly: the daemon bridge (hosted in this process for a
 // packaged build) proxies to NIM and is the single place requests are counted
-// for the usage readout. Going straight out would leave that count short.
-const NIM_UPSTREAM = () => `http://127.0.0.1:${process.env.PRIME_BRIDGE_PORT || "3117"}/nim/v1`;
+// for the usage readout. Going straight out would leave that count short. The
+// gateway takes the same road, for the stricter reason that the key it needs
+// only ever exists inside the daemon bridge.
+const BRIDGE_ORIGIN = () => `http://127.0.0.1:${process.env.PRIME_BRIDGE_PORT || "3117"}`;
+const NIM_UPSTREAM = () => `${BRIDGE_ORIGIN()}/nim/v1`;
+const GATEWAY_UPSTREAM = () => `${BRIDGE_ORIGIN()}/gw/v1`;
 
-/** Key and model come from the environment or <userData>/config.json — never from the bundle. */
-function loadNimConfig() {
+/** Keys and model come from the environment or <userData>/config.json — never from the bundle. */
+function loadConfig() {
   let key = process.env.NIM_API_KEY || "";
   let model = process.env.NIM_MODEL || "deepseek-ai/deepseek-v4-pro-0813";
+  let gatewayKey = process.env.AI_GATEWAY_API_KEY || "";
   try {
     const p = path.join(app.getPath("userData"), "config.json");
     // Renaming the app to AOE moved userData; an install that predates the
@@ -33,16 +38,23 @@ function loadNimConfig() {
       const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
       key = cfg.nimApiKey || key;
       model = cfg.nimModel || model;
+      gatewayKey = cfg.gatewayApiKey || gatewayKey;
     }
   } catch {
     /* unreadable config — fall back to env */
   }
-  return { key, model };
+  return { key, model, gatewayKey };
 }
 
-/** Packaged builds have no Vite proxy, so main hosts the same /api/nim bridge locally. */
+/** Packaged builds have no Vite proxy, so main hosts the same /api/* bridge locally. */
 function startBridge() {
-  const { key, model } = loadNimConfig();
+  const { key, model, gatewayKey } = loadConfig();
+  // The daemon bridge, imported into this process a moment later, is the only
+  // holder of the gateway key. An install that keeps it in config.json rather
+  // than the environment hands it over here.
+  if (gatewayKey && !process.env.AI_GATEWAY_API_KEY) {
+    process.env.AI_GATEWAY_API_KEY = gatewayKey;
+  }
   const server = http.createServer((req, res) => {
     const cors = {
       "Access-Control-Allow-Origin": "*",
@@ -54,20 +66,29 @@ function startBridge() {
       res.end();
       return;
     }
-    if (!req.url || !req.url.startsWith("/api/nim/")) {
+    // Two proxied providers, one shape. NIM's key is attached here; the
+    // gateway's is attached by the daemon bridge, so nothing is sent for it.
+    const route = !req.url
+      ? null
+      : req.url.startsWith("/api/nim/")
+        ? { url: NIM_UPSTREAM() + req.url.slice("/api/nim".length), auth: `Bearer ${key}`, fallbackModel: model }
+        : req.url.startsWith("/api/gw/")
+          ? { url: GATEWAY_UPSTREAM() + req.url.slice("/api/gw".length), auth: null, fallbackModel: "" }
+          : null;
+    if (!route) {
       res.writeHead(404, cors);
       res.end();
       return;
     }
     const send = (body) => {
       const upstream = http.request(
-        NIM_UPSTREAM() + req.url.slice("/api/nim".length),
+        route.url,
         {
           method: req.method,
           headers: {
             "content-type": req.headers["content-type"] || "application/json",
             accept: req.headers.accept || "*/*",
-            authorization: `Bearer ${key}`,
+            ...(route.auth ? { authorization: route.auth } : {}),
             ...(body ? { "content-length": Buffer.byteLength(body) } : {}),
           },
         },
@@ -83,16 +104,17 @@ function startBridge() {
       if (body) upstream.end(body);
       else req.pipe(upstream);
     };
-    if (req.method === "POST" && req.url.includes("/chat/completions")) {
+    if (route.fallbackModel && req.method === "POST" && req.url.includes("/chat/completions")) {
       // The renderer sends the user-picked model at runtime; env/config is the
-      // fallback default when it sends none.
+      // fallback default when it sends none. Gateway calls always name one, so
+      // they stream straight through instead of being buffered to be patched.
       const chunks = [];
       req.on("data", (c) => chunks.push(c));
       req.on("end", () => {
         let body = Buffer.concat(chunks).toString("utf8");
         try {
           const parsed = JSON.parse(body);
-          if (!parsed.model) parsed.model = model;
+          if (!parsed.model) parsed.model = route.fallbackModel;
           body = JSON.stringify(parsed);
         } catch {
           /* not JSON — forward as-is */

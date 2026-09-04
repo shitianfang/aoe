@@ -315,6 +315,10 @@ Without the runtime, the app degrades to model-only chat rather than breaking:
 - **NVIDIA NIM** — `NIM_API_KEY` from `.env`, proxied server-side; the renderer never sees a
   key. Keys come from [build.nvidia.com](https://build.nvidia.com); `NIM_MODEL` defaults to
   `deepseek-ai/deepseek-v4-pro-0813`.
+- **Vercel AI Gateway** — `AI_GATEWAY_API_KEY` from `.env`, proxied the same way. One key
+  reaches four vendors, and the picker offers four models: `anthropic/claude-opus-5`,
+  `moonshotai/kimi-k3`, `deepseek/deepseek-v4-flash` and `stepfun/step-3.7-flash`. Keys come
+  from the AI tab of a [Vercel](https://vercel.com) project.
 
 ### The NIM budget readout
 
@@ -341,6 +345,30 @@ Two consequences worth knowing:
   `baseUrl` back at `https://integrate.api.nvidia.com/v1` if you want the runtime independent,
   and the readout then only counts what the app itself sends.
 
+### Vercel AI Gateway
+
+The gateway speaks the OpenAI chat API and routes a `creator/model` id on to the vendor, so it
+needs no client of its own — the bridge proxies `ALL /gw/*` to `ai-gateway.vercel.sh` and
+attaches the key there. Whatever `Authorization` a caller sends is dropped rather than
+forwarded: no page, and no runtime, ever has to hold the key.
+
+Where NVIDIA says nothing about your budget, Vercel answers for the account. `GET
+/bridge/gateway` reads its `/v1/credits` and the composer shows the balance beside the picker
+as `$4.98`, amber under a dollar. That number covers the runtime's spend as well as the app's,
+whichever road the request took.
+
+To offer the same four models to the **runtime**, put them in `~/.prime/agent/models.json`
+under a `vercel-ai-gateway` provider with `baseUrl` set to `http://127.0.0.1:3117/gw/v1`, and
+give the provider any placeholder credential in `~/.prime/agent/auth.json` — it only has to
+count as configured, since the bridge replaces the key on the way out. prime-agent ships a
+generated catalog of 200-odd gateway models, so the bridge treats a provider written into
+`models.json` as a declaration rather than an addition: the picker offers exactly the models
+listed there, and providers `models.json` says nothing about are passed through whole.
+
+A free-tier key reaches only part of the catalog. Opus 5, Kimi K3 and DeepSeek V4 Flash answer
+`403 Free tier users do not have access to this model` until the account has paid credit;
+Step 3.7 Flash runs. The gateway's own sentence is what the composer shows.
+
 ## Configuration
 
 | Variable | What it does | Default |
@@ -353,10 +381,12 @@ Two consequences worth knowing:
 | `NIM_API_KEY` | key for the fallback chat provider | — |
 | `NIM_MODEL` | model for the fallback chat provider | `deepseek-ai/deepseek-v4-pro-0813` |
 | `NIM_RPM` | requests/minute the NIM readout counts against | `40` (free tier) |
+| `AI_GATEWAY_API_KEY` | key for the Vercel AI Gateway provider | — |
 | `AOE_DEV_URL` | dev server the Electron shell loads | `http://localhost:3000` |
 | `AOE_DEBUG_TURNS` | log every roster turn end | off |
 
-`.env` holds the NIM key and is gitignored.
+`.env` holds the NIM and gateway keys and is gitignored. The bridge reads it itself, so
+`npm run bridge` has them however it was started.
 
 ## Where it stands
 
@@ -385,8 +415,8 @@ npm run dist:win       # zip in release/ — dist:mac (zip) and dist:linux (AppI
 
 Packaged builds do **not** bundle `core/`, so a target machine needs:
 
-- `NIM_API_KEY` in the environment, or `%APPDATA%/AOE/config.json` holding
-  `{ "nimApiKey": "nvapi-…" }`
+- `NIM_API_KEY` / `AI_GATEWAY_API_KEY` in the environment, or `%APPDATA%/AOE/config.json`
+  holding `{ "nimApiKey": "nvapi-…", "gatewayApiKey": "vck_…" }`
 - for the real runtime: Node ≥ 22.8 and uv on PATH, and `PRIME_AGENT_DIR` pointing at a built
   prime-agent checkout — otherwise the app runs in model-only mode
 

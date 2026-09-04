@@ -154,6 +154,22 @@ export async function fetchNimUsage(): Promise<NimUsage> {
   return r.json();
 }
 
+/** What is left on the AI Gateway key, straight from Vercel's own /v1/credits
+ *  — the gateway, unlike NVIDIA, will say. `configured: false` means the
+ *  bridge holds no key at all, which is a different thing from a zero
+ *  balance and reads differently in the picker. */
+export interface GatewayUsage {
+  configured: boolean;
+  balance: number | null;
+  totalUsed: number | null;
+}
+
+export async function fetchGatewayUsage(): Promise<GatewayUsage> {
+  const r = await fetch(`${BRIDGE_BASE}/bridge/gateway`);
+  if (!r.ok) throw new Error(`gateway usage failed (${r.status})`);
+  return r.json();
+}
+
 export function setDaemonModel(m: DaemonModel, root?: string): Promise<Record<string, unknown>> {
   return root
     ? bridgeCmd("root_set_model", m.id, { provider: m.provider, target: root })

@@ -32,6 +32,10 @@
  *                         because NVIDIA returns no rate-limit header at all
  *   ALL  /nim/*           proxy to integrate.api.nvidia.com, and the one place
  *                         every NIM request (daemon's and renderer's) passes
+ *   GET  /bridge/gateway  { configured, balance, totalUsed } — Vercel AI Gateway
+ *                         credit left on the key (cached; upstream /v1/credits)
+ *   ALL  /gw/*            proxy to ai-gateway.vercel.sh, the key attached here
+ *                         so no bundle or page ever holds it
  *   POST /bridge/claude   { text, sessionId?, system?, model? } → SSE
  *                         {type:"delta"|"tool"|"subagent"|"done"|"error"}
  *                         — runs the local `claude -p` CLI (user's own login) as a
@@ -49,6 +53,18 @@ import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
 import { createPreviewStore } from "./preview.mjs";
+
+// Keys for a source checkout live in aoe/.env, which the Vite dev server reads
+// and `node electron/bridge.mjs` does not. Load it here so the bridge holds
+// them however it was started; a real environment variable still wins over the
+// file, and a missing file is the normal case for a packaged build.
+try {
+  process.loadEnvFile?.(
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".env"),
+  );
+} catch {
+  /* no .env, or a Node too old to read one — env and auth.json still apply */
+}
 
 const PORT = Number(process.env.PRIME_BRIDGE_PORT || 3117);
 // The agent runtime ships in this repo at core/, so a source checkout needs no
@@ -909,6 +925,22 @@ async function switchWorkspace(name) {
   await attachMaster();
 }
 
+/** What this machine says it offers, per provider. A provider written into
+ *  models.json with its own `models` array is a declaration, not an addition:
+ *  the runtime ships a generated catalog with 200-odd Vercel AI Gateway models
+ *  in it, and a picker is not a vendor directory. Providers models.json says
+ *  nothing about keep everything the daemon offers. */
+function declaredModels() {
+  const cfg = readJsonFile(path.join(AGENT_HOME, "models.json"));
+  const out = new Map();
+  for (const [provider, def] of Object.entries(cfg?.providers ?? {})) {
+    if (Array.isArray(def?.models) && def.models.length) {
+      out.set(provider, new Set(def.models.map((m) => m.id)));
+    }
+  }
+  return out;
+}
+
 /** GET /bridge/model[?root=<name>] — the subject's current model plus the
  *  switchable catalog, filtered to providers that are actually configured
  *  (have credentials). The subject is master, or a root session by name:
@@ -938,8 +970,10 @@ async function modelPayload(rootName = null) {
   ]);
   const current = stateR?.success && stateR.data?.model ? slim(stateR.data.model) : null;
   const configured = new Set(catalog?.configuredProviders ?? []);
+  const declared = declaredModels();
   const models = (catalog?.models ?? [])
     .filter((m) => configured.has(m.provider))
+    .filter((m) => !declared.has(m.provider) || declared.get(m.provider).has(m.id))
     .map(slim)
     .sort((a, b) => a.name.localeCompare(b.name));
   return { current, models };
@@ -1759,6 +1793,88 @@ function handleNim(req, res, cors) {
   req.pipe(up);
 }
 
+/* ── Vercel AI Gateway ───────────────────────────────────────────────
+ *
+ *  One key, four vendors: the gateway speaks the OpenAI chat API and routes a
+ *  `creator/model` id on to Anthropic, Moonshot, DeepSeek or StepFun. It is
+ *  proxied for the reason NIM is — a key must never reach a page. It stays in
+ *  this process (AI_GATEWAY_API_KEY, else auth.json) and is attached here;
+ *  whatever Authorization a caller sent is dropped rather than forwarded, so
+ *  the renderer cannot hold one even by accident.
+ *
+ *  Unlike NVIDIA, Vercel will tell you where the account stands: /v1/credits
+ *  returns balance and spend, so that readout is the real number rather than a
+ *  count we keep ourselves. Cached for a few seconds, because the composer
+ *  polls it. */
+const GATEWAY_UPSTREAM = "https://ai-gateway.vercel.sh";
+const GATEWAY_CREDITS_TTL_MS = 15_000;
+let gatewayCredits = { at: 0, value: null };
+
+function gatewayKey() {
+  if (process.env.AI_GATEWAY_API_KEY) return process.env.AI_GATEWAY_API_KEY;
+  const auth = readJsonFile(path.join(AGENT_HOME, "auth.json"));
+  return auth?.["vercel-ai-gateway"]?.key || "";
+}
+
+/** Forward /gw/<path> to the gateway under the server-side key. Streams
+ *  through untouched, so an SSE completion arrives as it is produced. */
+function handleGateway(req, res, cors) {
+  const key = gatewayKey();
+  if (!key) {
+    res.writeHead(503, { ...cors, "content-type": "application/json" });
+    return res.end(
+      JSON.stringify({ error: "bridge: no AI Gateway key (set AI_GATEWAY_API_KEY)" }),
+    );
+  }
+  const up = https.request(
+    GATEWAY_UPSTREAM + req.url.slice("/gw".length),
+    {
+      method: req.method,
+      headers: {
+        "content-type": req.headers["content-type"] || "application/json",
+        accept: req.headers.accept || "*/*",
+        authorization: `Bearer ${key}`,
+      },
+    },
+    (upRes) => {
+      res.writeHead(upRes.statusCode || 502, { ...upRes.headers, ...cors });
+      upRes.pipe(res);
+    },
+  );
+  up.on("error", (e) => {
+    if (res.headersSent) return res.end();
+    res.writeHead(502, { ...cors, "content-type": "application/json" });
+    res.end(JSON.stringify({ error: `bridge: AI Gateway unreachable (${e?.message || e})` }));
+  });
+  // Client hung up mid-stream: stop paying for the rest of it.
+  res.on("close", () => up.destroy());
+  req.pipe(up);
+}
+
+/** Credit left on the key. `configured: false` is the honest answer when there
+ *  is no key at all — the picker uses it to say so instead of showing a zero. */
+async function gatewayUsage() {
+  const key = gatewayKey();
+  if (!key) return { configured: false, balance: null, totalUsed: null };
+  const now = Date.now();
+  if (gatewayCredits.value && now - gatewayCredits.at < GATEWAY_CREDITS_TTL_MS) {
+    return gatewayCredits.value;
+  }
+  try {
+    const r = await fetch(`${GATEWAY_UPSTREAM}/v1/credits`, {
+      headers: { authorization: `Bearer ${key}` },
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const j = await r.json();
+    const value = { configured: true, balance: Number(j.balance), totalUsed: Number(j.total_used) };
+    gatewayCredits = { at: now, value };
+    return value;
+  } catch {
+    // The balance is a nicety; failing to read it must not read as "no key".
+    return gatewayCredits.value ?? { configured: true, balance: null, totalUsed: null };
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const cors = {
     "Access-Control-Allow-Origin": "*",
@@ -1870,6 +1986,14 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url && req.url.startsWith("/nim/")) {
     return handleNim(req, res, cors);
+  }
+  if (req.url === "/bridge/gateway") {
+    const usage = await gatewayUsage();
+    res.writeHead(200, { ...cors, "content-type": "application/json" });
+    return res.end(JSON.stringify(usage));
+  }
+  if (req.url && req.url.startsWith("/gw/")) {
+    return handleGateway(req, res, cors);
   }
   if (req.url === "/bridge/skills") {
     res.writeHead(200, { ...cors, "content-type": "application/json" });

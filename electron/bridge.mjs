@@ -825,6 +825,14 @@ async function attachMaster() {
       // tagged declared with its label. The agent_end scan seeing the same
       // file later is a no-op — snapshots dedupe by path + content hash.
       if (inner?.type === "preview_published") preview.declare(inner.preview);
+      // The replay snapshot below is the only place a reloaded page reads
+      // master's objective from — roots re-pull theirs live, master has no such
+      // route — so it has to keep up with the stream. Without this an objective
+      // cleared an hour ago comes back as "running" on the next page load, and
+      // the panel says a goal is driving the session while nothing is.
+      if (inner?.type === "goal_update" && lastSnapshot) {
+        lastSnapshot.state.goal = inner.goal ?? null;
+      }
       preview.observe(inner);
       broadcast({ type: "event", event: inner });
     } else if (event?.type === "extension_ui_request") {

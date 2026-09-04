@@ -1484,6 +1484,14 @@ async function heartbeatsPayload() {
   });
 }
 
+/** A refine's focus text, or nothing when the user gave none. Undefined and ""
+ *  are not the same to the runtime: one asks for a plain review, the other
+ *  puts an empty instruction in the prompt. */
+const refineText = (text) => {
+  const s = typeof text === "string" ? text.trim() : "";
+  return s === "" ? undefined : s;
+};
+
 async function handleCmd(body) {
   if (!masterConn) throw new Error("daemon not connected");
   switch (body.op) {
@@ -1505,7 +1513,12 @@ async function handleCmd(body) {
       return { model: { id: model.id, name: model.name || model.id, provider: model.provider } };
     }
     case "refine":
-      return { result: await masterConn.refine({ instructions: refineInstructions(body.text) }) };
+      // Focus text only. The house style the bridge used to staple on here now
+      // lives in the runtime's own refine prompt, and the helper that joined
+      // the two was deleted with it — but these three calls were left behind,
+      // so every "learn now" since has failed on a ReferenceError the moment
+      // it was clicked, 500 from the bridge and nothing to see in the panel.
+      return { result: await masterConn.refine({ instructions: refineText(body.text) }) };
     case "refine_rollback":
       // Undo one lesson; recorded by the harness as a new refinement.
       return { result: await masterConn.refine({ rollbackId: String(body.target ?? "") }) };
@@ -1514,7 +1527,7 @@ async function handleCmd(body) {
       return {
         result: await masterConn.refine({
           global: true,
-          instructions: refineInstructions(body.text ? String(body.text) : ""),
+          instructions: refineText(body.text),
         }),
       };
     case "agent_message": {
@@ -1694,7 +1707,7 @@ async function handleCmd(body) {
       // and harness (no focus text = just the house style). Mirrors master's
       // "refine" op; can take minutes (the SDK allows 10).
       const { conn } = await ensureRootConn(String(body.target ?? ""));
-      return { result: await conn.refine({ instructions: refineInstructions(body.text ? String(body.text) : "") }) };
+      return { result: await conn.refine({ instructions: refineText(body.text) }) };
     }
     case "set_auto_refine": {
       // The auto-refine switch is a GLOBAL setting: settings.json autoRefine

@@ -864,6 +864,20 @@ async function attachMaster() {
       // the next page load.
       if (event.snapshot) applySnapshot(event.snapshot);
     } else if (event?.type === "connection_status" || event?.type === "closed") {
+      // "runtime ok" has to mean it. The renderer has no case for bridge_status
+      // — it never did — so a daemon that went away for good left the light
+      // green, the composer armed, and every send failing one error row at a
+      // time. hello is the channel the renderer already reads for this, and it
+      // is the same state a workspace switch writes. Only a terminal close
+      // counts: the SDK recovers from most drops on its own, and a light that
+      // blinks through every reconnect is noise, not an answer.
+      if (event.type === "closed" && daemon.connected) {
+        daemon = { ...daemon, connected: false, error: event.error ?? "runtime connection closed" };
+        broadcast({ type: "hello", daemon });
+      } else if (event.type === "connection_status" && event.status === "connected" && !daemon.connected) {
+        daemon = { ...daemon, connected: true, error: null };
+        broadcast({ type: "hello", daemon });
+      }
       broadcast({ type: "bridge_status", event });
     } else if (event?.type === "heartbeats_changed") {
       broadcast({ type: "heartbeats_changed" });

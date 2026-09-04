@@ -240,20 +240,48 @@ by path and content hash, so a file both declared and seen by the scan in one tu
 one version. They are kept as real files under `~/.prime/desktop/.previews/`, and nothing
 prunes them — a page you iterate on all day leaves a copy per turn.
 
-## House rules
+## House rules: align, verify, iterate
 
 The client is not neutral about how work gets done here. Every session AOE creates gets an
-appended system prompt — never a
-replacement for the runtime's own — telling the agent that this workspace renders what it
-writes: show three genuinely different variants before building anything with a shape, write
-files as you go rather than describing them, never start a web server or ask the user to open
-one, publish finished work with `preview.publish(path, label=…)`, and end a turn with what
-changed and what is next.
+appended system prompt — never a replacement for the runtime's own — built around three
+things, because a deliverable that skipped any one of them is the same failure every time:
+a beautiful thing nobody asked for, a broken thing nobody looked at, or five rounds that
+changed nothing.
+
+**Align.** For anything with a shape, the first turn writes four genuinely different takes as
+four files, publishes each, says in one line what each trades away, **recommends one and says
+why**, and stops for the user to pick. That turn plans; it does not build. The moment the user
+picks, the agent writes `.review/brief.md` — the take they chose, what it gives up, and three
+checkable criteria — and nothing gets built until that file exists. It is the contract every
+later round, every judge and the final report is measured against.
+
+**Verify.** Nothing is published on the strength of its own author reading its own source.
+`GET /bridge/shot?path=<file>&out=<png>` renders the candidate offscreen exactly as Preview
+will and hands back a PNG plus what the page got wrong loading it — broken images, sideways
+scroll at the target width, console errors, a body with no text on it. The agent looks at the
+picture (`attach_image`), answers the brief's criteria one at a time in `.review/check.md`,
+and a candidate that fails one never reaches the judges. Where no renderer is available the
+shot says so and the round is marked as unverified rather than quietly skipped.
+
+**Iterate.** A round reads the previous version off disk, names three to five properties with
+before→after values (one of them large enough to see at thumbnail size), and produces two or
+three mutants pulling in directions that cannot both be right. A gate rejects any candidate
+whose diff does not carry its own targets. Subagent judges then pick between the *pictures*,
+blind and shuffled, in three lenses — does it do the job, is it well made, what fails first —
+answering `WINNER`, `GLANCE` (visible in two seconds?), `SAW` (image or source) and, for the
+adversarial lens, `BREAKS`: a criterion the winner still fails vetoes the round however the
+votes fell. Only a winner is written back and published. Two losses in a row send the work
+back to the align turn's runner-up instead of a third variation of a dead track; when every
+criterion passes and a round fails to beat the incumbent, that is done, and it gets said.
+Whatever the rounds taught goes to `refine.run(…)` so it outlives the task — it shows up in
+the Self-evolution column, where you can read it or roll it back.
 
 The longer form is a skill shipped in this repo, [`skills/aoe-way`](skills/aoe-way/SKILL.md),
-which the bridge hands the runtime alongside its own. It carries the variant rules, a blind
-subagent review protocol for picking between finalists, and what to report so you can check
-the work instead of trusting it. Edit it, and the agents in your workspaces work differently.
+which the bridge hands the runtime alongside its own — with the runnable version of each of
+those: the gate, the shot, the blind panel, the tally, the stop conditions. Edit it, and the
+agents in your workspaces work differently. The appended prompt is fixed when a session is
+created, so an edit reaches new sessions immediately and a running master on its next cold
+start; the skill file is read per session the same way.
 
 ## The workspace itself
 

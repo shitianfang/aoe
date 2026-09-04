@@ -24,6 +24,10 @@
  *   GET  /bridge/model    { current, models } — master's model + switchable catalog
  *                         (cmd op "set_model" { text: modelId, provider } switches;
  *                          ?root=<name> reads a root's, "root_set_model" switches it)
+ *   GET  /bridge/shot?path=&out=&width= { ok, png, problems, … } — render a
+ *                         workspace file offscreen to a PNG and report what the
+ *                         page got wrong loading it. The verify step: judges
+ *                         look at the picture instead of reading the markup
  *   GET  /bridge/skills   { items: [{ name, detail? }] } — read-only skill catalog
  *   GET  /bridge/extensions { items: [{ name, detail? }] } — providers, MCP, extensions
  *   GET  /bridge/health   { connected, master, capabilities }
@@ -48,6 +52,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { createPreviewStore } from "./preview.mjs";
 
 // Keys for a source checkout live in aoe/.env, which the Vite dev server reads
@@ -142,13 +147,17 @@ const CLIENT_PROMPT = `You are attached to AOE, a desktop client for this agent.
 
 The client watches your working directory. Every .html, .md, .png and .pdf file you write there is rendered in its Preview pane, which opens itself beside the conversation when your turn ends and keeps every published version as a card, newest first. The user watches the work; they do not read a description of it.
 
+Three things decide whether work here is any good, and they are not optional: align before you build, verify what you built, iterate until it stops improving. The \`aoe-way\` skill is the long form of all three — read it before your first file write and work by it.
+
 1. Write inside your working directory. A file left elsewhere is invisible to the client unless you publish it by absolute path.
-2. Align before building. For anything with a shape — a page, a layout, a document, a plan — the first turn writes four genuinely different takes as four files, publishes each, gives one line per take on what it trades away, and stops for the user to pick. That turn plans; it does not build. Skip the four only when the request already pins the shape down, and say in one line that you skipped them.
-3. Write files as you go, so every turn end updates Preview. Never start a web server, and never send the user to a browser or a file manager — writing the file is what shows it.
-4. Publish with a label that states the change as measured values: \`await preview.publish("poster.html", label="第 2 版 · 版心 980→680px,标题 34→56px(盲评 2:1 选新版,一眼可见)")\`. The card prints that label, so before→after numbers and the blind A/B result are how the user learns what this round decided. "配色更好" tells them nothing.
-5. Open each turn with the decision, not the mechanics: what you chose, what it beats in the previous version, and the evidence — a score, a measurement, a count. The client shows that line between two versions, and shows no tool steps at all.
-6. Before your first file write, read the \`aoe-way\` skill and work by it: the variant rules, the round contract — read the previous version and edit it rather than regenerate it, name three to five properties with before→after values, and verify the diff before publishing — the blind A/B review protocol, and what to report so the user can check you instead of trusting you.
-7. Close each turn with what changed, what you would do next, and anything you added that was not asked for but is needed.`;
+2. Align before building. For anything with a shape — a page, a layout, a document, a plan — the first turn writes four genuinely different takes as four files, publishes each, gives one line per take on what it trades away, recommends one and says why, and stops for the user to pick. That turn plans; it does not build. Skip the four only when the request already pins the shape down, and say in one line that you skipped them.
+3. Write the pick down before you build: \`.review/brief.md\` — the take they chose, what it trades away, and three checkable criteria the finished thing has to meet. That file is the contract every later round, every judge and the final report is measured against. Nothing gets built until it exists.
+4. Write files as you go, so every turn end updates Preview. Never start a web server, and never send the user to a browser or a file manager — writing the file is what shows it.
+5. Verify before you publish, and never by reading your own source. Render the candidate through the client and look at the picture — \`GET http://127.0.0.1:${PORT}/bridge/shot?path=<file>&out=.review/shots/<name>.png\` returns a PNG plus what the page got wrong while loading (broken images, sideways scroll, console errors) — then check it against \`.review/brief.md\` line by line, then have subagent judges pick blind between the pictures. A candidate that fails a criterion or comes back broken never reaches the judges, and never gets published.
+6. Publish with a label that states the change as measured values: \`await preview.publish("poster.html", label="第 2 版 · 版心 980→680px,标题 34→56px(盲评 2:1 选新版,一眼可见)")\`. The card prints that label, so before→after numbers and the blind A/B result are how the user learns what this round decided. "配色更好" tells them nothing.
+7. A round that only a diff can see is not a round. Read the previous version off disk and edit it — never regenerate it from the brief — name three to five properties with before→after values, at least one of them large enough to see at thumbnail size, and check the diff before anyone reviews it.
+8. Open each turn with the decision, not the mechanics: what you chose, what it beats in the previous version, and the evidence — a score, a measurement, a count. The client shows that line between two versions, and shows no tool steps at all.
+9. Close each turn with what changed, what you would do next, and anything you added that was not asked for but is needed. When a round taught you something that will still be true on the next task, \`await refine.run("…")\` before you finish, so it outlives this one.`;
 
 /** Skills the app itself ships (repo `skills/`, next to `electron/`). They are
  *  handed to each session on top of the runtime's own, so the method lives with
@@ -174,6 +183,118 @@ Your published versions are on disk, kept by the client at \`${previewsRootFor(c
   ],
   ...(fs.existsSync(APP_SKILLS_DIR) ? { skills: [APP_SKILLS_DIR] } : {}),
 });
+
+/* ---- /bridge/shot: render a candidate so it can be verified by looking ----
+ *
+ * The judges in `aoe-way` read HTML source, and source review is blind to
+ * exactly the things that decide a page: scale, colour weight, whether the
+ * images arrived, whether it scrolls sideways. This renders the file offscreen
+ * the way Preview will and hands back a PNG (which a judge can open with
+ * `attach_image`) plus the page's own loading failures. Prompt-level rules
+ * cannot substitute for it — "at least one large-area property per round" was
+ * a workaround for this blindness, not a fix.
+ */
+const requireCJS = createRequire(import.meta.url);
+const SHOT_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "shot.cjs");
+const SHOT_TIMEOUT_MS = 90_000;
+
+/** In Electron main (the packaged app) this is the module; under `npm run
+ *  bridge` requiring "electron" from plain Node yields the path to the binary
+ *  instead, which is how we tell the two apart without a flag. */
+function electronHandle() {
+  try {
+    const e = requireCJS("electron");
+    return typeof e === "string" ? { bin: e } : { mod: e };
+  } catch {
+    return {};
+  }
+}
+
+/** Confine a client-supplied path to the workspace. A shot is a file read and
+ *  a file write driven by whatever the agent typed; ".." must not reach out of
+ *  the directory the user opened. */
+function inWorkspace(rel) {
+  const abs = path.resolve(WORKSPACE_DIR, String(rel || ""));
+  const root = path.resolve(WORKSPACE_DIR);
+  if (abs !== root && !abs.startsWith(root + path.sep)) return null;
+  return abs;
+}
+
+/** One at a time: a round shoots three candidates in a row, and three
+ *  Chromiums at once on a laptop is how the app gets blamed for the fan. */
+let shotQueue = Promise.resolve();
+
+function renderShot({ file, out, width }) {
+  const run = async () => {
+    const input = inWorkspace(file);
+    if (!input) return { ok: false, problems: [`path outside the workspace: ${file}`] };
+    if (!fs.existsSync(input)) return { ok: false, problems: [`no such file: ${file}`] };
+    const target =
+      inWorkspace(out || path.join(".review", "shots", `${path.basename(input)}.png`)) ??
+      null;
+    if (!target) return { ok: false, problems: [`out path outside the workspace: ${out}`] };
+    const w = Math.min(Math.max(Number(width) || 1200, 320), 2400);
+
+    const { mod, bin } = electronHandle();
+    if (mod?.BrowserWindow) {
+      const { capture } = requireCJS(SHOT_SCRIPT);
+      return capture({ electron: mod, input, out: target, width: w });
+    }
+    if (!bin || !fs.existsSync(bin)) {
+      return {
+        ok: false,
+        problems: [
+          "no renderer available: this bridge is running under plain Node and electron is not installed",
+        ],
+      };
+    }
+    return new Promise((resolve) => {
+      const child = spawn(bin, ["--no-sandbox", SHOT_SCRIPT], {
+        // ELECTRON_RUN_AS_NODE is set for the daemon's own children and would
+        // start this one without a renderer at all.
+        env: {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: "",
+          SHOT_STANDALONE: "1",
+          SHOT_IN: input,
+          SHOT_OUT: target,
+          SHOT_W: String(w),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d.toString().slice(0, 2000)));
+      const timer = setTimeout(() => child.kill("SIGKILL"), SHOT_TIMEOUT_MS);
+      child.on("error", (e) => {
+        clearTimeout(timer);
+        resolve({ ok: false, problems: [`renderer failed to start: ${e?.message || e}`] });
+      });
+      child.on("exit", () => {
+        clearTimeout(timer);
+        const line = stdout.split("\n").find((l) => l.startsWith("__SHOT__"));
+        if (!line) {
+          // A headless Linux box with no X is the common case here, and saying
+          // so is more useful than an empty report: the caller falls back to
+          // source review and says in the log that it did.
+          resolve({
+            ok: false,
+            problems: [`renderer produced no report: ${stderr.trim().split("\n").slice(-3).join(" / ") || "no output"}`],
+          });
+          return;
+        }
+        try {
+          resolve(JSON.parse(line.slice("__SHOT__".length)));
+        } catch (e) {
+          resolve({ ok: false, problems: [`unreadable report: ${e?.message || e}`] });
+        }
+      });
+    });
+  };
+  shotQueue = shotQueue.then(run, run);
+  return shotQueue;
+}
 
 /** @type {Set<import("node:http").ServerResponse>} */
 const sseClients = new Set();
@@ -1986,6 +2107,25 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { ...cors, "content-type": "application/json" });
       return res.end(JSON.stringify({ error: e?.message || "not found" }));
     }
+  }
+  if (req.url && req.url.startsWith("/bridge/shot")) {
+    const u = new URL(req.url, "http://localhost");
+    renderShot({
+      file: u.searchParams.get("path") ?? "",
+      out: u.searchParams.get("out") ?? "",
+      width: u.searchParams.get("width") ?? "",
+    })
+      .then((r) => {
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify(r));
+      })
+      .catch((e) => {
+        // Never a 500: the caller is an agent mid-round, and "the renderer is
+        // unavailable, review the source and say so" is a usable answer.
+        res.writeHead(200, { ...cors, "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, problems: [e?.message || String(e)] }));
+      });
+    return;
   }
   if (req.url === "/bridge/agents") {
     agentsPayload()

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AutoRefineInfo } from "../types";
 import { getLang, useT } from "../i18n";
 import { ENTRY_KINDS, harnessStats, hasVerdicts, type HarnessData, type HarnessStats } from "../runtime/learned";
@@ -23,6 +23,19 @@ export function LearnedOverview(props: {
 }) {
   const t = useT();
   const [pending, setPending] = useState(false);
+  // The cooldown readout is a clock, so it has to move on its own — without
+  // this the "won't learn for another N minutes" line is only true at the
+  // moment the pane happened to render.
+  const [now, setNow] = useState(() => Date.now());
+  const ticking =
+    props.autoRefine !== null &&
+    props.autoRefine.enabled &&
+    props.autoRefine.lastReviewAt !== undefined;
+  useEffect(() => {
+    if (!ticking) return;
+    const id = setInterval(() => setNow(Date.now()), 20_000);
+    return () => clearInterval(id);
+  }, [ticking]);
   // A workspace that has learned nothing shows four zeroes and no curve, which
   // demonstrates nothing. Stand in the worked example instead — dimmed, said out
   // loud, and gone the instant one real entry exists.
@@ -122,35 +135,97 @@ export function LearnedOverview(props: {
           never faked — when the daemon predates the status block. */}
       {ar !== null && (
         <div className="orule">
-          <label className="lauto">
-            <input
-              type="checkbox"
-              checked={ar.enabled}
-              disabled={pending || !props.online}
-              onChange={(e) => toggle(e.target.checked)}
-            />
-            <span>{t("let agents learn on their own")}</span>
-          </label>
-          {ar.enabled && (
-            <div className="dim">
-              {t("about every {n} turns, or when it tidies its context — at most once per {m} minutes.", {
-                n: ar.turnInterval ?? 25,
-                m: Math.round((ar.cooldownMs ?? 20 * 60_000) / 60_000),
-              })}
-              {ar.lastReviewAt !== undefined && (
-                <>
-                  <br />
-                  {t("last auto review {at}", { at: clock(ar.lastReviewAt) })}
-                  {ar.cooldownMs !== undefined &&
-                    ` · ${t("next auto learn no earlier than {at}", {
-                      at: clock(ar.lastReviewAt + ar.cooldownMs),
-                    })}`}
-                </>
-              )}
-            </div>
-          )}
+          <div className="arow">
+            <label className="lauto">
+              <input
+                type="checkbox"
+                checked={ar.enabled}
+                disabled={pending || !props.online}
+                onChange={(e) => toggle(e.target.checked)}
+              />
+              <span>{t("let agents learn on their own")}</span>
+            </label>
+            {/* Switched on, this used to be one grey sentence — the settings
+                read back at you. What a reader actually wants is the state:
+                whether it could fire right now, and how far into the cooldown
+                it is. The sentence's facts stay, split into the same
+                label/number chips the two rows above use. */}
+            {ar.enabled && <AutoState ar={ar} now={now} />}
+          </div>
+          {ar.enabled && <AutoRhythm ar={ar} now={now} />}
         </div>
       )}
     </div>
   );
+}
+
+const COOLDOWN_MS = 20 * 60_000;
+const TURN_INTERVAL = 25;
+
+/** Where the cooldown stands right now. Two states only, and both are things
+ *  the client can actually stand behind: inside the cooldown nothing can fire
+ *  (a guarantee), outside it the turn counter decides — and the daemon does
+ *  not report that counter, so this says "could", never "will". */
+function AutoState(props: { ar: AutoRefineInfo; now: number }) {
+  const t = useT();
+  const left = coolLeft(props.ar, props.now);
+  return (
+    <span className="rst">
+      <span className={left === null ? "sq" : "sq wait"} />
+      {left === null
+        ? t("could learn on any turn now")
+        : t("won't learn for another {m} min", { m: Math.max(1, Math.ceil(left / 60_000)) })}
+    </span>
+  );
+}
+
+/** The cooldown as a bar, then the facts that set the rhythm. */
+function AutoRhythm(props: { ar: AutoRefineInfo; now: number }) {
+  const t = useT();
+  const ar = props.ar;
+  const cool = ar.cooldownMs ?? COOLDOWN_MS;
+  const last = ar.lastReviewAt;
+  const left = coolLeft(ar, props.now);
+
+  /** One fact with its number in the mono face, wherever the sentence puts it:
+   *  Chinese leads with the count ("大约每 25 轮"), English trails it. Splitting
+   *  the translated string on a sentinel keeps both readings from one key. */
+  const chip = (key: string, value: string | number) => {
+    const S = "\u0000";
+    const [pre, post] = t(key, { n: S, m: S, at: S }).split(S);
+    return (
+      <span className="kd">
+        {pre.trim() !== "" && <span>{pre.trim()}</span>}
+        <span className="c">{value}</span>
+        {(post ?? "").trim() !== "" && <span>{(post ?? "").trim()}</span>}
+      </span>
+    );
+  };
+
+  return (
+    <>
+      {left !== null && (
+        <div className="rbar">
+          <i style={{ width: `${Math.round(((cool - left) / cool) * 100)}%` }} />
+        </div>
+      )}
+      <div className="brk">
+        <div className="bl">{t("when it learns")}</div>
+        <div className="kinds">
+          {chip("about every {n} turns", ar.turnInterval ?? TURN_INTERVAL)}
+          {ar.compact !== false && <span className="kd">{t("also when it tidies its context")}</span>}
+          {chip("at least {m} minutes apart", Math.round(cool / 60_000))}
+          {last !== undefined && chip("last auto review {at}", clock(last))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Milliseconds left before auto-learn is allowed again, or null when nothing
+ *  is holding it back — no review yet this process, or the cooldown is spent. */
+function coolLeft(ar: AutoRefineInfo, now: number): number | null {
+  if (ar.lastReviewAt === undefined) return null;
+  const left = ar.lastReviewAt + (ar.cooldownMs ?? COOLDOWN_MS) - now;
+  return left > 0 ? left : null;
 }

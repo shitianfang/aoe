@@ -184,20 +184,7 @@ export function LearnedView(props: {
     }
   };
 
-  if (data !== null && !props.sel) {
-    return (
-      <div className="learn">
-        <LearnedOverview
-          data={data}
-          stats={harnessStats(data)}
-          autoRefine={props.autoRefine}
-          online={props.online}
-          onToggleAuto={props.onToggleAuto}
-        />
-      </div>
-    );
-  }
-  if (rows === null || data === null) {
+  if (data === null || rows === null) {
     return (
       <div className="learn">
         <div className="colnote" style={{ padding: 0 }}>
@@ -206,133 +193,155 @@ export function LearnedView(props: {
       </div>
     );
   }
-  if (props.sel !== null && (props.sel.what ?? "lesson") === "entry") {
-    const e = data.entries.find((x) => x.id === props.sel?.id && x.owner === props.sel?.owner);
-    return (
-      <div className="learn">
-        {e === undefined ? (
-          <div className="colnote" style={{ padding: 0 }}>
-            {t("this lesson is no longer in the record.")}
-          </div>
-        ) : (
-          <EntryDetail entry={e} lessons={data.lessons} onSelect={props.onSelect} />
-        )}
-      </div>
-    );
-  }
-  if (!sel) {
-    return (
-      <div className="learn">
-        <div className="colnote" style={{ padding: 0 }}>
-          {t("this lesson is no longer in the record.")}
-        </div>
-      </div>
-    );
-  }
 
-  const src = lessonSourceText(sel.source);
-  const state = rolled[selKey];
-  const changes = sel.changes;
-  // `[]` is the harness saying this round applied nothing; `undefined` is an
-  // older record that never wrote the field. Only the first is a real no-op —
-  // and a no-op has nothing to undo, so it gets no buttons either.
-  const nothingChanged = changes !== undefined && changes.length === 0;
-  const reason = sel.evidence !== undefined && sel.evidence !== "" ? sel.evidence : null;
-  const outcome = sel.outcome !== undefined && sel.outcome !== "" ? sel.outcome : null;
+  const gone = (
+    <div className="colnote" style={{ padding: 0 }}>
+      {t("this lesson is no longer in the record.")}
+    </div>
+  );
+
+  /** One round's full record: what it changed, why it was kept, and the two
+   *  operations on it. */
+  const lessonDetail = (sel: LessonRecord) => {
+    const src = lessonSourceText(sel.source);
+    const state = rolled[selKey];
+    const changes = sel.changes;
+    // `[]` is the harness saying this round applied nothing; `undefined` is an
+    // older record that never wrote the field. Only the first is a real no-op —
+    // and a no-op has nothing to undo, so it gets no buttons either.
+    const nothingChanged = changes !== undefined && changes.length === 0;
+    const reason = sel.evidence !== undefined && sel.evidence !== "" ? sel.evidence : null;
+    const outcome = sel.outcome !== undefined && sel.outcome !== "" ? sel.outcome : null;
+
+    return (
+      <>
+        <div className="edetail" style={{ marginTop: 0 }}>
+          <div className="eh">
+            {sel.owner === null ? (
+              <span className="id">{t("for every workspace")}</span>
+            ) : (
+              <>
+                {sel.owner === "master" ? <span className="chip master sm" /> : <BotAvatar seed={sel.owner} sm />}
+                <span className="id">{sel.owner}</span>
+              </>
+            )}
+            <span className="tm">
+              {when(sel.created_at)}
+              {src !== null ? ` · ${t("from {source}", { source: src })}` : ""}
+            </span>
+          </div>
+          {/* The headline of the pane: the lesson's own summary. Spacing lives
+              in .hfull now — the metadata row above stays small on purpose. */}
+          <div className="hfull">{sel.trigger ?? t("lesson")}</div>
+          {nothingChanged ? (
+            <div className="hnone">{t("nothing was changed — the review kept everything as it was.")}</div>
+          ) : (changes ?? []).length > 0 ? (
+            <div className="hkv">
+              <span className="hk">{t("what changed")}</span>
+              <span className="hv">
+                {(changes ?? []).map((c, i) => {
+                  const p = lessonChangeText(c);
+                  return (
+                    <span className="chg" key={i}>
+                      {p.what}
+                      {p.id !== null && <span className="cid">{p.id}</span>}
+                    </span>
+                  );
+                })}
+              </span>
+            </div>
+          ) : null}
+          {/* The fold is labelled with what it hides, so a closed pane still says
+              what you would be opening. The first section reuses that label
+              rather than repeating it one line lower. */}
+          {(reason !== null || outcome !== null) && (
+            <>
+              <button className="more" onClick={() => setOpen(!open)} aria-expanded={open}>
+                {reason !== null ? t("why it was kept") : t("expected")}
+                <span className="cv">{open ? "▴" : "▾"}</span>
+              </button>
+              {open && (
+                <>
+                  {reason !== null && (
+                    <div className="hkv">
+                      <span className="hv">{reason}</span>
+                    </div>
+                  )}
+                  {outcome !== null && (
+                    <div className="hkv">
+                      {reason !== null && <span className="hk">{t("expected")}</span>}
+                      <span className="hv">
+                        {outcome} <span className="dim">{t("(not checked by the system)")}</span>
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          {!nothingChanged && (
+            <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
+              {isRollback(sel) ? null : state === "done" ? (
+                <span className="note">{t("rolled back")}</span>
+              ) : (
+                <button className="btn" disabled={state === "pending"} onClick={() => rollBack(sel)}>
+                  {state === "pending" ? t("rolling back…") : t("roll back")}
+                </button>
+              )}
+              {sel.owner !== null && (
+                <button className="btn" onClick={() => applyEverywhere(sel)} disabled={globalRun !== "idle"}>
+                  {globalRun === "done"
+                    ? t("kept everywhere")
+                    : globalRun === "pending"
+                      ? t("reviewing…")
+                      : t("apply everywhere")}
+                </button>
+              )}
+              {sel.owner !== null && <span className="note">{t("runs a new review — result may differ")}</span>}
+            </div>
+          )}
+        </div>
+        {err !== null && (
+          <div className="colnote" style={{ padding: "10px 0 0", color: "var(--red)" }}>
+            {err}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const detail =
+    props.sel === null
+      ? null
+      : (props.sel.what ?? "lesson") === "entry"
+        ? (() => {
+            const e = data.entries.find((x) => x.id === props.sel?.id && x.owner === props.sel?.owner);
+            return e === undefined ? gone : (
+              <EntryDetail entry={e} lessons={data.lessons} onSelect={props.onSelect} />
+            );
+          })()
+        : sel === null
+          ? gone
+          : lessonDetail(sel);
 
   return (
     <div className="learn">
-      <div className="edetail" style={{ marginTop: 0 }}>
-        <div className="eh">
-          {sel.owner === null ? (
-            <span className="id">{t("for every workspace")}</span>
-          ) : (
-            <>
-              {sel.owner === "master" ? <span className="chip master sm" /> : <BotAvatar seed={sel.owner} sm />}
-              <span className="id">{sel.owner}</span>
-            </>
-          )}
-          <span className="tm">
-            {when(sel.created_at)}
-            {src !== null ? ` · ${t("from {source}", { source: src })}` : ""}
-          </span>
-        </div>
-        {/* The headline of the pane: the lesson's own summary. Spacing lives
-            in .hfull now — the metadata row above stays small on purpose. */}
-        <div className="hfull">{sel.trigger ?? t("lesson")}</div>
-        {nothingChanged ? (
-          <div className="hnone">{t("nothing was changed — the review kept everything as it was.")}</div>
-        ) : (changes ?? []).length > 0 ? (
-          <div className="hkv">
-            <span className="hk">{t("what changed")}</span>
-            <span className="hv">
-              {(changes ?? []).map((c, i) => {
-                const p = lessonChangeText(c);
-                return (
-                  <span className="chg" key={i}>
-                    {p.what}
-                    {p.id !== null && <span className="cid">{p.id}</span>}
-                  </span>
-                );
-              })}
-            </span>
-          </div>
-        ) : null}
-        {/* The fold is labelled with what it hides, so a closed pane still says
-            what you would be opening. The first section reuses that label
-            rather than repeating it one line lower. */}
-        {(reason !== null || outcome !== null) && (
-          <>
-            <button className="more" onClick={() => setOpen(!open)} aria-expanded={open}>
-              {reason !== null ? t("why it was kept") : t("expected")}
-              <span className="cv">{open ? "▴" : "▾"}</span>
-            </button>
-            {open && (
-              <>
-                {reason !== null && (
-                  <div className="hkv">
-                    <span className="hv">{reason}</span>
-                  </div>
-                )}
-                {outcome !== null && (
-                  <div className="hkv">
-                    {reason !== null && <span className="hk">{t("expected")}</span>}
-                    <span className="hv">
-                      {outcome} <span className="dim">{t("(not checked by the system)")}</span>
-                    </span>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
-        {!nothingChanged && (
-          <div className="lf" style={{ paddingLeft: 0, paddingRight: 0 }}>
-            {isRollback(sel) ? null : state === "done" ? (
-              <span className="note">{t("rolled back")}</span>
-            ) : (
-              <button className="btn" disabled={state === "pending"} onClick={() => rollBack(sel)}>
-                {state === "pending" ? t("rolling back…") : t("roll back")}
-              </button>
-            )}
-            {sel.owner !== null && (
-              <button className="btn" onClick={() => applyEverywhere(sel)} disabled={globalRun !== "idle"}>
-                {globalRun === "done"
-                  ? t("kept everywhere")
-                  : globalRun === "pending"
-                    ? t("reviewing…")
-                    : t("apply everywhere")}
-              </button>
-            )}
-            {sel.owner !== null && <span className="note">{t("runs a new review — result may differ")}</span>}
-          </div>
-        )}
+      {detail}
+      {/* The standing summary of the whole mechanism. It used to BE the empty
+          state and vanished the moment you opened a record — so the one place
+          that answers "what has this actually done" was the place you left as
+          soon as you got curious. It now sits under whatever is open, in the
+          space a record card was leaving empty anyway; the card keeps the top
+          of the pane, so opening one never moves what you clicked. */}
+      <div className={detail === null ? "stand" : "stand under"}>
+        <LearnedOverview
+          data={data}
+          stats={harnessStats(data)}
+          autoRefine={props.autoRefine}
+          online={props.online}
+          onToggleAuto={props.onToggleAuto}
+        />
       </div>
-      {err !== null && (
-        <div className="colnote" style={{ padding: "10px 0 0", color: "var(--red)" }}>
-          {err}
-        </div>
-      )}
     </div>
   );
 }

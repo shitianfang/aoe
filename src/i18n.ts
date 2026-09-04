@@ -245,8 +245,13 @@ const ZH: Record<string, string> = {
   "agents keep small improvements as they work — they appear here on their own.":
     "智能体干活时会自己记下小改进,自动出现在这里。",
   "let agents learn on their own": "开启自主学习",
-  "about every {n} turns, or when it tidies its context — at most once per {m} minutes.":
-    "大约每 {n} 轮学一次,清理旧对话时也会学;两次之间至少隔 {m} 分钟。",
+  /* the auto rhythm, as state + facts rather than one sentence */
+  "could learn on any turn now": "随时可能学一次",
+  "won't learn for another {m} min": "{m} 分钟内不会学",
+  "when it learns": "什么时候学",
+  "about every {n} turns": "大约每 {n} 轮",
+  "also when it tidies its context": "清理旧对话时也学",
+  "at least {m} minutes apart": "两次至少隔 {m} 分钟",
   "for one agent": "只给某个智能体",
   "for every workspace": "所有工作区通用",
   "something new": "有新内容",

@@ -121,10 +121,9 @@ function VersionPane(props: {
   // The zoom is stated, not silent: a page at 34% is a projection, and the
   // user should know that before judging its type sizes.
   const zoom = kind === "html" && scale < 1 ? `${Math.round(scale * 100)}% · ` : "";
-  // "It iterated three times, one version" only looks like a bug while the card
-  // stays quiet about the rounds that moved nothing. Say the count, and for a
-  // version with no label of its own, say how much moved.
-  const same = version?.same ? `${t("no change")} ×${version.same} · ` : "";
+  // A version with no label of its own says how much moved; the rounds that
+  // moved nothing are stated in the log under the cards, not on the card —
+  // the card is the picture.
   const delta =
     !version?.note && version?.add !== undefined ? `+${version.add} −${version.del} · ` : "";
 
@@ -144,7 +143,6 @@ function VersionPane(props: {
       <div className="vh">
         <b>{vlabel ? (props.current && !props.head ? `${vlabel} · ${t("current")}` : vlabel) : t("live")}</b>
         <span>
-          {same}
           {delta}
           {zoom}
           {version ? fmtTime(version.at) : t("unsaved this turn")}
@@ -186,7 +184,7 @@ export function PreviewView(props: {
       <div className="view">
         <div className="prev" ref={measure}>
           <div className="colnote" style={{ padding: 0 }}>
-            {t("nothing published yet — files an agent writes will preview here.")}
+            {t("nothing made yet — pages, documents and images an agent writes preview here.")}
           </div>
         </div>
       </div>

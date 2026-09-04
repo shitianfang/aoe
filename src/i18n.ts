@@ -83,7 +83,6 @@ export function useT(): typeof t {
 const ZH: Record<string, string> = {
   /* rail + columns */
   Agents: "智能体",
-  Files: "文件",
   "Self-evolution": "自进化",
   Skills: "技能",
   Extensions: "扩展",
@@ -230,12 +229,12 @@ const ZH: Record<string, string> = {
   on: "启用",
   off: "关闭",
 
-  /* files column */
-  "no file activity yet.": "还没有文件活动。",
-  "files agents edit will appear here — who changed what, when.":
-    "智能体改动的文件会出现在这里 —— 谁、改了什么、什么时候。",
-  "who changed what, when.": "谁、改了什么、什么时候。",
-  "open an html, md, png or pdf file to preview it.": "打开 html、md、png 或 pdf 文件即可预览。",
+  /* artifacts column */
+  Artifacts: "作品",
+  "nothing made yet.": "还没有作品。",
+  "pages, documents and images an agent writes land here — who made it, when.":
+    "智能体写出的页面、文档、图会落在这里 —— 谁做的、什么时候。",
+  versions: "版本",
   diff: "对比",
 
   /* self-evolution column (⚡) */
@@ -426,8 +425,8 @@ const ZH: Record<string, string> = {
   "what changed": "改了什么",
 
   /* preview */
-  "nothing published yet — files an agent writes will preview here.":
-    "还没有发布内容 —— 智能体写入的文件会在这里预览。",
+  "nothing made yet — pages, documents and images an agent writes preview here.":
+    "还没有作品 —— 智能体写出的页面、文档、图会在这里预览。",
   live: "实时",
   published: "已发布",
   current: "当前",
@@ -441,6 +440,7 @@ const ZH: Record<string, string> = {
   "{n} takes to pick from": "{n} 版方案待选",
   "click to shrink": "点一下缩回",
   "republished unchanged as": "原样重发为",
+  kept: "已存档",
   "{v} · first version": "{v} · 第一版",
   "{add} lines added, {del} removed": "改了 +{add} −{del} 行(这一版没给说明)",
   "{n} later round(s) rewrote the file to these same bytes": "后来有 {n} 轮把文件写成了同样的字节 —— 那几轮没有改动",

@@ -1960,6 +1960,25 @@ export function App() {
   const rootStateOf = (name: string): AgentState =>
     state.rootStates[name] ??
     (state.others.find((a) => a.name === name)?.state === "running" ? "working" : "idle");
+  // The Files column is also the way into Preview by hand, so it lists what
+  // the snapshot store holds and not only what this session watched happen —
+  // otherwise a restart leaves no row to click and Preview can only appear on
+  // its own. Session rows win: they know who wrote the file and when.
+  const fileRows: FileActivity[] = (() => {
+    const rows = [...state.files];
+    for (const p of state.previewFiles) {
+      if (rows.some((f) => f.path === p.path || f.path.endsWith(`/${p.path}`) || f.name === p.name)) continue;
+      const last = p.versions[p.versions.length - 1];
+      rows.push({
+        path: p.path,
+        name: p.name,
+        who: p.declared ? tr("published") : tr("kept"),
+        at: last ? hhmm(Date.parse(last.at)) : "",
+      });
+    }
+    return rows;
+  })();
+
   // Who Preview says is writing: the agent behind the most recent file, while
   // it is still working. Silent the rest of the time — a status line that is
   // always lit says nothing.
@@ -2459,7 +2478,7 @@ export function App() {
             onRefreshOthers={refreshOthers}
           />
         ) : (
-          <FilesColumn files={state.files} onOpenPreview={openPreview} />
+          <FilesColumn files={fileRows} onOpenPreview={openPreview} />
         )}
         <div className="vgutter" onMouseDown={sideDrag("col")} onDoubleClick={resetSide("col")} />
         <div className="center">

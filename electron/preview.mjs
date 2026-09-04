@@ -57,6 +57,10 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
   /** Keys that gained a version in the most recent flush — what `live` means
    *  once the turn has ended and `touched` is empty again. */
   let lastFlush = new Set();
+  /** Keys a publish already versioned during this turn. The turn-end scan then
+   *  sees those same bytes, and that is the same event twice — not a round
+   *  that changed nothing. */
+  let publishedThisTurn = new Set();
 
   function loadIndex() {
     try {
@@ -107,6 +111,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
   function flush() {
     const { changed, same } = snapshotTouched();
     touched.clear();
+    publishedThisTurn = new Set();
     lastFlush = new Set(changed);
     // A same-bytes round notifies too, with an empty `changed`: the client
     // re-pulls so the card can say the round moved nothing, but Preview only
@@ -205,7 +210,7 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       } catch {
         continue; // deleted or unreadable — nothing to snapshot
       }
-      const r = snapshotKey(rel, buf);
+      const r = snapshotKey(rel, buf, publishedThisTurn.has(rel) ? { quiet: true } : {});
       if (r === true) changed.push(rel);
       else if (r === "same") same.push(rel);
     }
@@ -234,7 +239,10 @@ export function createPreviewStore({ workspaceDir, snapshotsRoot, onUpdate }) {
       return false; // declared but unreadable — nothing to snapshot
     }
     const changed = snapshotKey(key, buf, { declared: true, label: p.label, at: p.timestamp });
-    if (changed === true) lastFlush = new Set([key]);
+    if (changed === true) {
+      lastFlush = new Set([key]);
+      publishedThisTurn.add(key);
+    }
     // Same bytes as the last version: still worth a re-pull (the card now says
     // the round changed nothing), but nothing to open Preview for.
     if (changed && typeof onUpdate === "function") onUpdate(changed === true ? [key] : []);

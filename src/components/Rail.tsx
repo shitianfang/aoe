@@ -32,11 +32,15 @@ export function Rail(props: {
       </button>
       <button
         className={props.column === "files" ? "rbtn on" : "rbtn"}
-        title={t("Files")}
+        title={t("Artifacts")}
         onClick={() => props.onColumn("files")}
       >
+        {/* A web page: window frame, top bar, a stub of an address field.
+            What lands in this column is almost always a page the client
+            renders, so the icon says page rather than folder or artboard. */}
         <svg viewBox="0 0 24 24">
-          <path d="M4 6h6l2 2h8v11H4Z" />
+          <rect x="3" y="4" width="18" height="16" />
+          <path d="M3 9h18M6 6.5h4" />
         </svg>
       </button>
       <button
@@ -54,8 +58,12 @@ export function Rail(props: {
         title={t("Skills")}
         onClick={() => props.onColumn("skills")}
       >
+        {/* A four-pointed star: a specialty. The rail's other glyphs are all
+            rectilinear, so the one shape that is not carries "what it is good
+            at" without borrowing the plug (extensions) or the bolt
+            (self-evolution). */}
         <svg viewBox="0 0 24 24">
-          <rect x="7" y="7" width="10" height="10" transform="rotate(45 12 12)" />
+          <path d="M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z" />
         </svg>
       </button>
       <button

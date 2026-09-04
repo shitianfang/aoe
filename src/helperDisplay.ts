@@ -1,4 +1,4 @@
-import type { ChildInfo } from "./types";
+import type { ChildInfo, LessonEditSide } from "./types";
 import { t } from "./i18n";
 
 /** Clean identity hues (semantic green/red stay reserved for state). */
@@ -131,6 +131,17 @@ export function lessonSourceText(source: string | undefined): string | null {
   if (source === "manual") return t("manual");
   if (source === "agent") return t("the agent");
   return null; // unknown/older record — say nothing rather than guess
+}
+
+/** The readable half of an edit's before/after. The runtime sends these as
+ *  whole harness entries (RefinementResult.appliedEdits[i].before/after), and
+ *  the entry's own content is what a diff line is about; a plain string is an
+ *  older record and passes through unchanged. Never render the side directly —
+ *  a record object as a React child unmounts the whole app. */
+export function lessonEditSideText(side: LessonEditSide | undefined): string | null {
+  if (side === undefined || side === null) return null;
+  const text = typeof side === "string" ? side : side.content ?? side.title ?? "";
+  return text.trim() === "" ? null : text;
 }
 
 /** One harness `changes` entry — the machine string `"create memory:some_id"` —

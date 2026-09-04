@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { LessonResult } from "../types";
-import { lessonSourceText } from "../helperDisplay";
+import { lessonEditSideText, lessonSourceText } from "../helperDisplay";
 import { bridgeCmd } from "../runtime/bridge";
 import { useT } from "../i18n";
 
@@ -71,18 +71,26 @@ export function LessonCard(props: { result: LessonResult; at?: string }) {
         <span className="lv">
           {(r.appliedEdits ?? []).length === 0
             ? t("none recorded")
-            : (r.appliedEdits ?? []).map((e) => (
-                <span className="edit" key={e.id}>
-                  {t(e.kind)} · {e.title}
-                  {/* real results may omit `applied`; only an explicit false means failure */}
-                  {e.applied === false ? (
-                    <span className="dim"> — {t("not applied")}{e.error ? ` · ${e.error}` : ""}</span>
-                  ) : null}
-                  {e.before ? <span className="dl del">− {e.before}</span> : null}
-                  {e.after ? <span className="dl add">+ {e.after}</span> : null}
-                  {!e.before && !e.after && e.content ? <span className="dl add">+ {e.content}</span> : null}
-                </span>
-              ))}
+            : (r.appliedEdits ?? []).map((e) => {
+                // A live edit carries whole harness records here, not strings —
+                // read the text out of them before anything reaches React.
+                const before = lessonEditSideText(e.before);
+                const after = lessonEditSideText(e.after);
+                return (
+                  <span className="edit" key={e.id}>
+                    {t(e.kind)} · {e.title}
+                    {/* real results may omit `applied`; only an explicit false means failure */}
+                    {e.applied === false ? (
+                      <span className="dim"> — {t("not applied")}{e.error ? ` · ${e.error}` : ""}</span>
+                    ) : null}
+                    {before !== null ? <span className="dl del">− {before}</span> : null}
+                    {after !== null ? <span className="dl add">+ {after}</span> : null}
+                    {before === null && after === null && e.content ? (
+                      <span className="dl add">+ {e.content}</span>
+                    ) : null}
+                  </span>
+                );
+              })}
         </span>
         {r.expectedOutcome ? (
           <>

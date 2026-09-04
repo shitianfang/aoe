@@ -26,6 +26,13 @@ export interface LearnedSel {
   what?: "lesson" | "entry";
 }
 
+/** One side of an edit's diff. A live result hands over whole harness records
+ *  — the entry that was replaced, the entry that was written — while the sample
+ *  harness and older records carry plain text. Both shapes are real, so both
+ *  are named here and every render site goes through `lessonEditSideText`:
+ *  handing the record object straight to React blanks the window. */
+export type LessonEditSide = string | { title?: string; content?: string };
+
 /** One harness edit inside a kept lesson (RefinementResult.appliedEdits[i]).
  *  Live results carry action/content for creates; applied may be absent. */
 export interface LessonEdit {
@@ -35,8 +42,8 @@ export interface LessonEdit {
   applied?: boolean;
   action?: string;
   content?: string;
-  before?: string;
-  after?: string;
+  before?: LessonEditSide;
+  after?: LessonEditSide;
   error?: string;
 }
 

@@ -460,6 +460,7 @@ const ZH: Record<string, string> = {
   unattended: "自动运行",
   "driven by you": "由你推进",
   "driven by objective": "目标推进中",
+  "running unattended": "自动运行中",
   Status: "状态",
   Budget: "预算",
   Objective: "目标",

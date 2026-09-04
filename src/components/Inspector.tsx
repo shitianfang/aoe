@@ -367,12 +367,24 @@ export function Inspector(props: {
 
   // The header's third word answers "who is driving this agent" — the state
   // words (idle/running) live in the panes; here they were redundant.
+  // Unattended outranks the objective here: it is the one that means "it is
+  // going without you right now", and the objective still names itself in its
+  // own panel two rows down. It gets the ⚡ column's pulsing green square, so
+  // the mode is readable from across the room rather than from one grey word.
+  const unattended = Boolean(auto?.enabled);
   const subjectHeader = (
     <div className="subj">
       {root ? <BotAvatar seed={root} /> : <span className="chip master" />}
       <span className="nm">{subjectName}</span>
-      <span className="st">
-        {root && !loaded ? t("loading…") : goalActive ? t("driven by objective") : t("driven by you")}
+      <span className={unattended ? "st on" : "st"}>
+        {unattended && <i className="sti run" />}
+        {root && !loaded
+          ? t("loading…")
+          : unattended
+            ? t("running unattended")
+            : goalActive
+              ? t("driven by objective")
+              : t("driven by you")}
       </span>
     </div>
   );
@@ -561,10 +573,16 @@ export function Inspector(props: {
       </div>
 
       {auto?.enabled ? (
-        <div className="panel">
+        /* .on colours the surface: off and on used to differ by one grey word
+           in a 8.5px chip, so turning the mode on changed nothing you could
+           see. Background, not a border — the rail separates by colour. */
+        <div className="panel on">
           <div className="phead">
             <span>{t("Unattended")}</span>
-            <code>{t("on")}</code>
+            <span className="pon">
+              <i className="sti run" />
+              <code className="ok">{t("running")}</code>
+            </span>
           </div>
           <div className="rule">
             {t(

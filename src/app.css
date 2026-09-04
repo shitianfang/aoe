@@ -793,10 +793,23 @@ body.resizing iframe { pointer-events: none; }
 .insp .subj { display: flex; align-items: center; gap: 9px; min-height: 46px; padding: 0 14px; background: var(--win); flex-shrink: 0; }
 .insp .subj .nm { font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--t1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insp .subj .st { margin-left: auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .04em; color: var(--t3); flex-shrink: 0; }
+/* The driver line is the first thing read in the rail, so unattended says so
+   there too — lit, with the square, and never the muted ink. */
+.insp .subj .st.on { display: inline-flex; align-items: center; gap: 5px; color: var(--green); }
+.insp .subj .st.on .sti { margin-left: 0; }
 .panel { padding: 13px 14px; border-bottom: 1px dashed var(--hair); }
 .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--t3); }
 .phead code { font-family: var(--mono); color: var(--t1); }
 .phead code.ok { color: var(--green); }
+/* Unattended, running. The on and off panels used to be the same grey block
+   telling you which one you were looking at in one 8.5px word, so switching
+   the mode on was invisible from a step back. The surface takes the state
+   (colour, not a border — the rail's own way of separating things) and the
+   heading takes the ⚡ column's running square, the same green pulse that
+   means "happening right now" everywhere else in the shell. */
+.panel.on { background: var(--green-bg); }
+.phead .pon { display: inline-flex; align-items: center; gap: 5px; }
+.phead .pon .sti { margin-left: 0; }
 .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 12px; }
 .kv .k { color: var(--t2); }
 .kv .v { font-family: var(--mono); font-size: 10px; color: var(--t1); }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AutoRefineInfo, LearnedSel } from "../types";
 import { lessonChangeText, lessonSourceText } from "../helperDisplay";
 import { bridgeCmd } from "../runtime/bridge";
@@ -142,6 +142,17 @@ export function LearnedView(props: {
     setErr(null);
     setOpen(false);
   }, [selKey]);
+
+  // The record opens under the overview now, and the overview is often taller
+  // than the pane — so a click in the column can land entirely below the fold
+  // and read as nothing having happened. `nearest` scrolls the least that still
+  // shows the record, and leaves the pane alone when it is already on screen.
+  const recRef = useRef<HTMLDivElement | null>(null);
+  const ready = data !== null;
+  useEffect(() => {
+    if (props.sel === null || !ready) return;
+    recRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selKey, ready]);
 
   const sel = props.sel
     ? rows?.find((r) => r.id === props.sel?.id && r.owner === props.sel?.owner) ?? null
@@ -326,14 +337,13 @@ export function LearnedView(props: {
 
   return (
     <div className="learn">
-      {detail}
-      {/* The standing summary of the whole mechanism. It used to BE the empty
-          state and vanished the moment you opened a record — so the one place
-          that answers "what has this actually done" was the place you left as
-          soon as you got curious. It now sits under whatever is open, in the
-          space a record card was leaving empty anyway; the card keeps the top
-          of the pane, so opening one never moves what you clicked. */}
-      <div className={detail === null ? "stand" : "stand under"}>
+      {/* The standing summary of the whole mechanism keeps the top of the pane.
+          It used to BE the empty state and vanished the moment you opened a
+          record; it then moved under the open record, which meant every click in
+          the column shoved the counts and the curve down the page. The summary
+          is the fixed ground of this surface and a record is detail read against
+          it, so the summary stays put and the record opens below it. */}
+      <div className={detail === null ? "stand" : "stand over"}>
         <LearnedOverview
           data={data}
           stats={harnessStats(data)}
@@ -342,6 +352,11 @@ export function LearnedView(props: {
           onToggleAuto={props.onToggleAuto}
         />
       </div>
+      {detail !== null && (
+        <div className="rec" ref={recRef}>
+          {detail}
+        </div>
+      )}
     </div>
   );
 }

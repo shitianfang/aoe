@@ -99,11 +99,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* learned pane (one lesson's full record) */
 .learn { flex: 1; overflow-y: auto; padding: 18px; }
-/* The overview is not the pane's empty state any more — it stands under
-   whatever record is open. Under a card it takes the card's own measure so the
+/* The overview is not the pane's empty state any more — it stands above
+   whatever record is open. Over a card it takes the card's own measure so the
    two read as one column; on its own it keeps the full pane, as before. The
    card's hairline is the separation — no rule is needed between them. */
-.learn .stand.under { margin-top: 30px; max-width: 680px; }
+.learn .stand.over { margin-bottom: 30px; max-width: 680px; }
 .learn .sec { padding-left: 0; }
 /* A record is prose: past ~70 characters a line stops being readable, and the
    pane can be half a 1500px window. The box stops where the text stops. */

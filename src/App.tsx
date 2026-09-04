@@ -567,7 +567,6 @@ export function App() {
     bridge: null,
     goal: null,
     children: [],
-    claudeAgents: [],
     helperEvents: {},
     helperTranscripts: {},
     helperWorking: {},
@@ -1705,8 +1704,6 @@ export function App() {
   const sendViaNim = useCallback(async (text: string, masterId: string) => {
     const abort = new AbortController();
     abortRef.current = abort;
-    // Last turn's subagent cards make way for this turn's.
-    setState((s) => (s.claudeAgents.length ? { ...s, claudeAgents: [] } : s));
     const settle = (patch: (t: TimelineItem) => TimelineItem | null, error?: string) =>
       setState((s) => ({
         ...s,
@@ -1729,16 +1726,6 @@ export function App() {
           }));
         },
         abort.signal,
-        // Tool activity (claude path) rides the same strip the daemon uses.
-        (label) => setState((s) => ({ ...s, working: label })),
-        // Task subagents become read-only cards in the Agents column.
-        (sa) =>
-          setState((s) => ({
-            ...s,
-            claudeAgents: s.claudeAgents.some((x) => x.id === sa.id)
-              ? s.claudeAgents.map((x) => (x.id === sa.id ? sa : x))
-              : [...s.claudeAgents, sa],
-          })),
       );
       historyRef.current.push({ role: "assistant", content: reply });
       settle((t) => (t.kind === "master" ? { ...t, streaming: false } : t));
@@ -2460,7 +2447,6 @@ export function App() {
             master={state.master}
             workspace={state.bridge?.workspace || "default"}
             children={state.children}
-            claudeAgents={state.claudeAgents}
             others={state.others}
             selected={state.selectedAgent}
             selectedRoot={state.selectedRoot}

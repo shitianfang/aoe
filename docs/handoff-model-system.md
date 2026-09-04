@@ -1,4 +1,7 @@
-# HANDOFF：模型系统（claude -p 包装器 + NIM 目录 + daemon 模型切换）
+# HANDOFF：模型系统（NIM 目录 + Vercel AI Gateway + daemon 模型切换）
+
+> **2026-09-04：`claude -p` 那条后端已按用户要求整条移除**（§2b 保留为历史记录，标了作废）。
+> 现在离线只有两条路：AI Gateway 和 NIM。
 
 
 > 写于本仓库把客户端与运行时并库之前。当时二者是两个独立 checkout，文中的 `core/`
@@ -8,15 +11,14 @@
 
 ## 0. 三十秒摘要
 
-- master 的对话有三个后端：**daemon**（在线时唯一路径，模型由 runtime 决定）、**claude -p**（离线回退之一，本机 Claude Code 登录）、**NIM**（离线回退之二）。三者共用 Composer 左下**同一个模型下拉**：在线列 runtime 目录并真切换（`set_model`），离线选 Claude Code / NIM 模型。
-- claude -p 不是纯文字包装：开了工具（`--permission-mode acceptEdits --allowedTools Bash,WebSearch,WebFetch`），cwd 钉在工作区目录，是真 agent。它的 Task 子 agent 显示为 Agents 栏 master 下的**只读卡片**（不可对话，这是 CLI 机制边界）。
+- master 的对话有三个后端：**daemon**（在线时唯一路径，模型由 runtime 决定）、**AI Gateway**、**NIM**（后两者是离线回退）。三者共用 Composer 左下**同一个模型下拉**：在线列 runtime 目录并真切换（`set_model`），离线选 Gateway / NIM 模型。原有的第四条 **claude -p** 已于 2026-09-04 移除。
 - NIM 模型列表**全部经过实时验证**——旧目录会轮换下架（llama-3.3/qwen2.5/deepseek-r1/kimi-k2 都已 404；`openai/gpt-oss-120b` 2026-09-03T08:00Z EOL，现在直接 410 Gone），改列表前必须先查 `GET https://integrate.api.nvidia.com/v1/models`。stepfun 不在 NIM 上。
 - 所有链路都端到端实测过（curl 真调用 + 真实事件流），非纸面。
 
 ## 1. 用户既定决策（不要走回头路）
 
 - **模型选择只放 Composer 输入区**，不做扩展开关——用户明确否决过 Extensions 栏的启用/关闭方案。互斥由"单一选中值"结构保证。
-- **不引入 Claude Agent SDK**——用户警惕重型方案（"别把 primeAgent 重写一遍"）。claude -p 加 CLI 参数已覆盖需求；SDK 只在确需自定义 MCP 工具桥接时再议。
+- **不引入 Claude Agent SDK**——用户警惕重型方案（"别把 primeAgent 重写一遍"）。（2026-09-04 起连 claude -p 也不要了，这条决策更没有回头的理由。）
 - **绝不把订阅 token 伪装成 API 端点**，那才是触发风控的行为。spawn 官方 CLI（继承环境登录）是唯一合规路径。
 - 模型列表要**新、快、好**，不上过时模型。
 
@@ -35,7 +37,12 @@
   pro / minimax 不回传也是 200——所以 models.json 里只有 flash 带 compat 块**不是 bug**，
   加不加都能跑。真要统一，也只该加在会吐的那四个上。
 
-### 2b. claude -p（离线回退，选 "Claude Code"）
+### 2b. claude -p（离线回退，选 "Claude Code"）—— **2026-09-04 已整条移除**
+
+> 用户要求去掉。删掉的是：`src/runtime/claude.ts`、bridge 的 `handleClaude()` 与 `POST /bridge/claude`、
+> providers 里的 `CLAUDE_MODELS` / `isClaudePick` / `getClaudeModel`、`AppState.claudeAgents` 与
+> Agents 栏的只读子代理卡片、下拉里的 Claude Code 分组。localStorage 里还存着 `claude-*` 的人
+> 会被迁到 `gw:anthropic/claude-opus-5`——同一个模型，换条路。以下留作历史。
 
 - `POST /bridge/claude`（bridge.mjs `handleClaude`）：`{ text, sessionId?, system? }` → SSE 帧 `{type:"delta"|"tool"|"subagent"|"done"|"error"}`。
 - spawn `claude -p <text> --output-format stream-json --verbose --include-partial-messages --permission-mode acceptEdits --allowedTools Bash,WebSearch,WebFetch [--append-system-prompt …] [--resume <sid>]`，cwd = WORKSPACE_DIR（请求时读取，工作区可切换）。系统提示词会追加一句工作区边界（只准在该文件夹内工作；CLI 自身对 cwd 外文件访问在 -p 模式自动拒绝）。
@@ -68,7 +75,7 @@
 - **代价(用户已知情选择)**:bridge 现在是模型流量的硬依赖,bridge 没起运行时够不着 NIM,
   单独跑 `./core/prime-agent.sh` 也一样。要独立就把 `baseUrl` 改回直连,读数则只剩应用自己那部分。
 - UI:`GET /bridge/nim` → `{used,limit,inflight,resetInMs,throttledMsAgo}`,Composer 每 5s 拉一次,
-  只在显示模型下拉、且当前模型确实是 NIM 时渲染(Claude Code 那条路不占 NIM 额度)。
+  只在显示模型下拉、且当前模型确实是 NIM 时渲染(网关那条路不占 NIM 额度)。
   视觉遵守克制铁律:平时只有 mono 的 `32/40 RPM`,≥75% 上琥珀 + 一个小方块、20s 内吃过 429 上红,
   **词义只在 tooltip**。**单位必须写出来**(用户:"0/40 你说清楚是每分钟还是多久"):`RPM` 是 NIM
   自己的说法,对齐它,别只留个分数。
@@ -117,7 +124,7 @@
 - 2026-09-04 起是**自绘弹层**（`.mpop`，借 `.topop` 的盒子），不再是原生 `<select>`：composer 在窗口底部，原生下拉往下弹会盖住输入框，用户要求"从上面弹"。`bottom: calc(100% + 8px)` 向上开，点外面 / Esc 关。
 - 高度上限**必须用 px 不能用 vh**：外壳是 `zoom: 1.5`，`46vh` 实际画出来占了窗口 69%（vh 按设备高算，再被缩放放大一次）。现在是 `max-height: 300px`。
 - 在线：`fetchModels()`（`/bridge/model`）填目录，按 provider 分组，点选乐观更新 + `setDaemonModel()`，失败回拉真值。行 key 用 `provider::id` 防撞。
-- 离线：`useModelPick()`（localStorage `model.pick`），三组 Claude Code / AI Gateway / NIM。网关的 id 存成 `gw:` 前缀——`deepseek/deepseek-v4-flash` 和 NIM 的 `deepseek-ai/deepseek-v4-flash-0731` 是两条路，裸 id 记不住是哪条。
+- 离线：`useModelPick()`（localStorage `model.pick`），两组 AI Gateway / NIM。网关的 id 存成 `gw:` 前缀——`deepseek/deepseek-v4-flash` 和 NIM 的 `deepseek-ai/deepseek-v4-flash-0731` 是两条路，裸 id 记不住是哪条。
 - `fixedRoot`（root 面板内嵌 composer）不显示下拉。
 
 ## 4. 同期修掉的可见性 bug（root/test 面板事故的根因）
@@ -137,9 +144,8 @@
 
 ## 6. 未完成 / 已知边界
 
-- claude 子 agent卡片不可对话（CLI 机制如此），只在当前 turn 存活。
 - `set_model` 只管 master；root 会话的模型切换未做。
-- 打包形态（electron main 托管 bridge + /bridge/claude）**没在打包环境验证过**，只验了 dev。
+- 打包形态（electron main 托管 bridge + `/api/nim`、`/api/gw` 两条代理）**没在打包环境验证过**，只验了 dev。
 - ~~models.json 里 7 个模型的 contextWindow/maxTokens 是保守通用值（128k/32k），未逐个核实。~~
   **contextWindow 已于 2026-09-03 逐个实测**（发一个超长请求，400 的报文会点名该部署的真实上限）：
   flash / pro / kimi-k3 = `1048576`，nemotron-3-super / nemotron-3.5-lightning = `1000000`，

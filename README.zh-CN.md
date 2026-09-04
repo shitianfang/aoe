@@ -254,11 +254,6 @@ worker：关掉应用，那队人照跑。
 
 运行时不在时，应用退化成纯模型对话，而不是罢工：
 
-- **Claude Code**——bridge 在工作区目录下跑 `claude -p`，带 `--permission-mode acceptEdits`，放开
-  Bash、WebSearch、WebFetch，按 session id 续接，并把它的工具活动和子代理流回时间线。AOE 自己不添
-  任何凭据：子进程继承你的环境变量，用的就是你机器上已有的那份登录。整个应用共用一个会话；这条路
-  需要 bridge（它是一条 bridge 路由；自从有了下面那个用量读数，NIM 那条也是了），并且在
-  Windows 上跑不通。
 - **NVIDIA NIM**——`.env` 里的 `NIM_API_KEY`，在服务端代理转发，渲染层永远看不到 key。
 - **Vercel AI Gateway**——`.env` 里的 `AI_GATEWAY_API_KEY`，同样在服务端代理转发。一把 key
   通四家，下拉里给四个模型：`anthropic/claude-opus-5`、`moonshotai/kimi-k3`、
@@ -331,8 +326,7 @@ Flash 能跑。网关自己那句话就是 composer 显示的那句。
   都是中文，且都写在运行时并进 `core/` 之前，当时守护进程还是 schema 25。经验与回滚、预览走的都是
   真实的运行时调用，但还没有公开的走查记录。
 - **没有发布二进制**，请自行从源码构建。
-- **Windows 的 zip 能构建，但还没在真实 Windows 机器上验证过**，而且 Claude Code 那条兜底路径在
-  Windows 上已知跑不通。开发主场是 Linux 和 macOS。
+- **Windows 的 zip 能构建，但还没在真实 Windows 机器上验证过。** 开发主场是 Linux 和 macOS。
 - **fork 的改动已向上游提出**——还不是一个 pull request。客户端在没有它们时也能降级，下面的表写清楚
   了具体怎么降。
 - **没有做的事**：钱的账（只算 token）、kernel 外面的任何沙箱、以及对「这条经验到底让智能体变好了

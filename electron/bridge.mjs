@@ -36,10 +36,6 @@
  *                         credit left on the key (cached; upstream /v1/credits)
  *   ALL  /gw/*            proxy to ai-gateway.vercel.sh, the key attached here
  *                         so no bundle or page ever holds it
- *   POST /bridge/claude   { text, sessionId?, system?, model? } → SSE
- *                         {type:"delta"|"tool"|"subagent"|"done"|"error"}
- *                         — runs the local `claude -p` CLI (user's own login) as a
- *                         real agent: tools enabled in the workspace directory
  *
  * Runs standalone in dev (`npm run bridge`) and inside Electron main later.
  * The renderer never touches the daemon socket directly.
@@ -1617,157 +1613,6 @@ async function handleCmd(body) {
   }
 }
 
-/** POST /bridge/claude — one agent turn through the locally installed official
- *  `claude` CLI. The child inherits process.env so the user's own login is
- *  used; no credential is ever read or forwarded here. `claude -p` is a full
- *  agent runner, so master gets real tool use in the workspace directory.
- *  Streams SSE frames: {type:"delta",text} per chunk, {type:"tool",name,detail}
- *  when a tool runs, {type:"subagent",id,label,status} for Task subagent
- *  lifecycles, then {type:"done",sessionId}, or {type:"error",message}. */
-function handleClaude(body, req, res, cors) {
-  const text = String(body.text ?? "");
-  const sessionId = typeof body.sessionId === "string" && body.sessionId ? body.sessionId : null;
-  const system = typeof body.system === "string" && body.system ? body.system : null;
-  // The composer's Claude pick. Shape-checked before it reaches argv: only a
-  // model name, never a flag or a path. An unusable value is dropped and the
-  // CLI keeps its own configured default.
-  const model =
-    typeof body.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(body.model)
-      ? body.model
-      : null;
-
-  res.writeHead(200, {
-    ...cors,
-    "content-type": "text/event-stream",
-    "cache-control": "no-cache",
-    connection: "keep-alive",
-  });
-  const emit = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
-
-  const args = ["-p", text, "--output-format", "stream-json", "--verbose", "--include-partial-messages"];
-  // Master is the user's local workspace agent: edits auto-accepted, commands
-  // and web lookups allowed — deliberately, that is its job. cwd bounds it to
-  // the workspace directory below.
-  args.push("--permission-mode", "acceptEdits", "--allowedTools", "Bash,WebSearch,WebFetch");
-  // WORKSPACE_DIR is mutable (workspace switch) — read it per request.
-  const cwd = fs.existsSync(WORKSPACE_DIR) ? WORKSPACE_DIR : os.homedir();
-  // The workspace folder is the boundary: cwd pins the CLI there, its own
-  // permission model auto-denies file access outside the working directory in
-  // -p mode, and the system prompt states the boundary outright.
-  const bounded = `${system ? `${system} ` : ""}Your workspace is ${cwd}. Work only inside this folder; never read or modify anything outside it.`;
-  args.push("--append-system-prompt", bounded);
-  if (model) args.push("--model", model);
-  if (sessionId) args.push("--resume", sessionId);
-  const child = spawn("claude", args, { cwd, env: process.env });
-
-  let stdoutBuf = "";
-  let stderrTail = "";
-  let sawDelta = false;
-  let ended = false;
-  /** Running Task subagents by tool_use id — they get lifecycle frames so the
-   *  renderer can show a read-only card while they run. */
-  const subagents = new Map();
-  const end = (payload) => {
-    if (ended) return;
-    ended = true;
-    emit(payload);
-    res.end();
-  };
-
-  const handleLine = (line) => {
-    let obj;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      return; // not NDJSON — ignore
-    }
-    if (
-      obj.type === "stream_event" &&
-      obj.event?.type === "content_block_delta" &&
-      obj.event?.delta?.type === "text_delta"
-    ) {
-      // A subagent's own prose must not leak into master's bubble.
-      if (obj.parent_tool_use_id) return;
-      sawDelta = true;
-      emit({ type: "delta", text: obj.event.delta.text });
-      return;
-    }
-    if (obj.type === "assistant") {
-      // Tool calls ride complete assistant messages; text already streamed as
-      // deltas above. detail = the human-readable heart of the input.
-      const content = obj.message?.content;
-      for (const b of Array.isArray(content) ? content : []) {
-        if (b?.type !== "tool_use") continue;
-        const i = b.input ?? {};
-        const detail = String(
-          i.command ?? i.file_path ?? i.path ?? i.pattern ?? i.query ?? i.url ?? i.description ?? "",
-        ).slice(0, 80);
-        emit({ type: "tool", name: b.name, detail });
-        // Master's own Task launches become subagent cards; nested ones don't.
-        if (!obj.parent_tool_use_id && (b.name === "Task" || b.name === "Agent") && b.id) {
-          subagents.set(b.id, detail || b.name);
-          emit({ type: "subagent", id: b.id, label: detail || b.name, status: "running" });
-        }
-      }
-      return;
-    }
-    if (obj.type === "user") {
-      // A tool_result answering a tracked Task id means that subagent is done.
-      const content = obj.message?.content;
-      for (const b of Array.isArray(content) ? content : []) {
-        if (b?.type === "tool_result" && subagents.has(b.tool_use_id)) {
-          emit({ type: "subagent", id: b.tool_use_id, label: subagents.get(b.tool_use_id), status: "done" });
-          subagents.delete(b.tool_use_id);
-        }
-      }
-      return;
-    }
-    if (obj.type === "result") {
-      for (const [sid, label] of subagents) {
-        emit({ type: "subagent", id: sid, label, status: "done" });
-      }
-      subagents.clear();
-      // Fallback for CLIs without partial messages: the final text only rides
-      // the result. When deltas already streamed, forwarding it would double-emit.
-      if (!sawDelta && typeof obj.result === "string" && obj.result) {
-        emit({ type: "delta", text: obj.result });
-      }
-      end({ type: "done", sessionId: obj.session_id ?? null });
-      child.kill("SIGTERM"); // in case it lingers after the result
-    }
-    // Everything else (system/init, assistant, user, other stream_events) is
-    // ignored — assistant message text already arrived as text_delta frames.
-  };
-
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    stdoutBuf += chunk;
-    const lines = stdoutBuf.split("\n");
-    stdoutBuf = lines.pop(); // keep the trailing partial line
-    for (const line of lines) if (line.trim()) handleLine(line);
-  });
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    stderrTail = (stderrTail + chunk).slice(-2000);
-  });
-  child.on("error", (e) => {
-    end({ type: "error", message: `claude spawn failed: ${e?.message || e}` });
-  });
-  child.on("close", (code) => {
-    if (stdoutBuf.trim()) handleLine(stdoutBuf); // flush a final unterminated line
-    if (ended) return;
-    end({
-      type: "error",
-      message: `claude exited with code ${code}${stderrTail ? `: ${stderrTail.trim()}` : ""}`,
-    });
-  });
-  // Client gone (tab closed, abort): stop paying for the run.
-  res.on("close", () => {
-    ended = true;
-    child.kill("SIGTERM");
-  });
-}
-
 /* ── NIM traffic funnels through here ──────────────────────────────────────
  *
  *  NVIDIA publishes no way to read your own budget: verified 2026-09-03, a NIM
@@ -2176,19 +2021,6 @@ const server = http.createServer(async (req, res) => {
     }
     sseClients.add(res);
     req.on("close", () => sseClients.delete(res));
-    return;
-  }
-  if (req.url === "/bridge/claude" && req.method === "POST") {
-    let raw = "";
-    req.on("data", (c) => (raw += c));
-    req.on("end", () => {
-      try {
-        handleClaude(JSON.parse(raw || "{}"), req, res, cors);
-      } catch (e) {
-        res.writeHead(400, { ...cors, "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: e?.message || String(e) }));
-      }
-    });
     return;
   }
   if (req.url === "/bridge/cmd" && req.method === "POST") {

@@ -1,31 +1,10 @@
 import { useSyncExternalStore } from "react";
 
-/** One picked model backs master when the daemon is not there. A `claude-*`
- *  id chats through the local Claude Code CLI (the bridge spawns the user's
- *  own `claude -p` login and passes the id to its --model flag); a `gw:` id
- *  goes to Vercel AI Gateway; any other id is a NIM cloud model. One value ⇒
- *  no two backends can ever be active at once. */
+/** One picked model backs master when the daemon is not there. A `gw:` id goes
+ *  to Vercel AI Gateway; any other id is a NIM cloud model. One value ⇒ the two
+ *  backends can never be active at once. */
 
 declare const __NIM_MODEL__: string;
-
-/** The Claude Code models offered. `claude -p --model` takes a model's full
- *  name, so these ids go through verbatim; the first is the default pick. */
-export const CLAUDE_MODELS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "claude-opus-5", label: "Claude Opus 5" },
-  { id: "claude-fable-5", label: "Claude Fable 5" },
-  { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
-  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
-];
-
-export const CLAUDE_PICK = CLAUDE_MODELS[0].id;
-
-/** What was stored back when the picker had one undifferentiated "Claude
- *  Code" row — it now means the default Claude model. */
-const LEGACY_CLAUDE = "claude";
-
-export function isClaudePick(id: string): boolean {
-  return id === LEGACY_CLAUDE || id.startsWith("claude-");
-}
 
 /** The NIM models offered, with the build's default on top. Labels drop the
  *  vendor prefix. Every id is verified against the live NIM /v1/models catalog
@@ -70,10 +49,9 @@ export function isGatewayPick(id: string): boolean {
   return id.startsWith(GW_PREFIX);
 }
 
-/** Everything the composer's picker offers, in the order it groups them:
- *  Claude Code, then the gateway, then NIM. */
+/** Everything the composer's picker offers, in the order it groups them: the
+ *  gateway first, then NIM. */
 export const MODEL_PICKS: ReadonlyArray<{ id: string; label: string }> = [
-  ...CLAUDE_MODELS,
   ...GATEWAY_MODELS,
   ...NIM_MODELS,
 ];
@@ -83,8 +61,10 @@ const KEY = "model.pick";
 function load(): string {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === LEGACY_CLAUDE) return CLAUDE_PICK; // picked before models were listed
     if (v && MODEL_PICKS.some((p) => p.id === v)) return v;
+    // Anyone left sitting on the retired `claude -p` backend lands on the same
+    // model by the road that is still here, rather than on a stranger.
+    if (v && (v === "claude" || v.startsWith("claude-"))) return "gw:anthropic/claude-opus-5";
   } catch {
     /* private mode */
   }
@@ -109,15 +89,8 @@ export function setModelPick(id: string) {
   for (const fn of listeners) fn();
 }
 
-export function getActiveProvider(): "claude" | "gateway" | "nim" {
-  if (isClaudePick(pick)) return "claude";
+export function getActiveProvider(): "gateway" | "nim" {
   return isGatewayPick(pick) ? "gateway" : "nim";
-}
-
-/** The model the Claude Code CLI is asked for (only meaningful while the
- *  active provider is claude). */
-export function getClaudeModel(): string {
-  return isClaudePick(pick) && pick !== LEGACY_CLAUDE ? pick : CLAUDE_PICK;
 }
 
 export function getNimModel(): string {

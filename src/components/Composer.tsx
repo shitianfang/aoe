@@ -12,10 +12,8 @@ import { helperName } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { t, useT } from "../i18n";
 import {
-  CLAUDE_MODELS,
   GATEWAY_MODELS,
   MODEL_PICKS,
-  isClaudePick,
   isGatewayPick,
   setModelPick,
   useModelPick,
@@ -214,10 +212,10 @@ export function Composer(props: {
   type PickRow = { key: string; label: string; on: boolean; pick: () => void };
 
   /** The picker: a label that opens a grouped list upward. One spot, two
-   *  backends — offline it picks the model-only fallback (claude -p, the
-   *  gateway or NIM); connected it switches the runtime's own model through
-   *  the daemon. It sits on the strip above the box; a pane composer omits it
-   *  (the model is the runtime's, one setting, shown once). */
+   *  backends — offline it picks the model-only fallback (the gateway or NIM);
+   *  connected it switches the runtime's own model through the daemon. It sits
+   *  on the strip above the box; a pane composer omits it (the model is the
+   *  runtime's, one setting, shown once). */
   const modelPop = (
     label: string,
     groups: Array<{ name: string; rows: PickRow[] }>,
@@ -279,16 +277,11 @@ export function Composer(props: {
           on: p.id === offlinePick,
           pick: () => setModelPick(p.id),
         }));
-      // Three backends in one list, named — a Claude Code model billed to the
-      // user's own login must never be mistaken for a metered cloud one, and
-      // two of these names appear twice under different groups.
+      // Two backends in one list, named: Kimi K3 appears under both, and which
+      // key is paying for it is the whole difference.
       return modelPop(label, [
-        { name: "Claude Code", rows: rows(CLAUDE_MODELS) },
         { name: "AI Gateway", rows: rows(GATEWAY_MODELS) },
-        {
-          name: "NIM",
-          rows: rows(MODEL_PICKS.filter((p) => !isClaudePick(p.id) && !isGatewayPick(p.id))),
-        },
+        { name: "NIM", rows: rows(MODEL_PICKS.filter((p) => !isGatewayPick(p.id))) },
       ]);
     }
     // The picker stays mounted while the catalog is in flight. Unmounting it
@@ -374,13 +367,13 @@ export function Composer(props: {
 
   /** The minute's NIM budget, beside the picker. One number and, only when it
    *  matters, one coloured square — the words live in the tooltip, like every
-   *  other status in this shell. Hidden while the subject is on a Claude model:
-   *  that traffic never touches the NIM key. */
+   *  other status in this shell. Hidden while the subject is on a gateway
+   *  model: that traffic never touches the NIM key. */
   const nimMeter = () => {
     if (!nim || !showsPicker) return null;
     const onNim = connected
       ? daemonModels?.current?.provider === "nvidia-nim"
-      : !isClaudePick(offlinePick) && !isGatewayPick(offlinePick);
+      : !isGatewayPick(offlinePick);
     if (!onNim) return null;
     // A 429 is worth shouting about only while it is still true; NIM's window
     // is a minute and it recovers on its own.

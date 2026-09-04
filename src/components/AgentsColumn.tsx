@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentState, ChildInfo, ClaudeSubagent, RootAgent } from "../types";
+import type { AgentState, ChildInfo, RootAgent } from "../types";
 import { flavorTag, helperName, hhmmEpoch, statusIcon, statusWord } from "../helperDisplay";
 import { BotAvatar } from "./BotAvatar";
 import { bridgeCmd } from "../runtime/bridge";
@@ -51,9 +51,6 @@ export function AgentsColumn(props: {
   master: AgentState;
   workspace: string;
   children: ChildInfo[];
-  /** Claude-path Task subagents — read-only cards under master (no session
-   *  to select or message; they exist only while their turn runs). */
-  claudeAgents: ClaudeSubagent[];
   /** Other root sessions (roster owned by App — shared with the composer popup). */
   others: RootAgent[];
   selected: string | null;
@@ -156,17 +153,6 @@ export function AgentsColumn(props: {
         draggable: true,
       });
     });
-    props.claudeAgents.forEach((a) => {
-      map.set(`ca:${a.id}`, {
-        key: `ca:${a.id}`,
-        label: a.label,
-        avatar: <BotAvatar seed={a.label} />,
-        tag: a.status === "done" ? t("ran inline, not reachable") : "",
-        state: statusIcon(a.status === "running" ? "running" : "done"),
-        selectable: null,
-        draggable: false,
-      });
-    });
     others.forEach((a) => {
       // Live event stream is truth once attached; the roster word otherwise.
       const live = props.rootStates[a.name];
@@ -206,7 +192,7 @@ export function AgentsColumn(props: {
     // Self-evolution column already makes with its one sample lesson. States
     // are mixed on purpose: the column's job is to answer "who is doing what,
     // and what is already finished", and one row per state shows all of it.
-    if (props.children.length === 0 && props.claudeAgents.length === 0) {
+    if (props.children.length === 0) {
       SAMPLE_CREW.forEach((a) => {
         map.set(`eg:${a.name}`, {
           key: `eg:${a.name}`,
@@ -225,7 +211,6 @@ export function AgentsColumn(props: {
   }, [
     props.master,
     props.children,
-    props.claudeAgents,
     visibleChildren,
     others,
     props.rootStates,
@@ -449,7 +434,7 @@ export function AgentsColumn(props: {
       {delErr !== null && <div className="ierr">{delErr}</div>}
       {/* Says out loud that the crew above is a sample. It sits under the rows
           it labels, so the first thing read is the shape of a real team. */}
-      {props.children.length === 0 && props.claudeAgents.length === 0 && (
+      {props.children.length === 0 && (
         <div className="colnote">
           {t("example · real helpers replace this")}
           <br />

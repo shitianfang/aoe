@@ -306,12 +306,6 @@ master spawns it.
 
 Without the runtime, the app degrades to model-only chat rather than breaking:
 
-- **Claude Code** — the bridge runs `claude -p` in the workspace directory with
-  `--permission-mode acceptEdits` and Bash, WebSearch and WebFetch allowed, resumes by session
-  id, and streams its tool activity and subagents back into the timeline. AOE adds no
-  credential of its own; the child inherits your environment and uses the login already there.
-  One session is shared across the app, and this path needs the bridge — as, since the usage
-  readout below, does NIM. It has not been made to work on Windows.
 - **NVIDIA NIM** — `NIM_API_KEY` from `.env`, proxied server-side; the renderer never sees a
   key. Keys come from [build.nvidia.com](https://build.nvidia.com); `NIM_MODEL` defaults to
   `deepseek-ai/deepseek-v4-pro-0813`.
@@ -397,9 +391,8 @@ Step 3.7 Flash runs. The gateway's own sentence is what the composer shows.
   daemon was still at schema 25. Lessons, rollback and previews run against real runtime
   calls but have no published walkthrough yet.
 - **There are no published binaries.** Build from source.
-- **Windows zips build, but have not been validated on real Windows hardware**, and the
-  Claude Code fallback is known not to work there. Linux and macOS are what development runs
-  on.
+- **Windows zips build, but have not been validated on real Windows hardware.** Linux and
+  macOS are what development runs on.
 - **The fork's changes are offered upstream** — not yet as a pull request. The client
   degrades without them; the table below says exactly how.
 - **What is not modelled:** cost in money (tokens only), any sandbox around the kernel, and

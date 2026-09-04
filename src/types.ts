@@ -125,13 +125,6 @@ export interface RootAgent {
  *  mid-run with an empty first snapshot (session_resynced backfills). */
 export type RootLoad = "partial" | "full";
 
-/** One Task subagent of the claude-path master (id = the Task tool_use id). */
-export interface ClaudeSubagent {
-  id: string;
-  label: string;
-  status: "running" | "done";
-}
-
 /** RlmChildAgentSnapshot subset we render. Foreign entries (another root's
  *  crew, promoted from the roster) reuse the shape: id "fk:<activeSessionId>",
  *  roster words "idle"/"inactive" for status, foreign + parentName set. */
@@ -372,10 +365,6 @@ export interface AppState {
   bridge: BridgeState | null;
   goal: GoalInfo | null;
   children: ChildInfo[];
-  /** Claude-path Task subagents: read-only cards under master in the Agents
-   *  column — visible while they run, never addressable (no session to talk
-   *  to). Cleared at the start of each new turn. */
-  claudeAgents: ClaudeSubagent[];
   helperEvents: Record<string, HelperEvent[]>;
   /** Live transcript per child id (watch_helper feed; resync replaces, msg/tool append). */
   helperTranscripts: Record<string, HelperTranscriptRow[]>;

@@ -1,7 +1,22 @@
-const { app, BrowserWindow, net, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, net, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
+
+// Chromium keeps its shared buffers in /dev/shm, and a container hands it 64MB
+// by default — enough to open the window and then not enough to navigate again.
+// What that looks like from the outside is the bug this guards: the first load
+// paints, the next one returns a document with nothing in it, no error in the
+// console and none on the page, because the failure (ERR_INSUFFICIENT_RESOURCES)
+// belongs to the navigation and never reaches the renderer. Falling back to
+// temp files is slower and correct; on a desktop with a real /dev/shm nothing
+// here changes.
+try {
+  const shm = fs.statfsSync("/dev/shm");
+  if (shm.bsize * shm.blocks < 256 * 1024 * 1024) app.commandLine.appendSwitch("disable-dev-shm-usage");
+} catch {
+  /* no /dev/shm to measure (not Linux, or statfs unavailable) — leave it alone */
+}
 
 const DEV_URL = process.env.AOE_DEV_URL || process.env.PRIME_DESKTOP_DEV_URL || "http://localhost:3000";
 // Not NVIDIA directly: the daemon bridge (hosted in this process for a

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, net, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -193,24 +193,42 @@ async function createWindow() {
     // once the host returns — so the window says what it is waiting for and
     // keeps knocking until it answers.
     let waiting = false;
-    const open = () => {
-      win.loadURL(remote).catch(() => {
-        /* did-fail-load has it */
+    // Ask whether the host is back before navigating to it. Retrying with
+    // loadURL instead replaces the waiting page with Chromium's own error
+    // page — which says ERR_CONNECTION_REFUSED to someone who never chose a
+    // host, and which nothing then navigates away from.
+    const answers = () =>
+      new Promise((resolve) => {
+        const req = net.request({ method: "GET", url: remote });
+        req.on("response", (r) => {
+          r.on("data", () => {});
+          r.on("end", () => {});
+          resolve(true);
+        });
+        req.on("error", () => resolve(false));
+        req.end();
       });
+    const knock = async () => {
+      if (!waiting) return;
+      if (await answers()) {
+        waiting = false;
+        win.loadURL(remote).catch(() => {
+          /* did-fail-load puts the waiting page back */
+        });
+      } else {
+        setTimeout(knock, 4000);
+      }
     };
     win.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
       // -3 is a load the app itself replaced, not a host that failed to answer.
-      if (!isMainFrame || code === -3) return;
-      if (!waiting) {
-        waiting = true;
-        win.loadFile(path.join(__dirname, "offline.html"), { query: { url: remote, why: desc || "" } });
-      }
-      setTimeout(open, 4000);
+      if (!isMainFrame || code === -3 || waiting) return;
+      waiting = true;
+      win.loadFile(path.join(__dirname, "offline.html"), { query: { url: remote, why: desc || "" } });
+      setTimeout(knock, 4000);
     });
-    win.webContents.on("did-finish-load", () => {
-      if (!win.webContents.getURL().startsWith("file:")) waiting = false;
+    win.loadURL(remote).catch(() => {
+      /* did-fail-load has it */
     });
-    open();
     return;
   }
   if (app.isPackaged) {

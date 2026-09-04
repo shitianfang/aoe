@@ -66,14 +66,22 @@ from pathlib import Path
 prev = Path("poster.html").read_text()
 targets = {"版心": ("980px", "680px"),
            "标题字号": ("34px", "56px"),
-           "正文行距": ("1.4", "1.75")}
+           "正文行距": ("1.4", "1.75"),
+           "日期竖排": ("transform:rotate(-90deg)", None)}   # None = 这条要删掉
 ```
 
 Three to five properties, each with the before value you just read out of
 `prev` and the after value you are choosing now. A property you cannot quote a
-before value for is one you did not read. And the change has to land where the
-eye already is: a colour round that repaints a 10px dot moved nothing a person
-will notice, however true the hex diff is.
+before value for is one you did not read.
+
+At least one target per round has to be a large-area property: the ground
+colour, the measure, the display type's size, the number of grid columns, the
+size of an image block. The client shows versions as thumbnails a few hundred
+pixels wide, and the judges read HTML — they cannot see that scale, so they
+will call a corner detail "visible at a glance" in good faith. A colour round
+that repaints a 10px dot, or a type round that moves a 12px label, is true in
+the diff and invisible in the pane. Spend the round where the eye already is,
+and let the small corrections ride along with it.
 
 Edit `prev` into the candidate; never regenerate the page from the brief — that
 is how three rounds end where they started. The candidate lives under
@@ -83,18 +91,25 @@ is how three rounds end where they started. The candidate lives under
 import difflib
 cand = Path(".review/next.html")
 cand.parent.mkdir(parents=True, exist_ok=True)
-cand.write_text(prev.replace("980px", "680px")…)   # your real edit
+cand.write_text(new_text)   # new_text = prev with this round's edits applied
 keep = lambda t: [l.strip() for l in t.splitlines()
                   if l.strip() and not l.strip().startswith(("<!--", "/*", "//", "*"))]
 diff = [l for l in difflib.unified_diff(keep(prev), keep(cand.read_text()), n=0)
         if l[0] in "+-" and not l.startswith(("---", "+++"))]
-landed = [k for k, (_, after) in targets.items() if any(after in l for l in diff)]
+landed = [k for k, (before, after) in targets.items()
+          if (any(after in l for l in diff if l[0] == "+") if after
+              else any(before in l for l in diff if l[0] == "-"))]
 assert len(diff) >= 12 and len(landed) == len(targets), (len(diff), landed)
 ```
 
 Under twelve changed lines, or an after value that never appears, means you
 moved whitespace and renamed classes: redo it in the same turn. A round that
 fails this gate is not published and is not a version.
+
+A property can land as a deletion — dropping a `transform` outright rather than
+setting it to `0deg`. Write its after value as `None` and the gate checks that
+the before value left the file, instead of hunting for an after value that was
+never meant to exist.
 
 Then the judges. Ask them to choose, not to score — an absolute 1-10 comes back
 flat and names nothing to fix.

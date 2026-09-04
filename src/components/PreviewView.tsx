@@ -151,14 +151,6 @@ function VersionPane(props: {
         </span>
       </div>
       {body()}
-      {version?.note && !props.head?.includes(version.note) && (
-        <div className="vnote">{version.note}</div>
-      )}
-      {version?.saidAgain && version.saidAgain !== version.note && (
-        <div className="vnote">
-          {t("republished unchanged as")} {version.saidAgain}
-        </div>
-      )}
     </div>
   );
 }
@@ -233,32 +225,30 @@ export function PreviewView(props: {
   // One card alone: a zoomed one if it is still in the list, else the newest.
   const zoomed = zoomKey ? all.find((c) => c.key === zoomKey) : undefined;
   const cards = zoomed ? [zoomed] : row ? all : all.slice(0, 1);
-  // The events belong to the step into the card being looked at: the zoomed
-  // version and the one before it, or the newest pair. A variant row has no
-  // such step.
-  const shownIdx = zoomed ? versions.findIndex((v) => v.label === zoomed.key) : versions.length - 1;
-  const [from, to] =
-    siblings.length > 1 || versions.length < 2 || shownIdx < 1
-      ? [undefined, undefined]
-      : [versions[shownIdx - 1], versions[shownIdx]];
-
-  // What happened between the two versions, in the terms the user cares about:
-  // what the agent decided (its own words), what it published, and what it
-  // learned. Tool calls are deliberately not here — `python · import pathlib`
-  // is the mechanics of a step, never the judgement in it.
-  const between =
-    from && to
-      ? props.timeline.filter(
-          (x): x is Extract<TimelineItem, { kind: "master" | "agent" | "note" | "lesson" }> => {
-            if (x.kind !== "master" && x.kind !== "agent" && x.kind !== "note" && x.kind !== "lesson")
-              return false;
-            if (x.ts === undefined) return false;
-            if (x.kind === "note" && !/^(published|已发布)/.test(x.text)) return false;
-            if ((x.kind === "master" || x.kind === "agent") && x.text.trim() === "") return false;
-            return x.ts > Date.parse(from.at) && x.ts <= Date.parse(to.at);
-          },
-        )
-      : [];
+  // One entry per round, newest first: what that version says it changed, and
+  // what the conversation shows behind it — the agent's own decision, a
+  // reviewer's verdict, a lesson kept. Tool calls are deliberately absent:
+  // `python · import pathlib` is the mechanics of a step, never the judgement
+  // in it, and this is the place the user comes to read the judgement.
+  const evidence = (prev: PreviewVersion | undefined, v: PreviewVersion) =>
+    props.timeline.filter(
+      (x): x is Extract<TimelineItem, { kind: "master" | "agent" | "note" | "lesson" }> => {
+        if (x.kind !== "master" && x.kind !== "agent" && x.kind !== "note" && x.kind !== "lesson")
+          return false;
+        if (x.ts === undefined) return false;
+        if (x.kind === "note" && !/^(published|已发布)/.test(x.text)) return false;
+        if ((x.kind === "master" || x.kind === "agent") && x.text.trim() === "") return false;
+        return x.ts <= Date.parse(v.at) && (!prev || x.ts > Date.parse(prev.at));
+      },
+    );
+  // Zoom scopes the log to the version being looked at; otherwise every round
+  // is listed, in the same order as the cards above them.
+  const rounds = (zoomed ? versions.filter((v) => v.label === zoomed.key) : versions)
+    .map((v) => {
+      const i = versions.findIndex((x) => x.label === v.label);
+      return { v, prev: i > 0 ? versions[i - 1] : undefined, events: evidence(versions[i - 1], v) };
+    })
+    .reverse();
 
   return (
     <div className="view">
@@ -337,24 +327,55 @@ export function PreviewView(props: {
             ))
           )}
         </div>
-        {from && to && between.length > 0 && (
+        {siblings.length < 2 && rounds.length > 0 && (
           <div className="between">
-            <div className="bh">
-              {t("between {from} → {to}", { from: from.label, to: to.label })}
-            </div>
-            {between.map((e) => (
-              <div className={e.kind === "lesson" ? "ev violet" : "ev"} key={e.id}>
-                <span className="ic" />
-                <strong>
-                  {e.kind === "lesson"
-                    ? t("lesson kept · {summary}", { summary: e.result.summary ?? e.result.id })
-                    : e.kind === "note"
-                      ? e.text
-                      : e.kind === "agent"
-                        ? `${e.from} · ${firstLines(e.text)}`
-                        : firstLines(e.text)}
-                </strong>
-                <span className="rt">{e.kind === "note" ? (e.rt ?? "") : e.at}</span>
+            {rounds.map(({ v, prev, events }) => (
+              <div className="round" key={v.label}>
+                <div className="bh">
+                  {prev
+                    ? t("between {from} → {to}", { from: prev.label, to: v.label })
+                    : t("{v} · first version", { v: v.label })}
+                  <span className="rt">{fmtTime(v.at)}</span>
+                </div>
+                {v.note && (
+                  <div className="ev">
+                    <span className="ic" />
+                    <strong>{v.note}</strong>
+                    <span className="rt" />
+                  </div>
+                )}
+                {!v.note && v.add !== undefined && (
+                  <div className="ev">
+                    <span className="ic" />
+                    <strong>{t("{add} lines added, {del} removed", { add: String(v.add), del: String(v.del) })}</strong>
+                    <span className="rt" />
+                  </div>
+                )}
+                {v.same !== undefined && (
+                  <div className="ev bad">
+                    <span className="ic" />
+                    <strong>
+                      {t("{n} later round(s) rewrote the file to these same bytes", { n: String(v.same) })}
+                      {v.saidAgain ? ` · ${t("republished unchanged as")} ${v.saidAgain}` : ""}
+                    </strong>
+                    <span className="rt" />
+                  </div>
+                )}
+                {events.map((e) => (
+                  <div className={e.kind === "lesson" ? "ev violet" : "ev"} key={e.id}>
+                    <span className="ic" />
+                    <strong>
+                      {e.kind === "lesson"
+                        ? t("lesson kept · {summary}", { summary: e.result.summary ?? e.result.id })
+                        : e.kind === "note"
+                          ? e.text
+                          : e.kind === "agent"
+                            ? `${e.from} · ${firstLines(e.text)}`
+                            : firstLines(e.text)}
+                    </strong>
+                    <span className="rt">{e.kind === "note" ? (e.rt ?? "") : e.at}</span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

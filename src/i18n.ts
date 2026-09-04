@@ -431,6 +431,9 @@ const ZH: Record<string, string> = {
   "{n} takes to pick from": "{n} 版方案待选",
   "click to shrink": "点一下缩回",
   "republished unchanged as": "原样重发为",
+  "{v} · first version": "{v} · 第一版",
+  "{add} lines added, {del} removed": "改了 +{add} −{del} 行(这一版没给说明)",
+  "{n} later round(s) rewrote the file to these same bytes": "后来有 {n} 轮把文件写成了同样的字节 —— 那几轮没有改动",
   "no preview for this kind of file": "这种文件没法预览",
 
   /* inspector */

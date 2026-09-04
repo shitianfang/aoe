@@ -693,9 +693,12 @@ body.resizing iframe { pointer-events: none; }
 .vbox .vframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
 .vbox .vimg { display: block; max-width: 100%; }
 /* The agent's own account of this version, on the card it belongs to. */
-.vbox .vnote { padding: 7px 10px; border-top: 1px dashed var(--hair); font-family: var(--mono); font-size: 9px; line-height: 1.5; color: var(--t2); }
+/* One block per round under the cards: its own account first, then the
+   evidence. `.bh` carries the version pair, so the blocks read as a log. */
+.between .round { margin-top: 12px; }
+.between .round:first-child { margin-top: 0; }
 .between { padding-top: 16px; }
-.between .bh { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); padding-bottom: 8px; }
+.between .bh { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--t3); padding-bottom: 8px; }
 .between .ev { margin-left: 0; margin-top: 8px; }
 
 /* ---- inspector ---- */

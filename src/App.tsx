@@ -491,7 +491,7 @@ function historyToItems(messages: HistoryMessage[]): TimelineItem[] {
     }
     else if (m.text.trim() !== "") {
       // Another agent's message into this conversation — a real message row.
-      out.push({ kind: "agent", id: id(), from: m.from ?? "agent", text: m.text, at: hhmm(m.at) });
+      out.push({ kind: "agent", id: id(), from: m.from ?? "agent", text: m.text, at: hhmm(m.at), ts: m.at });
     } else {
       out.push({
         kind: "note",
@@ -917,9 +917,11 @@ export function App() {
               // A full message row with the sender's avatar; empty payloads
               // fall back to a quiet note chip.
               const body = (d?.message ?? "").trim();
+              // ts on both: a judge's verdict is evidence Preview lists between
+              // the two versions it decided between, and that window is in time.
               const note: TimelineItem = body
-                ? { kind: "agent", id: id(), from: fromName, text: body, at: clock() }
-                : { kind: "note", id: id(), text: `msg ← ${fromName}`, rt: clock() };
+                ? { kind: "agent", id: id(), from: fromName, text: body, at: clock(), ts: Date.now() }
+                : { kind: "note", id: id(), text: `msg ← ${fromName}`, rt: clock(), ts: Date.now() };
               if (!child) return { ...s, timeline: [...s.timeline, note] };
               s = { ...s, timeline: [...s.timeline, note] };
               const excerpt = (d?.message ?? "").slice(0, 80);

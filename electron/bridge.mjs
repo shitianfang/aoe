@@ -1929,31 +1929,52 @@ async function gatewayUsage() {
   }
 }
 
-/** Origins this bridge answers to. Nothing here asks for a credential — one
- *  POST drives the agent, one GET reads the transcript back — so the wildcard
- *  it used to send meant any site the user happened to have open could do
- *  both. The renderer never needs it: the dev server proxies /bridge from the
- *  page's own origin, so those requests arrive with no Origin header at all;
- *  the packaged app fetches 127.0.0.1 from a file:// page, which sends "null";
- *  and a terminal sends none. A browser tab on the open web is the only caller
- *  that carries a foreign origin, and it is the one caller to refuse. */
+/** Callers this bridge answers. Nothing here asks for a credential — one POST
+ *  drives the agent, one GET reads the transcript back — so the wildcard it
+ *  used to send meant any site the user happened to have open could do both.
+ *  The one caller to refuse is a browser tab on the open web; everything else
+ *  has to keep working:
+ *
+ *    - a terminal, and the daemon itself, send no Origin at all;
+ *    - the packaged app fetches 127.0.0.1 from a file:// page: Origin "null";
+ *    - the renderer reaches /bridge through the dev-server proxy, so its
+ *      requests carry the page's own origin — and `npm run dev` binds --host
+ *      with allowedHosts, so that origin is a LAN address or a tunnel domain
+ *      just as often as it is localhost. (A same-origin GET sends no Origin,
+ *      but a same-origin POST always does, which is why matching localhost
+ *      alone let the transcript stream while every command 403'd.)
+ *
+ *  Sec-Fetch-Site is what separates the last case from the attack: the browser
+ *  sets it on every fetch and page script cannot forge it — the renderer's own
+ *  requests say "same-origin" whatever host serves them, while a fetch from
+ *  another site says "cross-site". Non-browser callers omit it and are judged
+ *  on Origin alone, which is where they already stood. */
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin;
-  const allowed = origin === undefined || origin === "null" || LOCAL_ORIGIN.test(origin);
+  const site = req.headers["sec-fetch-site"];
+  const allowed =
+    origin === undefined ||
+    origin === "null" ||
+    LOCAL_ORIGIN.test(origin) ||
+    site === "same-origin" ||
+    site === "none";
   const cors = {
     // Echo the caller's own origin rather than "*": the answer is now specific
     // to who asked, and Vary keeps a cache from handing it to anyone else.
     "Access-Control-Allow-Origin": origin ?? "*",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    Vary: "Origin",
+    Vary: "Origin, Sec-Fetch-Site",
   };
   if (!allowed) {
     // Refused outright, not merely unreadable: a simple GET needs no preflight,
     // so leaving the header off would still have run the request.
-    res.writeHead(403, { "content-type": "application/json", Vary: "Origin" });
+    res.writeHead(403, {
+      "content-type": "application/json",
+      Vary: "Origin, Sec-Fetch-Site",
+    });
     return res.end(JSON.stringify({ error: "origin not allowed" }));
   }
   if (req.method === "OPTIONS") {

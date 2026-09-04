@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AOE</title>
+    <style>
+      /* The app's own tokens, light: this page is what the window shows before
+         the host answers, and a second visual language for four seconds of
+         waiting is not worth having. */
+      * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0; }
+      html, body { height: 100%; }
+      body {
+        background: #e9ebee; color: #1b1e23;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 13px; line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        display: flex; align-items: center; justify-content: center;
+        zoom: 1.5; /* the shell reads right at 150% */
+      }
+      .box { width: 320px; }
+      h1 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+      p { color: #4e565f; margin-bottom: 14px; }
+      /* Machine text stays mono — it is an address, and the user may have to
+         read it back to whoever runs the host. */
+      .u {
+        font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+        font-size: 11px; color: #1b1e23;
+        background: #f4f5f7; border: 1px solid rgba(22, 27, 36, .11);
+        padding: 7px 9px; word-break: break-all;
+      }
+      .why { margin-top: 10px; font-size: 11px; color: #8a9199; }
+      .dot {
+        display: inline-block; width: 5px; height: 5px; background: #e5b563;
+        margin-right: 6px; vertical-align: 1px;
+        animation: b 1.4s steps(1) infinite;
+      }
+      @keyframes b { 0%, 60% { opacity: 1 } 61%, 100% { opacity: .25 } }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1><span class="dot"></span>连不上这台主机</h1>
+      <p>AOE 的运行端还没有应答。它一恢复，这个窗口就会自己接上 —— 不用重开。</p>
+      <div class="u" id="u"></div>
+      <div class="why" id="why"></div>
+    </div>
+    <script>
+      var q = new URLSearchParams(location.search);
+      document.getElementById("u").textContent = q.get("url") || "";
+      var why = q.get("why");
+      if (why) document.getElementById("why").textContent = why;
+    </script>
+  </body>
+</html>

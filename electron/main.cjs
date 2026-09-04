@@ -13,6 +13,27 @@ const BRIDGE_ORIGIN = () => `http://127.0.0.1:${process.env.PRIME_BRIDGE_PORT ||
 const NIM_UPSTREAM = () => `${BRIDGE_ORIGIN()}/nim/v1`;
 const GATEWAY_UPSTREAM = () => `${BRIDGE_ORIGIN()}/gw/v1`;
 
+/** A shell build points at a hosted AOE instead of hosting one. The renderer
+ *  already resolves /bridge and /api against its own origin whenever the page
+ *  carries no port in its query (that is how the dev browser works), so
+ *  loading that origin bare is the whole of it — and this process must then
+ *  start no bridge and no daemon of its own, which would answer nothing and
+ *  only fight the host for the port.
+ *
+ *  The URL is baked at package time into electron/remote.json; the
+ *  environment overrides it, so one build can be pointed somewhere else
+ *  without repackaging. Neither present means an ordinary self-hosted build. */
+function remoteUrl() {
+  if (process.env.AOE_REMOTE_URL) return process.env.AOE_REMOTE_URL.trim();
+  try {
+    const p = path.join(__dirname, "remote.json");
+    if (fs.existsSync(p)) return String(JSON.parse(fs.readFileSync(p, "utf8")).url || "").trim();
+  } catch {
+    /* unreadable — a self-hosted build is the right fallback */
+  }
+  return "";
+}
+
 /** Keys and model come from the environment or <userData>/config.json — never from the bundle. */
 function loadConfig() {
   let key = process.env.NIM_API_KEY || "";
@@ -152,12 +173,46 @@ async function createWindow() {
     external(url);
     return { action: "deny" };
   });
-  win.webContents.on("will-navigate", (e, url) => {
-    if (url !== win.webContents.getURL()) {
-      e.preventDefault();
-      external(url);
+  const remote = remoteUrl();
+  // A shell's own host is the app; anywhere else is a link someone wrote.
+  const sameHost = (url) => {
+    try {
+      return !!remote && new URL(url).origin === new URL(remote).origin;
+    } catch {
+      return false;
     }
+  };
+  win.webContents.on("will-navigate", (e, url) => {
+    if (url === win.webContents.getURL() || sameHost(url)) return;
+    e.preventDefault();
+    external(url);
   });
+  if (remote) {
+    // The host this shell points at is a machine that gets turned off. A
+    // failed load would leave a white window saying nothing, with no way back
+    // once the host returns — so the window says what it is waiting for and
+    // keeps knocking until it answers.
+    let waiting = false;
+    const open = () => {
+      win.loadURL(remote).catch(() => {
+        /* did-fail-load has it */
+      });
+    };
+    win.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
+      // -3 is a load the app itself replaced, not a host that failed to answer.
+      if (!isMainFrame || code === -3) return;
+      if (!waiting) {
+        waiting = true;
+        win.loadFile(path.join(__dirname, "offline.html"), { query: { url: remote, why: desc || "" } });
+      }
+      setTimeout(open, 4000);
+    });
+    win.webContents.on("did-finish-load", () => {
+      if (!win.webContents.getURL().startsWith("file:")) waiting = false;
+    });
+    open();
+    return;
+  }
   if (app.isPackaged) {
     const port = await startBridge();
     // The daemon bridge listens on its own fixed port; loading it here gives

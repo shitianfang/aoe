@@ -10,3 +10,6 @@ aoe-ui-redesign.html
 # screenshots dropped in the repo root while working — the shared checkout
 # gets committed with `git add -A`, and this repo is public
 /*.png
+
+# written by tools/shell.mjs at package time — the host a shell build opens
+electron/remote.json

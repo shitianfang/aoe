@@ -17,7 +17,8 @@
     "app": "electron .",
     "dist:win": "vite build && electron-builder --win --publish never",
     "dist:mac": "vite build && electron-builder --mac --publish never",
-    "dist:linux": "vite build && electron-builder --linux --publish never"
+    "dist:linux": "vite build && electron-builder --linux --publish never",
+    "shell": "node tools/shell.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

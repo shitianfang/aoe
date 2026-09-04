@@ -46,6 +46,7 @@ import {
   stopHelper,
   removeHelper,
   extractText,
+  extractThinking,
   bridgeUrl,
   fetchAutonomous,
   fetchRootStatus,
@@ -71,6 +72,21 @@ const longRunNote = (rt?: string, ts?: number): TimelineItem => ({
   rt: rt ?? clock(),
   ts: ts ?? Date.now(),
 });
+
+/** The turn is over, so nothing on this timeline may still claim to be alive:
+ *  the streaming row settles and gives up its reasoning, a tool whose end event
+ *  never arrived stops breathing, and a row that ended with no words at all is
+ *  dropped rather than left as an orphan timestamp. A pulse that outlives the
+ *  turn is the one thing this marker must never say. */
+function settleLive(items: TimelineItem[]): TimelineItem[] {
+  return items
+    .map((x) => {
+      if (x.kind === "master" && x.streaming) return { ...x, streaming: false, thinking: undefined };
+      if (x.kind === "tool" && x.status === "running") return { ...x, status: "done" as const };
+      return x;
+    })
+    .filter((x) => !(x.kind === "master" && !x.streaming && x.text.trim() === ""));
+}
 
 function filePathFromArgs(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
@@ -655,11 +671,16 @@ export function App() {
   // Streaming assistant row fed by daemon message events, keyed by message id when present.
   const daemonMsgRef = useRef<{ itemId: string; key: unknown } | null>(null);
   // One turn can push ~90 message_update events — coalesce them to ~50ms flushes.
-  const pendingRef = useRef<{ itemId: string; text: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const pendingRef = useRef<{
+    itemId: string;
+    text: string;
+    thinking: string;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
   // Per-root equivalents of the two refs above, keyed by root session name.
   const rootMsgRef = useRef<Record<string, { itemId: string; key: unknown }>>({});
   const rootPendingRef = useRef<
-    Record<string, { itemId: string; text: string; timer: ReturnType<typeof setTimeout> }>
+    Record<string, { itemId: string; text: string; thinking: string; timer: ReturnType<typeof setTimeout> }>
   >({});
   const bridgeRef = useRef(false);
   // Snapshots repeat on bridge reconnect (same workspace) — seed history once.
@@ -874,10 +895,7 @@ export function App() {
           ...s,
           master: "idle",
           working: undefined,
-          timeline: s.timeline
-            .map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x))
-            // A settled master row with no text is noise (orphan timestamp).
-            .filter((x) => !(x.kind === "master" && !x.streaming && x.text === "")),
+          timeline: settleLive(s.timeline),
         }));
       } else if (t === "goal_update") {
         setState((s) => ({ ...s, goal: (event.goal as GoalInfo) ?? null }));
@@ -971,22 +989,37 @@ export function App() {
         }
         if (message.role !== "assistant") return;
         const text = extractText(message);
-        // Reasoning-only updates carry no text — and some models pad a
-        // tool-only turn with bare whitespace; never render an empty bubble.
-        if (text.trim() === "" && !daemonMsgRef.current) return;
+        // A reasoning model spends its first minute in `thinking` blocks with
+        // no text at all. That used to render as nothing, or as an empty
+        // bubble under a blinking cursor — both read as a hang. The reasoning
+        // rides the row instead, and the row drops it the moment words start.
+        const thinking = extractThinking(message);
+        // Some models pad a tool-only turn with bare whitespace; a row with
+        // neither words nor reasoning is an empty bubble, so it is not opened.
+        if (text.trim() === "" && thinking === "" && !daemonMsgRef.current) return;
         const key = message.id ?? "assistant";
-        const applyText = (itemId: string, value: string, streaming: boolean) =>
+        const applyText = (itemId: string, value: string, mind: string, streaming: boolean) =>
           setState((s) => ({
             ...s,
             timeline: s.timeline.map((x) =>
-              x.id === itemId && x.kind === "master" ? { ...x, text: value, streaming } : x,
+              x.id === itemId && x.kind === "master"
+                ? { ...x, text: value, thinking: streaming && value === "" ? mind : undefined, streaming }
+                : x,
             ),
           }));
         if (!daemonMsgRef.current || daemonMsgRef.current.key !== key) {
           const itemId = id();
           daemonMsgRef.current = { itemId, key };
           // ts: Preview's decision list places a message between two versions.
-          push({ kind: "master", id: itemId, text, at: clock(), ts: Date.now(), streaming: true });
+          push({
+            kind: "master",
+            id: itemId,
+            text,
+            thinking: text === "" ? thinking : undefined,
+            at: clock(),
+            ts: Date.now(),
+            streaming: true,
+          });
         } else {
           const itemId = daemonMsgRef.current.itemId;
           if (t === "message_end") {
@@ -998,20 +1031,22 @@ export function App() {
               // The message ended with no words (tool-only) — drop its row.
               setState((s) => ({ ...s, timeline: s.timeline.filter((x) => x.id !== itemId) }));
             } else {
-              applyText(itemId, text, false);
+              applyText(itemId, text, "", false);
             }
             daemonMsgRef.current = null;
           } else if (pendingRef.current?.itemId === itemId) {
             pendingRef.current.text = text;
+            pendingRef.current.thinking = thinking;
           } else {
             if (pendingRef.current) clearTimeout(pendingRef.current.timer);
             pendingRef.current = {
               itemId,
               text,
+              thinking,
               timer: setTimeout(() => {
                 const p = pendingRef.current;
                 pendingRef.current = null;
-                if (p) applyText(p.itemId, p.text, true);
+                if (p) applyText(p.itemId, p.text, p.thinking, true);
               }, 50),
             };
           }
@@ -1137,12 +1172,7 @@ export function App() {
           ...s,
           rootStates: { ...s.rootStates, [root]: "idle" },
           rootWorking: { ...s.rootWorking, [root]: "" },
-          rootTimelines: {
-            ...s.rootTimelines,
-            [root]: (s.rootTimelines[root] ?? [])
-              .map((x) => (x.kind === "master" && x.streaming ? { ...x, streaming: false } : x))
-              .filter((x) => !(x.kind === "master" && !x.streaming && x.text.trim() === "")),
-          },
+          rootTimelines: { ...s.rootTimelines, [root]: settleLive(s.rootTimelines[root] ?? []) },
         }));
       } else if (t === "message_start" || t === "message_update" || t === "message_end") {
         const message = event.message as
@@ -1165,19 +1195,33 @@ export function App() {
         }
         if (message.role !== "assistant") return;
         const text = extractText(message);
+        // Same reasoning row master gets — a watched root running a thinking
+        // model is otherwise a blank pane for as long as it reasons.
+        const thinking = extractThinking(message);
         const cur = rootMsgRef.current[root];
-        if (text.trim() === "" && !cur) return;
+        if (text.trim() === "" && thinking === "" && !cur) return;
         const key = message.id ?? "assistant";
-        const applyText = (itemId: string, value: string, streaming: boolean) =>
+        const applyText = (itemId: string, value: string, mind: string, streaming: boolean) =>
           patchRootItems(root, (items) =>
-            items.map((x) => (x.id === itemId && x.kind === "master" ? { ...x, text: value, streaming } : x)),
+            items.map((x) =>
+              x.id === itemId && x.kind === "master"
+                ? { ...x, text: value, thinking: streaming && value === "" ? mind : undefined, streaming }
+                : x,
+            ),
           );
         if (!cur || cur.key !== key) {
           const itemId = id();
           rootMsgRef.current[root] = { itemId, key };
           patchRootItems(root, (items) => [
             ...items,
-            { kind: "master", id: itemId, text, at: clock(), streaming: true },
+            {
+              kind: "master",
+              id: itemId,
+              text,
+              thinking: text === "" ? thinking : undefined,
+              at: clock(),
+              streaming: true,
+            },
           ]);
         } else if (t === "message_end") {
           const p = rootPendingRef.current[root];
@@ -1189,22 +1233,24 @@ export function App() {
             // Tool-only message: drop the empty streaming row.
             patchRootItems(root, (items) => items.filter((x) => x.id !== cur.itemId));
           } else {
-            applyText(cur.itemId, text, false);
+            applyText(cur.itemId, text, "", false);
           }
           delete rootMsgRef.current[root];
         } else {
           const p = rootPendingRef.current[root];
           if (p?.itemId === cur.itemId) {
             p.text = text;
+            p.thinking = thinking;
           } else {
             if (p) clearTimeout(p.timer);
             rootPendingRef.current[root] = {
               itemId: cur.itemId,
               text,
+              thinking,
               timer: setTimeout(() => {
                 const q = rootPendingRef.current[root];
                 delete rootPendingRef.current[root];
-                if (q) applyText(q.itemId, q.text, true);
+                if (q) applyText(q.itemId, q.text, q.thinking, true);
               }, 50),
             };
           }
@@ -2078,7 +2124,11 @@ export function App() {
             </span>
           </div>
         </div>
-        <Timeline items={items.length > 0 ? items : [placeholder]} botSeed={name} />
+        <Timeline
+          items={items.length > 0 ? items : [placeholder]}
+          botSeed={name}
+          live={rs === "working" ? { note: state.rootWorking[name] || undefined } : undefined}
+        />
       </>
     );
   };
@@ -2163,7 +2213,11 @@ export function App() {
             </span>
           </div>
         </div>
-        <Timeline items={state.timeline} onExample={sendExample} />
+        <Timeline
+          items={state.timeline}
+          onExample={sendExample}
+          live={state.master === "working" ? { note: state.working } : undefined}
+        />
       </>
     );
   };

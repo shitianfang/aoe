@@ -251,3 +251,19 @@ export function extractText(message: unknown): string {
   }
   return "";
 }
+
+/** The reasoning text `extractText` steps over — the `thinking` blocks a
+ *  reasoning model streams before it writes a word of the answer. Redacted
+ *  blocks carry no readable words, so they contribute nothing. */
+export function extractThinking(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b) => {
+      if (!b || typeof b !== "object") return "";
+      const block = b as { type?: string; thinking?: unknown };
+      return block.type === "thinking" && typeof block.thinking === "string" ? block.thinking : "";
+    })
+    .join("");
+}

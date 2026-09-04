@@ -599,6 +599,38 @@ body.resizing iframe { pointer-events: none; }
    than a step sits to the sentence above it. */
 .transcript .ev.step + .ev.step { margin-top: -5px; }
 
+/* ---- what it is doing before it has words ----
+   A reasoning model spends the first stretch of a turn inside thinking blocks:
+   no text, no tool, nothing on the transcript but an empty bubble under a
+   blinking cursor — which reads as a hang, not as work. So the bubble says
+   what is happening instead: the same breathing diamond a running step uses,
+   the label, and the reasoning itself as it streams. It is scaffolding, never
+   history — the answer replaces it whole the moment the first word lands.
+   `.tail` is that row standing on its own at the foot of the transcript, for
+   the gaps where nothing at all is streaming; it takes .ev's 34px indent so it
+   lands in the message column like every other step. */
+.think { display: grid; grid-template-columns: 7px auto minmax(0, 1fr); align-items: start; gap: 9px; }
+.think.tail { margin-left: 34px; }
+.think .ic {
+  width: 7px; height: 7px; margin-top: 4px; transform: rotate(45deg);
+  background: var(--green); border: 1.5px solid var(--green);
+  animation: stpulse 1.6s ease-in-out infinite;
+}
+.think .tw {
+  margin-top: 1px; font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--t3); white-space: nowrap;
+}
+/* The reasoning is read through a two-line window that keeps its bottom edge:
+   the text grows out of the top and is clipped there, so what you see is the
+   sentence being written now. Anchored the other way up, the window would
+   freeze on the opening of a minute-long chain of thought and the one thing
+   this row exists to say — that it is still moving — would stop being said. */
+.think .tx {
+  display: flex; align-items: flex-end; max-height: 2.9em; overflow: hidden;
+  font-size: 11.5px; line-height: 1.45; color: var(--t3); overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) { .think .ic { animation: none; opacity: .7; } }
+
 /* ...and carries on down the tool rows, so a run of steps hangs off the helper
    that took them instead of floating in the message column on its own. Offset
    is .msg's own 11.5px spine less the 34px indent. */
@@ -876,6 +908,12 @@ html[lang="zh-CN"] .insp .kv.hbrow { flex-wrap: wrap; row-gap: 4px; }
    genuinely long cron expression, which ellipsizes on a line of its own. */
 html[lang="zh-CN"] .insp .kv.hbrow .k { flex: 0 0 auto; max-width: 100%; }
 html[lang="zh-CN"] .insp .kv.hbrow .hbops { margin-left: auto; }
+
+/* The thinking row's label, same as every other 9px tracked caption above. Its
+   reasoning tail is prose and keeps the sans body size it already has. */
+html[lang="zh-CN"] .think .tw {
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
+}
 
 .send:focus-visible, .a:focus-visible, .theme:focus-visible, .btn:focus-visible { outline: 1px solid var(--hair-hi); outline-offset: 2px; }
 ::-webkit-scrollbar { width: 6px; }

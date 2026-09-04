@@ -114,6 +114,7 @@ const ZH: Record<string, string> = {
 
   /* agent state words */
   running: "运行中",
+  thinking: "思考中",
   idle: "空闲",
   replied: "已回复",
   "needs you": "需要你",

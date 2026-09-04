@@ -67,7 +67,9 @@ export interface LessonResult {
 export type TimelineItem =
   | { kind: "divider"; id: string; text: string; ts?: number }
   | { kind: "user"; id: string; text: string; at: string }
-  | { kind: "master"; id: string; text: string; at: string; streaming?: boolean; ts?: number }
+  /** `thinking` is the reasoning streamed before the first word of the answer;
+   *  it is live-only scaffolding — the row drops it once `text` starts. */
+  | { kind: "master"; id: string; text: string; at: string; streaming?: boolean; ts?: number; thinking?: string }
   | { kind: "tool"; id: string; name: string; status: "running" | "done" | "error"; at: string; ts?: number }
   | { kind: "lesson"; id: string; result: LessonResult; at: string; ts?: number }
   /** Quiet chip row for secondary events (agent messages, queue notes) — no rule line. */

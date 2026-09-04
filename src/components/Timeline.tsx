@@ -29,6 +29,35 @@ function LessonRow(props: { result: LessonResult; at: string }) {
   );
 }
 
+/** The end of the reasoning, on one collapsed line. Enough to overfill the
+ *  two-line window it is read through at any pane width — the window keeps its
+ *  bottom edge, so what is on screen is always the newest sentence. Paragraph
+ *  breaks go with it: this is a ticker, not a document. */
+function tailOf(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 600 ? flat.slice(-600) : flat;
+}
+
+/** What it is doing while it has no words yet: a breathing diamond in the same
+ *  square language a running step speaks, the label, and the reasoning as it
+ *  streams. Replaced by the answer the moment the first word of it arrives —
+ *  this is scaffolding, never history. */
+function Thinking(props: { text?: string; note?: string; tail?: boolean }) {
+  const t = useT();
+  const words = props.text ? tailOf(props.text) : (props.note ?? "");
+  return (
+    <div className={`think${props.tail ? " tail" : ""}`}>
+      <span className="ic" />
+      <span className="tw">{t("thinking")}</span>
+      {words ? (
+        <span className="tx">
+          <span>{words}</span>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function Timeline(props: {
   items: TimelineItem[];
   /** Master timeline only. `opts` lets a showcase card ask for the send it
@@ -36,17 +65,24 @@ export function Timeline(props: {
   onExample?: (text: string, opts?: { longRun?: boolean }) => void;
   /** Set in a root pane: assistant rows get this root's avatar, not master's chip. */
   botSeed?: string;
+  /** The agent this timeline belongs to is mid-turn. Present = a breathing tail
+   *  row, but only when nothing already on the transcript is live; `note` is
+   *  the runtime's own working message when it sent one. */
+  live?: { note?: string };
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Expanded collapsed-history blocks, by item id. Local state: folding is a
   // view concern and re-collapsing on data changes would be hostile.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // Keep the newest activity in view while master streams.
+  // Keep the newest activity in view while master streams. The live tail row
+  // is part of "newest" — but as a primitive, not the object it is passed as,
+  // or every render of the app would yank the transcript back down.
+  const liveKey = props.live ? (props.live.note ?? "") : null;
   useEffect(() => {
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [props.items]);
+  }, [props.items, liveKey]);
 
   const row = (item: TimelineItem): ReactNode => {
     if (item.kind === "collapsed") {
@@ -126,7 +162,11 @@ export function Timeline(props: {
       <div className="msg" key={item.id}>
         {props.botSeed ? <BotAvatar seed={props.botSeed} /> : <span className="chip master" />}
         <div className="body">
-          <Markdown text={item.text} trailing={item.streaming ? <span className="cursor" /> : undefined} />
+          {item.streaming && item.text === "" ? (
+            <Thinking text={item.thinking} />
+          ) : (
+            <Markdown text={item.text} trailing={item.streaming ? <span className="cursor" /> : undefined} />
+          )}
         </div>
         <span className="when">{item.streaming ? "" : item.at}</span>
       </div>
@@ -138,9 +178,22 @@ export function Timeline(props: {
     props.onExample !== undefined &&
     props.items.every((i) => i.kind === "divider" || i.kind === "collapsed");
 
+  // Between the send and the first event of the turn — and again in the gap
+  // between a tool finishing and the next thing starting — the transcript has
+  // nothing moving on it, and a run that takes a minute is indistinguishable
+  // from one that died. One breathing line at the tail answers that, and only
+  // then: a streaming row and a running tool are already breathing on their
+  // own, and two pulses saying the same thing is noise.
+  const tailLive =
+    props.live !== undefined &&
+    !props.items.some(
+      (i) => (i.kind === "master" && i.streaming) || (i.kind === "tool" && i.status === "running"),
+    );
+
   return (
     <div className="transcript" ref={ref}>
       {props.items.map(row)}
+      {tailLive ? <Thinking note={props.live?.note} tail /> : null}
       {fresh && props.onExample ? <FirstRun onExample={props.onExample} /> : null}
     </div>
   );

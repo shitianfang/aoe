@@ -73,6 +73,9 @@ export function AgentsColumn(props: {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [addErr, setAddErr] = useState<string | null>(null);
+  /** A create is in flight — the guard against a second Enter, and what the
+   *  panel dims itself on. */
+  const [creating, setCreating] = useState(false);
   /** view-only regrouping: node key -> parent node key */
   const [group, setGroup] = useState<Record<string, string>>(() => loadJson(groupKey, {}));
   const [folded, setFolded] = useState<Record<string, boolean>>(() => loadJson(foldKey, {}));
@@ -84,10 +87,40 @@ export function AgentsColumn(props: {
     setFolded(loadJson(foldKey, {}));
   }, [groupKey, foldKey]);
 
+  /* Creating one takes the daemon a second or two, and until this landed the
+     field said nothing while it did: no caret change, no note, the typed name
+     still sitting there. So the second Enter went out as a second create — and
+     the daemon rejects a duplicate name in single-digit milliseconds, so the
+     doomed attempt's error arrived first and the agent from the first attempt
+     appeared after it. It read as "the first Enter did nothing, the second one
+     both worked and failed". One in-flight create at a time, then, and the
+     panel says while it runs. */
   const createAgent = async () => {
+    if (creating) return;
     const name = draft.trim().toLowerCase().replace(/\s+/g, "-");
     if (!name) return;
+    // Mirrors WS_NAME_RE in electron/bridge.mjs, which is the source of truth:
+    // the name becomes a directory and a session name, so it stays ASCII. The
+    // daemon says "invalid agent name" in English to a shell whose default
+    // language is Chinese — and says nothing about what a valid one looks like.
+    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name)) {
+      setAddErr(t("names use a–z, 0–9, - and _"));
+      return;
+    }
+    // A name already on the roster is answerable here, and this is the answer
+    // that names it — the daemon's is written for its own tree ("at depth 0
+    // under this parent"), which is not where the reader is standing.
+    if (props.others.some((a) => a.name === name)) {
+      setAddErr(t("an agent named {n} is already here", { n: name }));
+      return;
+    }
+    // The bridge keeps the master prefix for the workspace's own master.
+    if (name.startsWith("master")) {
+      setAddErr(t("names starting with master are reserved"));
+      return;
+    }
     setAddErr(null);
+    setCreating(true);
     try {
       await bridgeCmd("create_agent", name);
       setDraft("");
@@ -95,6 +128,8 @@ export function AgentsColumn(props: {
       props.onRefreshOthers();
     } catch (e) {
       setAddErr(e instanceof Error ? e.message : t("create failed"));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -414,20 +449,43 @@ export function AgentsColumn(props: {
     >
       <div className="sec row">
         <span>{t("Agents")}</span>
-        <button className="plus" title={t("new agent")} onClick={() => setAdding((v) => !v)}>
-          +
+        <button
+          className="plus"
+          title={t("new agent")}
+          onClick={() => {
+            // A stale error must not greet the next name typed here.
+            setAddErr(null);
+            setAdding((v) => !v);
+          }}
+        >
+          {creating ? "…" : "+"}
         </button>
       </div>
       {adding && (
-        <div className="wsnew" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>
+        <div
+          className={creating ? "wsnew busy" : "wsnew"}
+          style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}
+        >
           <input
             autoFocus
             value={draft}
             placeholder={t("new agent name…")}
+            // readOnly, not disabled: the field keeps its focus and its caret,
+            // so a name that comes back rejected can be edited straight away.
+            readOnly={creating}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createAgent()}
+            // isComposing: an IME's Enter commits the candidate, it does not
+            // submit the form — without this, picking 拼音 sends a half-typed
+            // name to the daemon.
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) createAgent();
+            }}
           />
-          {addErr && <div className="ierr">{addErr}</div>}
+          {creating ? (
+            <div className="inote">{t("creating…")}</div>
+          ) : (
+            addErr && <div className="ierr">{addErr}</div>
+          )}
         </div>
       )}
       {roots.map((n) => renderNode(n, 0))}

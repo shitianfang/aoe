@@ -96,6 +96,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .wsnew input { width: 100%; height: 28px; padding: 0 10px; border: 1px solid var(--hair); background: var(--soft); color: var(--t1); font-family: var(--mono); font-size: 10.5px; outline: none; }
 .wsnew input::placeholder { color: var(--t3); }
 .wsnew input:focus { border-color: var(--t3); }
+/* A create is in flight. The field keeps the name and the caret; only the ink
+   steps back, so the pause reads as the app working rather than as a dead key. */
+.wsnew.busy input { opacity: 0.55; }
 
 /* learned pane (one lesson's full record) */
 .learn { flex: 1; overflow-y: auto; padding: 18px; }
@@ -771,6 +774,9 @@ body.resizing iframe { pointer-events: none; }
 .iin::placeholder { color: var(--t3); }
 .iin:focus { border-color: var(--t3); }
 .ierr { margin-top: 6px; font-family: var(--mono); font-size: 9px; color: var(--red); }
+/* Same slot, same shape as .ierr — a call still running is not an error, so it
+   takes the muted ink instead of the red. */
+.inote { margin-top: 6px; font-family: var(--mono); font-size: 9px; color: var(--t3); }
 
 /* ---- CJK micro-typography (one block — do not scatter these) ----
    Every small label in this shell is an English typographic device: 8–9px
@@ -790,6 +796,8 @@ html[lang="zh-CN"] .kpi .k,
 html[lang="zh-CN"] .brk .bl,
 html[lang="zh-CN"] .segs button,
 html[lang="zh-CN"] .ovw .egnote,
+html[lang="zh-CN"] .ierr,
+html[lang="zh-CN"] .inote,
 html[lang="zh-CN"] .lesson .ll {
   font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; text-transform: none;
 }

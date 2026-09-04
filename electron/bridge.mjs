@@ -1929,12 +1929,33 @@ async function gatewayUsage() {
   }
 }
 
+/** Origins this bridge answers to. Nothing here asks for a credential — one
+ *  POST drives the agent, one GET reads the transcript back — so the wildcard
+ *  it used to send meant any site the user happened to have open could do
+ *  both. The renderer never needs it: the dev server proxies /bridge from the
+ *  page's own origin, so those requests arrive with no Origin header at all;
+ *  the packaged app fetches 127.0.0.1 from a file:// page, which sends "null";
+ *  and a terminal sends none. A browser tab on the open web is the only caller
+ *  that carries a foreign origin, and it is the one caller to refuse. */
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
 const server = http.createServer(async (req, res) => {
+  const origin = req.headers.origin;
+  const allowed = origin === undefined || origin === "null" || LOCAL_ORIGIN.test(origin);
   const cors = {
-    "Access-Control-Allow-Origin": "*",
+    // Echo the caller's own origin rather than "*": the answer is now specific
+    // to who asked, and Vary keeps a cache from handing it to anyone else.
+    "Access-Control-Allow-Origin": origin ?? "*",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    Vary: "Origin",
   };
+  if (!allowed) {
+    // Refused outright, not merely unreadable: a simple GET needs no preflight,
+    // so leaving the header off would still have run the request.
+    res.writeHead(403, { "content-type": "application/json", Vary: "Origin" });
+    return res.end(JSON.stringify({ error: "origin not allowed" }));
+  }
   if (req.method === "OPTIONS") {
     res.writeHead(204, cors);
     return res.end();
